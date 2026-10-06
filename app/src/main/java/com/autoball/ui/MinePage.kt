@@ -40,16 +40,7 @@ class MinePage(context: Context, private val host: PageHost) : FrameLayout(conte
     init {
         val root = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
 
-        root.addView(TextView(context).apply {
-            text = "我的"
-            textSize = 20f
-            setTypeface(null, Typeface.BOLD)
-            setTextColor(Theme.textPri())
-            setPadding(Display.dpInt(context, 16f), Display.dpInt(context, 18f),
-                Display.dpInt(context, 16f), Display.dpInt(context, 10f))
-        })
-
-        val scroll = ScrollView(context)
+        root.addView(topbar())
         scroll.addView(box, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
         root.addView(scroll, LinearLayout.LayoutParams(
@@ -209,7 +200,7 @@ class MinePage(context: Context, private val host: PageHost) : FrameLayout(conte
         box.addView(section("关于"))
         box.addView(infoRow("脚本引擎", JsEngines.engineName() + if (JsEngines.engineName() == "quickjs")
             "（未内置源码时自动降级为纯 Java 引擎）" else ""))
-        box.addView(infoRow("版本", "v0.6.1"))
+        box.addView(infoRow("版本", "v0.7.0"))
         box.addView(infoRow("更新日志", "查看").apply {
             setOnClickListener { ChangeLog.show(context as? Activity ?: return@setOnClickListener) }
         })
@@ -360,15 +351,58 @@ class MinePage(context: Context, private val host: PageHost) : FrameLayout(conte
 
     // ---------- 小部件 ----------
 
+    /** 顶栏（v3 .topbar）：h1 26px 800 + 副标题 + 右上图标按钮 */
+    private fun topbar(): LinearLayout {
+        val b = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(Display.dpInt(context, 18f), Display.dpInt(context, 6f),
+                Display.dpInt(context, 18f), Display.dpInt(context, 12f))
+            gravity = Gravity.BOTTOM
+        }
+        val l = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+        l.addView(TextView(context).apply {
+            text = "我的"
+            textSize = 26f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(Theme.textPri())
+            includeFontPadding = false
+        })
+        l.addView(TextView(context).apply {
+            text = if (Theme.isDark()) "深色主题" else "浅色主题"
+            textSize = 12f
+            setTextColor(Theme.textSec())
+            setPadding(0, Display.dpInt(context, 3f), 0, 0)
+        })
+        b.addView(l, LinearLayout.LayoutParams(0,
+            LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        // 主题切换按钮：点击后图标旋转（v3 .iconbtn.tbtn）
+        b.addView(TextView(context).apply {
+            text = if (Theme.isDark()) "☾" else "☀"
+            textSize = 17f
+            setTextColor(if (Theme.isDark()) Color.parseColor("#A78BFA")
+            else Color.parseColor("#F79009"))
+            gravity = Gravity.CENTER
+            background = Theme.rect(Theme.surface(), 12f, context, Theme.line())
+            val sz = Display.dpInt(context, 36f)
+            layoutParams = LinearLayout.LayoutParams(sz, sz)
+            setOnClickListener {
+                animate().rotationBy(-90f).setDuration(320).start()
+                Theme.toggleDark()
+                host.refreshAll()
+            }
+        })
+        return b
+    }
+
+    /** 分区标题（v3 .sec：11px 700 --tx3，上下 14/8） */
     private fun section(text: String): TextView = TextView(context).apply {
         this.text = text
-        textSize = 14f
+        textSize = 11f
         setTypeface(null, Typeface.BOLD)
-        setTextColor(Theme.textPri())
-        val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT)
-        lp.setMargins(0, Display.dpInt(context, 16f), 0, Display.dpInt(context, 6f))
-        layoutParams = lp
+        setTextColor(Theme.textTer())
+        letterSpacing = 0.03f
+        setPadding(Display.dpInt(context, 2f), Display.dpInt(context, 14f),
+            Display.dpInt(context, 2f), Display.dpInt(context, 8f))
     }
 
     private fun permRow(title: String, sub: String, on: Boolean, action: String, onClick: () -> Unit): View {
@@ -416,69 +450,77 @@ class MinePage(context: Context, private val host: PageHost) : FrameLayout(conte
         return row
     }
 
+    /** 开关行（v3 .row + .sw：行 radius 14 / padding 13x14；开关 42x24，滑块 18 @3） */
     private fun switchRow(title: String, init: Boolean, onChange: (Boolean) -> Unit): View {
-        val sw = android.widget.Switch(context).apply {
-            isChecked = init
-            text = title
-            setTextColor(Theme.textPri())
-            textSize = 14f
-            setOnCheckedChangeListener { _, v -> onChange(v) }
-        }
-        sw.setPadding(Display.dpInt(context, 14f), Display.dpInt(context, 8f),
-            Display.dpInt(context, 12f), Display.dpInt(context, 8f))
-        sw.background = Theme.bubble(context, Theme.card(), 14f)
-        val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT)
-        lp.setMargins(0, 0, 0, Display.dpInt(context, 8f))
-        sw.layoutParams = lp
-        return sw
-    }
-
-    private fun sliderRow(title: String, init: Float, minVal: Float, maxVal: Float,
-                          onChange: (Float) -> Unit): View {
+        var on = init
         val row = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            background = Theme.bubble(context, Theme.card(), 14f)
-            setPadding(Display.dpInt(context, 14f), Display.dpInt(context, 8f),
-                Display.dpInt(context, 12f), Display.dpInt(context, 8f))
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            background = Theme.rect(Theme.surface(), Theme.ROW_R, context, Theme.line())
+            setPadding(Display.dpInt(context, 14f), Display.dpInt(context, 13f),
+                Display.dpInt(context, 14f), Display.dpInt(context, 13f))
             val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT)
-            lp.setMargins(0, 0, 0, Display.dpInt(context, 8f))
+            lp.setMargins(0, 0, 0, Display.dpInt(context, Theme.ROW_MB))
             layoutParams = lp
         }
-        val label = TextView(context).apply {
-            text = "$title：%.2f".format(init)
-            textSize = 12f
+        row.addView(TextView(context).apply {
+            text = title
+            textSize = 13.5f
+            setTypeface(null, Typeface.BOLD)
             setTextColor(Theme.textPri())
-        }
-        row.addView(label)
-        val ratio = ((init - minVal) / (maxVal - minVal) * 100).toInt().coerceIn(0, 100)
-        val bar = android.widget.SeekBar(context)
-        bar.max = 100
-        bar.progress = ratio
-        bar.setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(sb: android.widget.SeekBar?, p: Int, fromUser: Boolean) {
-                val v = minVal + (maxVal - minVal) * p / 100f
-                label.text = "$title：%.2f".format(v)
-                if (fromUser) onChange(v)
-            }
-            override fun onStartTrackingTouch(sb: android.widget.SeekBar?) { }
-            override fun onStopTrackingTouch(sb: android.widget.SeekBar?) { }
+            layoutParams = LinearLayout.LayoutParams(0,
+                LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         })
-        row.addView(bar)
+        val track = android.widget.FrameLayout(context).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                Display.dpInt(context, Theme.SW_W), Display.dpInt(context, Theme.SW_H))
+            background = Theme.rect(if (on) Theme.pri2() else Theme.line2(), 12f, context)
+        }
+        val knob = View(context).apply {
+            background = Theme.oval(Color.WHITE)
+        }
+        track.addView(knob, android.widget.FrameLayout.LayoutParams(
+            Display.dpInt(context, Theme.SW_KNOB), Display.dpInt(context, Theme.SW_KNOB)).apply {
+            leftMargin = if (on) Display.dpInt(context, 21f) else Display.dpInt(context, 3f)
+            topMargin = Display.dpInt(context, 3f)
+        })
+        row.addView(track)
+        row.setOnClickListener {
+            on = !on
+            track.background = Theme.rect(if (on) Theme.pri2() else Theme.line2(), 12f, context)
+            (knob.layoutParams as android.widget.FrameLayout.LayoutParams).leftMargin =
+                if (on) Display.dpInt(context, 21f) else Display.dpInt(context, 3f)
+            knob.requestLayout()
+            onChange(on)
+        }
         return row
     }
 
-    private fun infoRow(k: String, v: String): TextView = TextView(context).apply {
-        text = "$k：$v"
-        textSize = 12f
-        setTextColor(Theme.textSec())
-        setPadding(Display.dpInt(context, 14f), Display.dpInt(context, 7f),
-            Display.dpInt(context, 12f), Display.dpInt(context, 7f))
-        background = Theme.bubble(context, Theme.card(), 14f)
+    /** 值行（v3 .row：左标题 + 右值） */
+    private fun infoRow(k: String, v: String): LinearLayout = LinearLayout(context).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        background = Theme.rect(Theme.surface(), Theme.ROW_R, context, Theme.line())
+        setPadding(Display.dpInt(context, 14f), Display.dpInt(context, 13f),
+            Display.dpInt(context, 14f), Display.dpInt(context, 13f))
         val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,
             LinearLayout.LayoutParams.WRAP_CONTENT)
-        lp.setMargins(0, 0, 0, Display.dpInt(context, 8f))
+        lp.setMargins(0, 0, 0, Display.dpInt(context, Theme.ROW_MB))
         layoutParams = lp
+        addView(TextView(context).apply {
+            text = k
+            textSize = 13.5f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(Theme.textPri())
+            layoutParams = LinearLayout.LayoutParams(0,
+                LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        })
+        addView(TextView(context).apply {
+            text = v
+            textSize = 12.5f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(Theme.textSec())
+        })
     }
 }

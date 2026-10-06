@@ -51,9 +51,14 @@ class LiquidNavView(
     private val sheen = Paint(Paint.ANTI_ALIAS_FLAG)
     private val rim = Paint(Paint.ANTI_ALIAS_FLAG)
     private val spec = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val halo = Paint(Paint.ANTI_ALIAS_FLAG)
 
     private val tabs = ArrayList<TextView>()
     private var selected = 0
+
+    /** 液态呼吸相位：v3 gelMorph 9s 周期。幅度极小（32↔34dp），不刺眼 */
+    @Volatile
+    private var morphT = 0f
 
     init {
         setWillNotDraw(false)
@@ -106,6 +111,7 @@ class LiquidNavView(
         })
 
         select(0)
+        startMorph()
     }
 
     fun select(index: Int) {
@@ -128,7 +134,9 @@ class LiquidNavView(
 
         val barH = Display.dp(context, BAR_DP)
         val top = h - barH
-        val r = Display.dp(context, 32f)
+        // 液态：圆角在 32↔34dp 之间极缓呼吸（v3 gelMorph 9s）
+        val morph = (kotlin.math.sin(morphT * 2.0 * Math.PI).toFloat() + 1f) / 2f
+        val r = Display.dp(context, Theme.TABBAR_R + 2f * morph)
         val dark = Theme.isDark()
 
         // ---- 液态玻璃：静置的折射质感，不做任何循环动画 ----
@@ -184,7 +192,27 @@ class LiquidNavView(
             w - Display.dp(context, 14f), top + Display.dp(context, 2f), spec)
         spec.shader = null
 
+        // FAB 液体融合光晕（v3 .fabslot::before：68dp 圆，rgba(125,211,252,.48) → 透明）
+        halo.shader = android.graphics.RadialGradient(
+            w / 2f, top - Display.dp(context, 2f), Display.dp(context, 34f),
+            Color.parseColor("#7A7DD3FC"), Color.TRANSPARENT, Shader.TileMode.CLAMP)
+        canvas.drawCircle(w / 2f, top - Display.dp(context, 2f),
+            Display.dp(context, 34f), halo)
+        halo.shader = null
+
         super.onDraw(canvas)
+    }
+
+    /** 极缓呼吸：9s 一轮，仅轻微改变圆角，形成"液体表面张力"的观感 */
+    private fun startMorph() {
+        post(object : Runnable {
+            override fun run() {
+                morphT += 1f / (9f * 30f)      // 9 秒一轮，约 30fps
+                if (morphT > 1f) morphT -= 1f
+                invalidate()
+                postDelayed(this, 33L)
+            }
+        })
     }
 
     /** 中央 56dp 天蓝渐变四角星 */
