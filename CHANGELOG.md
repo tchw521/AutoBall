@@ -19,10 +19,21 @@
 - Shizuku 官方 AIDL 拉取增加语法校验，不合规自动回退到内置桩
 - 构建脚本不再依赖 gradle-wrapper.jar，CI 直接使用安装的 Gradle 8.5
 
+**构建产物（首次编译成功）**
+
+| 产物 | 大小 | 说明 |
+|---|---|---|
+| `AutoBall-v0.4.0-quickjs-debug.apk` | 1.73 MB | 默认产物，含 QuickJS 原生引擎（arm64 918KB / armeabi-v7a 581KB） |
+| `AutoBall-v0.4.0-rhino-debug.apk` | 1.67 MB | 无 NDK 逃生口，JS 走纯 Java 引擎 |
+
+- 两个 debug 包均已签名，可直接安装
+- release 包未配置签名，产出的是 `unsigned` 版本，**不可直接安装**（下一版改为回退到 debug 签名）
+
 **已知限制**
 
 - 坐标缩放仅在动作流中生效；JS 脚本内手写坐标仍按绝对像素执行
 - 分屏 / 多窗口场景下屏幕尺寸变化未做特殊处理
+- 原生库当前同时打包 arm64-v8a 与 armeabi-v7a，约占 1.5MB；下一版启用 ABI 拆分可进一步压缩
 
 ---
 
