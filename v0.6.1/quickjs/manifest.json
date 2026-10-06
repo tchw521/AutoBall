@@ -1,0 +1,14 @@
+{
+  "version": "0.6.1",
+  "engine": "quickjs",
+  "files": [
+    {
+      "path": "v0.6.1/quickjs/app-debug.apk",
+      "size": 1857333
+    },
+    {
+      "path": "v0.6.1/quickjs/app-release-unsigned.apk",
+      "size": 863034
+    }
+  ]
+}
