@@ -431,7 +431,7 @@ class ScriptPage(
                     when (i) {
                         0 -> {
                             sel.clear()
-                            sel.addAll(filtered().map { it.id })
+                            sel.addAll(filtered().map { it.id }.toSet())
                             renderList(); updateMulti()
                         }
                         3 -> {
