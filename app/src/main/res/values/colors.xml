@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 主色：蓝紫渐变，与悬浮球同族 -->
+    <color name="ab_blue">#2F6BFF</color>
+    <color name="ab_purple">#7C3AED</color>
+    <color name="ab_ball_start">#8FDBFF</color>
+    <color name="ab_ball_mid">#4A9EFF</color>
+    <color name="ab_ball_end">#5B7CFF</color>
+
+    <color name="ab_bg_dark">#12101F</color>
+    <color name="ab_bg_dark_soft">#1B1730</color>
+    <color name="ab_card_dark">#241F3E</color>
+    <color name="ab_bg_light">#F5F6FA</color>
+    <color name="ab_card_light">#FFFFFF</color>
+
+    <color name="ab_text_primary_dark">#F2F3FF</color>
+    <color name="ab_text_secondary_dark">#A7A9C6</color>
+    <color name="ab_text_primary_light">#1A1A2E</color>
+    <color name="ab_text_secondary_light">#6B6D85</color>
+
+    <color name="ab_nav_gel">#1C1832</color>
+    <color name="ab_danger">#FF5B6E</color>
+    <color name="ab_ok">#35D08A</color>
+    <color name="ab_warn">#FFB020</color>
+
+    <!-- 分组气泡色板：零图标资源，纯色值 -->
+    <color name="ab_group_1">#4A9EFF</color>
+    <color name="ab_group_2">#7C3AED</color>
+    <color name="ab_group_3">#35D08A</color>
+    <color name="ab_group_4">#FFB020</color>
+    <color name="ab_group_5">#FF5B6E</color>
+    <color name="ab_group_6">#22D3EE</color>
+</resources>

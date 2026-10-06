@@ -1,0 +1,74 @@
+package com.autoball.core.model
+
+/**
+ * 20 类动作类型（需求 2.3）。
+ *
+ * required：该动作必须拥有的能力，缺失则无法执行（触发降级或中止）。
+ * optional：有则更好，缺失不影响基本语义。
+ */
+enum class ActionType(
+    val label: String,
+    val required: Set<Cap>,
+    val optional: Set<Cap> = emptySet()
+) {
+    CLICK("点击", setOf(Cap.POINTER_CLICK)),
+    SWIPE("滑动", setOf(Cap.SINGLE_SWIPE)),
+    CLICK_IMAGE("点击图片", setOf(Cap.POINTER_CLICK, Cap.SCREENSHOT), setOf(Cap.IMAGE_MATCH)),
+    CLICK_TEXT("点击文字", setOf(Cap.POINTER_CLICK), setOf(Cap.NODE_QUERY, Cap.OCR)),
+    CLICK_COLOR("点击颜色", setOf(Cap.POINTER_CLICK, Cap.SCREENSHOT)),
+    CLICK_NODE("点击节点", setOf(Cap.NODE_QUERY, Cap.POINTER_CLICK)),
+    AI_CLICK("AI点击", setOf(Cap.POINTER_CLICK, Cap.SCREENSHOT), setOf(Cap.AI_VISION)),
+    GESTURE_SINGLE("单指手势", setOf(Cap.SINGLE_SWIPE)),
+    GESTURE_MULTI("多指手势", setOf(Cap.MULTI_POINTER)),
+    KEY("按键", setOf(Cap.SYSTEM_KEY)),
+    OPEN_APP("打开应用", setOf(Cap.APP_START)),
+    OPEN_URL("打开链接", setOf(Cap.APP_START)),
+    INPUT_TEXT("输入内容", setOf(Cap.TEXT_INPUT), setOf(Cap.NODE_QUERY)),
+    RECOGNIZE_SCREEN("识别屏幕", setOf(Cap.SCREENSHOT), setOf(Cap.OCR, Cap.NODE_QUERY)),
+    RUN_SCRIPT("运行脚本", emptySet()),
+    RUN_ACTIONS("运行多个动作", emptySet()),
+    CONTROL_FLOW("控制运行", emptySet()),
+    TOAST("系统提示", setOf(Cap.UI_FEEDBACK)),
+    SET_VAR("设置变量", emptySet()),
+    RUN_JS("运行JS代码", emptySet());
+
+    /** 该类型表单需要展示哪些字段组（驱动 UI 动态表单） */
+    val fieldGroups: Set<FieldGroup>
+        get() = when (this) {
+            CLICK, CLICK_IMAGE, CLICK_TEXT, CLICK_COLOR, CLICK_NODE, AI_CLICK ->
+                setOf(FieldGroup.POINT, FieldGroup.PRESS_DURATION)
+            SWIPE, GESTURE_SINGLE, GESTURE_MULTI ->
+                setOf(FieldGroup.POINT, FieldGroup.POINT_END, FieldGroup.DURATION)
+            INPUT_TEXT -> setOf(FieldGroup.TEXT)
+            OPEN_APP -> setOf(FieldGroup.PACKAGE)
+            OPEN_URL -> setOf(FieldGroup.URL)
+            KEY -> setOf(FieldGroup.KEYCODE)
+            RUN_SCRIPT -> setOf(FieldGroup.SCRIPT_REF)
+            RUN_JS -> setOf(FieldGroup.CODE)
+            RUN_ACTIONS -> setOf(FieldGroup.SUB_ACTIONS)
+            CONTROL_FLOW -> setOf(FieldGroup.CONTROL)
+            SET_VAR -> setOf(FieldGroup.VAR_NAME, FieldGroup.TEXT)
+            RECOGNIZE_SCREEN -> setOf(FieldGroup.TEXT)
+            TOAST -> setOf(FieldGroup.TEXT)
+        }
+
+    companion object {
+        fun fromName(name: String?): ActionType? =
+            if (name == null) null else values().firstOrNull { it.name == name }
+
+        fun labels(): Array<String> = values().map { it.label }.toTypedArray()
+    }
+}
+
+enum class FieldGroup {
+    POINT, POINT_END, PRESS_DURATION, DURATION, TEXT, PACKAGE, URL,
+    KEYCODE, SCRIPT_REF, CODE, SUB_ACTIONS, CONTROL, VAR_NAME
+}
+
+/** 控制运行动作的子类型 */
+enum class ControlOp(val label: String) {
+    PAUSE("暂停"), RESUME("继续"), STOP("停止"), GOTO("跳转"), WAIT("等待")
+}
+
+/** 滑动/手势的插值方式（导出与压缩用） */
+enum class Interpolation { LINEAR, EASE_IN_OUT, NONE }

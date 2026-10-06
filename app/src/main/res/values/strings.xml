@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">AutoBall</string>
+    <string name="accessibility_label">AutoBall 自动化辅助</string>
+    <string name="accessibility_description">AutoBall 使用无障碍服务完成你手动开始、可随时停止的本地自动操作（点击、滑动、手势与脚本执行）。不读取你的输入内容，不上传任何数据。</string>
+
+    <string name="tab_script">脚本</string>
+    <string name="tab_edit">编辑</string>
+    <string name="tab_create">制作</string>
+    <string name="tab_market">市场</string>
+    <string name="tab_mine">我的</string>
+
+    <string name="perm_accessibility">无障碍服务</string>
+    <string name="perm_overlay">悬浮窗</string>
+    <string name="perm_shizuku">Shizuku 授权</string>
+    <string name="perm_notify">通知</string>
+
+    <string name="run">运行</string>
+    <string name="stop">停止</string>
+    <string name="record">录制</string>
+    <string name="add_action">添加动作</string>
+    <string name="empty_script">脚本为空，请先添加一个动作</string>
+
+    <string name="create_record">开始录制</string>
+    <string name="create_record_sub">照着点一遍，动作自动记下来</string>
+    <string name="create_blank">空白脚本</string>
+    <string name="create_blank_sub">从添加第一个动作开始</string>
+    <string name="create_import">导入分享码</string>
+    <string name="create_import_sub">粘贴一串码，整脚本到手</string>
+
+    <string name="backend_accessibility">无障碍</string>
+    <string name="backend_shizuku">Shizuku</string>
+    <string name="backend_auto">自动择优</string>
+
+    <string name="notify_channel_name">执行状态</string>
+    <string name="notify_running">正在运行：%1$s</string>
+    <string name="notify_idle">悬浮球待命中</string>
+
+    <string name="compliance_notice">AutoBall 仅在本地运行，所有动作由你手动启动并可随时停止。请勿用于任何第三方平台的刷量、代打或外挂场景。</string>
+</resources>

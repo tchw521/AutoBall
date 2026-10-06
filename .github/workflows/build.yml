@@ -1,0 +1,76 @@
+name: Build AutoBall
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      use_rhino:
+        description: '无 NDK 时改用纯 Java 引擎逃生口'
+        type: boolean
+        default: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        engine: [ quickjs, rhino ]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install NDK (quickjs matrix only)
+        if: matrix.engine == 'quickjs'
+        run: |
+          yes | sdkmanager --install "ndk;26.3.11579264" "cmake;3.22.1" || true
+          yes | sdkmanager --licenses || true
+
+      - name: Fetch QuickJS source (best-effort)
+        if: matrix.engine == 'quickjs'
+        run: bash scripts/fetch_quickjs.sh
+
+      - name: Fetch Shizuku AIDL (best-effort)
+        run: bash scripts/fetch_shizuku_aidl.sh
+
+      - name: Grant execute permission
+        run: chmod +x ./gradlew
+
+      - name: Build Debug APK
+        run: |
+          if [ "${{ matrix.engine }}" = "rhino" ]; then
+            ./gradlew :app:assembleDebug -PuseRhino=true --stacktrace
+          else
+            ./gradlew :app:assembleDebug --stacktrace
+          fi
+
+      - name: Build Release APK
+        run: |
+          if [ "${{ matrix.engine }}" = "rhino" ]; then
+            ./gradlew :app:assembleRelease -PuseRhino=true --stacktrace
+          else
+            ./gradlew :app:assembleRelease --stacktrace
+          fi
+
+      - name: Report APK size
+        run: |
+          find app/build/outputs/apk -name '*.apk' -exec ls -lh {} \;
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: autoball-${{ matrix.engine }}-apk
+          path: app/build/outputs/apk/**/*.apk
+          if-no-files-found: warn
