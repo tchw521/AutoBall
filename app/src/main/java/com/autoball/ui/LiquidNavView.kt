@@ -84,7 +84,10 @@ class LiquidNavView(
                 setTextColor(Theme.textSec())
                 // 只有用户真实点击才通知外部。
                 // 放进 select() 会形成 select → showPage → select 无限递归，启动即栈溢出。
-                setOnClickListener { if (i != 2) { select(i); onSelect(i) } }
+                setOnClickListener {
+                    if (i == 2) onCreate()
+                    else { select(i); onSelect(i) }
+                }
             }
             tabs.add(tv)
             row.addView(tv, LinearLayout.LayoutParams(0,

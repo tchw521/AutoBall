@@ -19,8 +19,8 @@ android {
         applicationId = "com.autoball"
         minSdk = 24
         targetSdk = 34
-        versionCode = 9
-        versionName = "0.6.0"
+        versionCode = 10
+        versionName = "0.6.1"
 
         buildConfigField("boolean", "USE_RHINO", useRhino.toString())
         buildConfigField("String", "BUILD_ENGINE", "\"${if (useRhino) "rhino" else "quickjs"}\"")
@@ -32,10 +32,14 @@ android {
         resourceConfigurations += listOf("zh", "en")
     }
 
+    // 统一签名：debug 与 release 共用同一 keystore。
+    // 否则 debug 用本机默认 debug key、release 用另一把（或干脆不签名），
+    // 两个包签名不一致 → 装不上 / 无法覆盖升级。
     signingConfigs {
-        if (keystoreProps.getProperty("storeFile") != null) {
-            create("release") {
-                storeFile = file(keystoreProps.getProperty("storeFile")!!)
+        val sf = keystoreProps.getProperty("storeFile")
+        if (sf != null && rootProject.file(sf).exists()) {
+            create("unified") {
+                storeFile = rootProject.file(sf)
                 storePassword = keystoreProps.getProperty("storePassword") ?: ""
                 keyAlias = keystoreProps.getProperty("keyAlias") ?: ""
                 keyPassword = keystoreProps.getProperty("keyPassword") ?: ""
@@ -47,13 +51,17 @@ android {
         getByName("debug") {
             isMinifyEnabled = false
             isShrinkResources = false
+            // 与 release 同签，可直接互相覆盖安装
+            if (signingConfigs.findByName("unified") != null) {
+                signingConfig = signingConfigs.getByName("unified")
+            }
         }
         getByName("release") {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            if (signingConfigs.findByName("release") != null) {
-                signingConfig = signingConfigs.getByName("release")
+            if (signingConfigs.findByName("unified") != null) {
+                signingConfig = signingConfigs.getByName("unified")
             }
         }
     }

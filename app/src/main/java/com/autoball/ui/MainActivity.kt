@@ -129,7 +129,8 @@ class MainActivity : Activity(), PageHost {
         showPage(1)
     }
 
-    override fun openCreate() { showPage(2) }
+    /** 中央四角星：直接弹出「新建脚本」底部半框，不再跳一个空页面 */
+    override fun openCreate() { NewScriptSheet.show(this, this) }
 
     override fun refreshAll() {
         for (i in pages.indices) pages[i] = null

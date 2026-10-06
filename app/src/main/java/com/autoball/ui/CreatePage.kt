@@ -1,11 +1,7 @@
 package com.autoball.ui
 
 import android.app.Activity
-import android.app.AlertDialog
 import android.content.Context
-import android.content.Intent
-import android.os.Handler
-import android.os.Looper
 import android.graphics.Color
 import android.graphics.Typeface
 import android.view.Gravity
@@ -23,9 +19,12 @@ import com.autoball.float.FloatManager
 import com.autoball.service.FloatingService
 
 /**
- * 制作页：开始录制 / 空白脚本 / 导入分享码（复刻自动精灵的三入口）。
+ * 制作页：仅保留引导空态。
  *
- * 录制中断或结束时弹出「放弃 / 继续录制 / 保存」三选一（需求 2.2）。
+ * 全部入口（开始录制 / 空白脚本 / 导入分享码）已收进底部导航中央按钮弹出的
+ * 「新建脚本」底部半框，不再占用一个页面。
+ *
+ * Companion 中保留录制会话的启动与结束逻辑，供半框入口调用。
  */
 class CreatePage(context: Context, private val host: PageHost) : FrameLayout(context) {
 
@@ -112,42 +111,13 @@ class CreatePage(context: Context, private val host: PageHost) : FrameLayout(con
     }
 
     init {
+        // 制作页不再承载内容：所有入口都收进底部导航中央按钮弹出的「新建脚本」半框。
+        // 这里只留一个引导空态，避免误以为功能缺失。
         val root = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
-
         root.addView(Ui.pageTitle(context, "制作"))
-
-        val panel = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            background = Theme.bubble(context, Theme.card(), 24f)
-            setPadding(Display.dpInt(context, 16f), Display.dpInt(context, 16f),
-                Display.dpInt(context, 16f), Display.dpInt(context, 16f))
-            val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT)
-            lp.setMargins(Display.dpInt(context, 16f), Display.dpInt(context, 8f),
-                Display.dpInt(context, 16f), Display.dpInt(context, 8f))
-            layoutParams = lp
-        }
-
-        // 三个入口：统一改为底部半框（v3：占屏 1/4，右上圆形关闭）
-        panel.addView(Ui.sheetOption(context, "●", Theme.ok(), "新建脚本",
-            "开始录制 / 空白脚本 / 导入分享码") { showNewSheet() })
-        panel.addView(Ui.sheetOption(context, "▶", Theme.pri2(), "继续上次录制",
-            if (controller != null) "有进行中的录制" else "暂无进行中的录制") {
-            controller?.let { RecordOverlay.show(context as? Activity ?: return@sheetOption, it) }
-        })
-        root.addView(panel)
-
-        // 合规提示：本地、明确授权、可停止
-        root.addView(TextView(context).apply {
-            text = context.getString(com.autoball.R.string.compliance_notice)
-            textSize = 11f
-            setTextColor(Theme.textSec())
-            setPadding(Display.dpInt(context, 20f), Display.dpInt(context, 16f),
-                Display.dpInt(context, 20f), 0)
-        })
-
-        addView(root, FrameLayout.LayoutParams(
-            FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+        root.addView(Ui.note(context,
+            "点击底部中央的四角星按钮，即可选择「开始录制 / 空白脚本 / 导入分享码」。"))
+        addView(root)
     }
 
     private fun option(title: String, sub: String, color: String, onClick: () -> Unit): View {
@@ -179,57 +149,4 @@ class CreatePage(context: Context, private val host: PageHost) : FrameLayout(con
         return row
     }
 
-    /** 「新建脚本」底部半框（v3：图标 + 标题 + 说明三入口，右上角圆形关闭） */
-    fun showNewSheet() {
-        val act = context as? Activity ?: return
-        val box = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
-        box.addView(Ui.sheetOption(act, "●", Theme.ok(), "开始录制",
-            "照着点一遍，动作自动记下来") {
-            host.startRecording()
-        })
-        box.addView(Ui.sheetOption(act, "＋", Theme.pri(), "空白脚本",
-            "从添加第一个动作开始") {
-            val s = Script.blank("未命名脚本")
-            AB.store.save(s)
-            host.openScript(s)
-        })
-        box.addView(Ui.sheetOption(act, "🔗", Theme.pri2(), "导入分享码",
-            "粘贴一串码，整脚本到手") {
-            showImportDialog()
-        })
-        Ui.sheet(act, "新建脚本").body(box).show()
-    }
-
-    private fun showImportDialog() {
-        val act = context as? Activity ?: return
-        val et = android.widget.EditText(act).apply {
-            hint = "粘贴分享码"
-            setTextColor(Theme.textPri())
-            setHintTextColor(Theme.textSec())
-            setSingleLine(false)
-            minLines = 3
-            gravity = Gravity.TOP
-        }
-        val box = LinearLayout(act).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(Display.dpInt(context, 20f), Display.dpInt(context, 12f),
-                Display.dpInt(context, 20f), 0)
-            addView(et)
-        }
-        AlertDialog.Builder(act).setTitle("导入分享码").setView(box)
-            .setPositiveButton("导入") { d, _ ->
-                val code = et.text.toString().trim()
-                val s = ShareCode.decode(code)
-                if (s == null) {
-                    AB.log.error("import", "分享码格式不正确或已损坏")
-                } else {
-                    s.id = Script.newId()
-                    AB.store.save(s)
-                    AB.log.info("import", "已导入「${s.name}」")
-                    host.openScript(s)
-                }
-                d.dismiss()
-            }
-            .setNegativeButton("取消", null).show()
-    }
 }
