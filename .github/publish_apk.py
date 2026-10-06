@@ -18,6 +18,33 @@ BRANCH = os.environ.get("APK_BRANCH", "apk")
 API = "https://api.github.com"
 
 
+LOG = []
+
+
+def log(*a):
+    msg = " ".join(str(x) for x in a)
+    print(msg)
+    LOG.append(msg)
+
+
+def note():
+    """把本次执行结果写回 Issue，便于无日志下载权限时诊断"""
+    title = "[apk-log] %s" % os.environ.get("ENGINE", "unknown")
+    body = "```\n" + "\n".join(LOG[-200:]) + "\n```"
+    issues = api("GET", "/repos/%s/issues?state=all&labels=apk-log&per_page=20" % REPO)
+    exists = None
+    if isinstance(issues, list):
+        for it in issues:
+            if it.get("title") == title:
+                exists = it
+                break
+    if exists:
+        api("PATCH", "/repos/%s/issues/%s" % (REPO, exists["number"]), {"body": body})
+    else:
+        api("POST", "/repos/%s/issues" % REPO,
+            {"title": title, "body": body, "labels": ["apk-log"]})
+
+
 def api(method, path, data=None):
     body = json.dumps(data).encode() if data is not None else None
     r = urllib.request.Request(API + path, data=body, method=method)
@@ -30,10 +57,10 @@ def api(method, path, data=None):
             t = x.read().decode()
             return json.loads(t) if t else {}
     except urllib.error.HTTPError as e:
-        print("api error:", method, path, e.code, e.read().decode()[:300])
+        log("api error:", method, path, e.code, e.read().decode()[:300])
         return {}
     except Exception as e:
-        print("api error:", method, path, e)
+        log("api error:", method, path, e)
         return {}
 
 
@@ -57,15 +84,16 @@ def main():
             blob = api("POST", "/repos/%s/git/blobs" % REPO,
                        {"content": b64, "encoding": "base64"})
             if not blob.get("sha"):
-                print("blob 创建失败", p)
+                log("blob 创建失败", p)
                 continue
             rel = "v%s/%s/%s" % (version, engine, f)
             tree.append({"path": rel, "mode": "100644", "type": "blob", "sha": blob["sha"]})
             found.append((rel, size))
-            print("已入库", rel, size)
+            log("已入库", rel, size)
 
     if not tree:
-        print("没有 APK 可入库")
+        log("没有 APK 可入库，root=%s，目录内容=%s" % (root, os.listdir(root) if os.path.isdir(root) else "不存在"))
+        note()
         return
 
     # 追加一份清单，方便外部按图索骥
@@ -88,23 +116,27 @@ def main():
         payload["base_tree"] = parent
     t = api("POST", "/repos/%s/git/trees" % REPO, payload)
     if not t.get("sha"):
-        print("tree 创建失败")
+        log("tree 创建失败")
+        note()
         sys.exit(3)
     c = api("POST", "/repos/%s/git/commits" % REPO, {
         "message": "apk: v%s %s 构建产物" % (version, engine),
         "tree": t["sha"],
         "parents": [parent] if parent else []})
     if not c.get("sha"):
-        print("commit 创建失败")
+        log("commit 创建失败")
+        note()
         return
     if parent:
         r = api("PATCH", "/repos/%s/git/refs/heads/%s" % (REPO, BRANCH), {"sha": c["sha"]})
     else:
         r = api("POST", "/repos/%s/git/refs" % REPO,
                 {"ref": "refs/heads/%s" % BRANCH, "sha": c["sha"]})
-    print("已提交到分支", BRANCH, c["sha"], json.dumps(r)[:200])
+    log("已提交到分支", BRANCH, c["sha"], json.dumps(r)[:200])
     if not r.get("object", {}).get("sha"):
+        note()
         sys.exit(2)
+    note()
 
 
 if __name__ == "__main__":
