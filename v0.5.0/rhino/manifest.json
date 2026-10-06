@@ -1,0 +1,14 @@
+{
+  "version": "0.5.0",
+  "engine": "rhino",
+  "files": [
+    {
+      "path": "v0.5.0/rhino/app-debug.apk",
+      "size": 1789045
+    },
+    {
+      "path": "v0.5.0/rhino/app-release-unsigned.apk",
+      "size": 611810
+    }
+  ]
+}
