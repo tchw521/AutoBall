@@ -62,14 +62,22 @@ jobs:
           gradle-version: 8.5
 
       - name: Build Debug APK
+        id: dbg
+        continue-on-error: true
         run: |
+          rm -f debug-failed
           if [ "${{ matrix.engine }}" = "rhino" ]; then
-            gradle :app:assembleDebug -PuseRhino=true --stacktrace > build-debug.log 2>&1 || echo "DEBUG_BUILD_FAILED"
+            gradle :app:assembleDebug -PuseRhino=true --stacktrace > build-debug.log 2>&1
           else
-            gradle :app:assembleDebug --stacktrace > build-debug.log 2>&1 || echo "DEBUG_BUILD_FAILED"
+            gradle :app:assembleDebug --stacktrace > build-debug.log 2>&1
           fi
+          code=$?
           echo "---- 末尾日志 ----"
-          tail -n 60 build-debug.log || true
+          tail -n 80 build-debug.log || true
+          echo "---- APK 产物 ----"
+          find app/build/outputs/apk -name '*.apk' -exec ls -lh {} \; || true
+          if [ $code -ne 0 ]; then touch debug-failed; echo "DEBUG_BUILD_FAILED"; fi
+          exit 0
 
       - name: 回传构建诊断（Issue）
         if: always()
@@ -79,14 +87,22 @@ jobs:
           python3 .github/ci_report.py build-debug.log "debug-${{ matrix.engine }}" || echo "report failed"
 
       - name: Build Release APK
+        id: rel
+        continue-on-error: true
         run: |
+          rm -f release-failed
           if [ "${{ matrix.engine }}" = "rhino" ]; then
-            gradle :app:assembleRelease -PuseRhino=true --stacktrace > build-release.log 2>&1 || echo "RELEASE_BUILD_FAILED"
+            gradle :app:assembleRelease -PuseRhino=true --stacktrace > build-release.log 2>&1
           else
-            gradle :app:assembleRelease --stacktrace > build-release.log 2>&1 || echo "RELEASE_BUILD_FAILED"
+            gradle :app:assembleRelease --stacktrace > build-release.log 2>&1
           fi
+          code=$?
           echo "---- 末尾日志 ----"
-          tail -n 60 build-release.log || true
+          tail -n 80 build-release.log || true
+          echo "---- APK 产物 ----"
+          find app/build/outputs/apk -name '*.apk' -exec ls -lh {} \; || true
+          if [ $code -ne 0 ]; then touch release-failed; echo "RELEASE_BUILD_FAILED"; fi
+          exit 0
 
       - name: 回传 Release 诊断（Issue）
         if: always()
@@ -94,6 +110,17 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           python3 .github/ci_report.py build-release.log "release-${{ matrix.engine }}" || echo "report failed"
+
+      - name: 校验构建结果
+        if: always()
+        run: |
+          if [ -f debug-failed ] || [ -f release-failed ]; then
+            echo "构建失败：见上方的末尾日志"
+            exit 1
+          fi
+          n=$(find app/build/outputs/apk -name '*.apk' | wc -l)
+          echo "APK 数量: $n"
+          if [ "$n" -eq 0 ]; then echo "未产出 APK"; exit 1; fi
 
       - name: Report APK size
         if: always()
