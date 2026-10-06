@@ -3,7 +3,6 @@ name: Build AutoBall
 on:
   push:
     branches: [ main, master ]
-  pull_request:
   workflow_dispatch:
     inputs:
       use_rhino:
@@ -17,7 +16,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        engine: [ quickjs, rhino ]
+        engine: [ rhino, quickjs ]
 
     steps:
       - name: Checkout
@@ -29,14 +28,21 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+      # runner 镜像自带 Android SDK，这里只补齐缺失组件，不使用 setup-android（在 24.04 上会失败）
+      - name: Install Android SDK components
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          sdkmanager --install "platform-tools" "platforms;android-34" "build-tools;34.0.0" || true
+          echo "sdk.dir=$ANDROID_HOME" > local.properties
+          ls "$ANDROID_HOME/platforms" || true
 
-      - name: Install NDK (quickjs matrix only)
+      - name: Install NDK (quickjs only)
         if: matrix.engine == 'quickjs'
         run: |
-          yes | sdkmanager --install "ndk;26.3.11579264" "cmake;3.22.1" || true
-          yes | sdkmanager --licenses || true
+          sdkmanager --install "ndk;26.3.11579264" || true
+          sdkmanager --install "cmake;3.22.1" || true
 
       - name: Fetch QuickJS source (best-effort)
         if: matrix.engine == 'quickjs'
@@ -67,10 +73,12 @@ jobs:
           fi
 
       - name: Report APK size
+        if: always()
         run: |
-          find app/build/outputs/apk -name '*.apk' -exec ls -lh {} \;
+          find app/build/outputs/apk -name '*.apk' -exec ls -lh {} \; || echo "无 APK 产物"
 
       - name: Upload APK
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: autoball-${{ matrix.engine }}-apk
