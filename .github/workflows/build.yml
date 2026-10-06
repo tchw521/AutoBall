@@ -127,6 +127,13 @@ jobs:
         run: |
           find app/build/outputs/apk -name '*.apk' -exec ls -lh {} \; || echo "无 APK 产物"
 
+      - name: 入库 APK 到 apk 分支
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ENGINE: ${{ matrix.engine }}
+        run: python3 .github/publish_apk.py app/build/outputs/apk || echo "apk 入库失败"
+
       - name: Upload APK
         if: always()
         uses: actions/upload-artifact@v4
