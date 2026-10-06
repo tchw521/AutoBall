@@ -1,6 +1,7 @@
 package com.autoball.ui
 
 import android.app.Activity
+import android.app.AlertDialog
 import android.view.Gravity
 import android.widget.LinearLayout
 import com.autoball.AB
