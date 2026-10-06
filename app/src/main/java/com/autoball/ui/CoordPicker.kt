@@ -222,6 +222,15 @@ object CoordPicker {
             arrows.addView(arrow("▶", 1, 0))
             bar.addView(arrows)
 
+            val tipTv = TextView(context).apply {
+                text = "滑动屏幕来调节位置"
+                textSize = 11.5f
+                setTextColor(Theme.textSec())
+                gravity = Gravity.CENTER
+                setPadding(0, 0, 0, Display.dpInt(context, 6f))
+            }
+            bar.addView(tipTv, 0)
+
             posText = TextView(context).apply {
                 textSize = 13f
                 setTypeface(null, android.graphics.Typeface.BOLD)
@@ -251,7 +260,7 @@ object CoordPicker {
         }
 
         private fun syncText() {
-            posText.text = "${pxPct.toInt()}% , ${pyPct.toInt()}%"
+            posText.text = "当前位置：(${pxPct.toInt()}%, ${pyPct.toInt()}%)"
         }
 
         private fun confirm() {

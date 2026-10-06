@@ -47,15 +47,13 @@ class LiquidNavView(
         fun heightDp(): Float = BAR_DP + OVER_DP
     }
 
-    private val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val innerTop = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val innerBottom = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val flowPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val gel = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val sheen = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val rim = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val spec = Paint(Paint.ANTI_ALIAS_FLAG)
 
     private val tabs = ArrayList<TextView>()
     private var selected = 0
-    @Volatile
-    private var flowT = -1f
 
     init {
         setWillNotDraw(false)
@@ -123,61 +121,67 @@ class LiquidNavView(
     override fun onDraw(canvas: Canvas) {
         val w = width.toFloat()
         val h = height.toFloat()
-        if (w <= 0f || h <= 0f) return   // 尺寸为 0 时 LinearGradient 会抛异常
+        if (w <= 0f || h <= 0f) return   // 尺寸为 0 时 Shader 会抛异常
 
         val barH = Display.dp(context, BAR_DP)
         val top = h - barH
         val r = Display.dp(context, 32f)
         val dark = Theme.isDark()
 
-        // 凝胶底：竖向三段 + 半透明
-        bgPaint.shader = LinearGradient(0f, top, 0f, h,
+        // ---- 液态玻璃：静置的折射质感，不做任何循环动画 ----
+        // 玻璃基底：竖向三段，上缘更亮（模拟环境光在弧面顶部的聚集）
+        gel.shader = LinearGradient(0f, top, 0f, h,
             intArrayOf(
-                Color.parseColor(if (dark) "#33FFFFFF" else "#EBFFFFFF"),
-                Color.parseColor(if (dark) "#12FFFFFF" else "#A8FFFFFF"),
-                Color.parseColor(if (dark) "#08FFFFFF" else "#8CFFFFFF")),
-            floatArrayOf(0f, 0.38f, 1f), Shader.TileMode.CLAMP)
-        canvas.drawRoundRect(0f, top, w, h, r, r, bgPaint)
-        bgPaint.shader = null
-        bgPaint.color = Color.parseColor(if (dark) "#991E173A" else "#59FFFFFF")
-        canvas.drawRoundRect(0f, top, w, h, r, r, bgPaint)
+                Color.parseColor(if (dark) "#3DFFFFFF" else "#F2FFFFFF"),
+                Color.parseColor(if (dark) "#14FFFFFF" else "#BFFFFFFF"),
+                Color.parseColor(if (dark) "#0AFFFFFF" else "#A3FFFFFF")),
+            floatArrayOf(0f, 0.42f, 1f), Shader.TileMode.CLAMP)
+        canvas.drawRoundRect(0f, top, w, h, r, r, gel)
+        gel.shader = null
 
-        // 顶部流光：缓慢横向扫过（v3 gelflow）
-        if (flowT < 0f) { flowT = 0f; startFlow() }
-        val seg = w * 0.6f
-        val cx = -seg + flowT * (w + seg)
-        flowPaint.shader = LinearGradient(cx, 0f, cx + seg, 0f,
-            intArrayOf(Color.TRANSPARENT,
-                Color.parseColor(if (dark) "#38FFFFFF" else "#66FFFFFF"),
-                Color.TRANSPARENT),
-            floatArrayOf(0f, 0.5f, 1f), Shader.TileMode.CLAMP)
+        // 玻璃本体色（含不透明度，模拟磨砂玻璃后的底色）
+        gel.color = Color.parseColor(if (dark) "#B31E173A" else "#8CFFFFFF")
+        canvas.drawRoundRect(0f, top, w, h, r, r, gel)
+
+        // 左侧大面积环境反射（静置高光，不移动）
         canvas.save()
         canvas.clipRect(0f, top, w, h)
-        canvas.translate(cx, 0f)
-        canvas.drawRect(0f, top, seg, h, flowPaint)
+        sheen.shader = android.graphics.RadialGradient(
+            w * 0.18f, top - h * 0.18f, h * 1.35f,
+            Color.parseColor(if (dark) "#26FFFFFF" else "#8FFFFFFF"),
+            Color.TRANSPARENT, Shader.TileMode.CLAMP)
+        canvas.drawRoundRect(0f, top, w, h, r, r, sheen)
+        sheen.shader = null
+        // 右下蓝调环境光
+        sheen.shader = android.graphics.RadialGradient(
+            w * 1.02f, h * 1.12f, h * 0.95f,
+            Color.parseColor(if (dark) "#1F2F6BFF" else "#33FFFFFF"),
+            Color.TRANSPARENT, Shader.TileMode.CLAMP)
+        canvas.drawRoundRect(0f, top, w, h, r, r, sheen)
+        sheen.shader = null
         canvas.restore()
-        flowPaint.shader = null
 
-        // 内高光：顶 inset 1px 白 30%，底 inset 1px 白 8%
-        innerTop.color = Color.parseColor(if (dark) "#4DFFFFFF" else "#FFFFFFFF")
-        canvas.drawLine(Display.dp(context, 16f), top + Display.dp(context, 1f),
-            w - Display.dp(context, 16f), top + Display.dp(context, 1f), innerTop)
-        innerBottom.color = Color.parseColor(if (dark) "#14FFFFFF" else "#0F110C2E")
-        canvas.drawLine(Display.dp(context, 16f), h - Display.dp(context, 1f),
-            w - Display.dp(context, 16f), h - Display.dp(context, 1f), innerBottom)
+        // 玻璃边缘：上缘 1px 亮线（折射），下缘极淡（厚度）
+        rim.strokeWidth = Display.dp(context, 1f)
+        rim.color = Color.parseColor(if (dark) "#5CFFFFFF" else "#FFFFFFFF")
+        canvas.drawLine(Display.dp(context, 18f), top + Display.dp(context, 1f),
+            w - Display.dp(context, 18f), top + Display.dp(context, 1f), rim)
+        rim.color = Color.parseColor(if (dark) "#14FFFFFF" else "#14000000")
+        canvas.drawLine(Display.dp(context, 18f), h - Display.dp(context, 1f),
+            w - Display.dp(context, 18f), h - Display.dp(context, 1f), rim)
+
+        // 顶部一道极细的镜面反射点（静置，非扫光）
+        spec.strokeWidth = Display.dp(context, 1.2f)
+        spec.shader = LinearGradient(0f, 0f, w, 0f,
+            intArrayOf(Color.TRANSPARENT,
+                Color.parseColor(if (dark) "#3DFFFFFF" else "#B3FFFFFF"),
+                Color.TRANSPARENT),
+            floatArrayOf(0f, 0.5f, 1f), Shader.TileMode.CLAMP)
+        canvas.drawLine(Display.dp(context, 14f), top + Display.dp(context, 2f),
+            w - Display.dp(context, 14f), top + Display.dp(context, 2f), spec)
+        spec.shader = null
 
         super.onDraw(canvas)
-    }
-
-    private fun startFlow() {
-        post(object : Runnable {
-            override fun run() {
-                flowT += 0.012f
-                if (flowT > 1f) flowT = -0.2f
-                invalidate()
-                postDelayed(this, 32L)
-            }
-        })
     }
 
     /** 中央 56dp 天蓝渐变四角星 */

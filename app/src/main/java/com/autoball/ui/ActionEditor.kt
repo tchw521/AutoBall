@@ -270,6 +270,14 @@ object ActionEditor {
         box.addView(condEd)
         box.addView(help(ctx, "运行条件"))
 
+        // 监听动作：七个触发阶段（v3 listenDlg）
+        val listenRow = Ui.row(ctx, "监听动作",
+            if (a.listeners.isEmpty()) "未设置" else "已设置 ${a.listeners.size} 项",
+            "在指定时机（如条件失败后、运行结束后）自动执行一个附加动作") {
+            ListenerDialog.show(ctx, a) { }
+        }
+        box.addView(listenRow)
+
         dialog = Ui.dialog(ctx, a.type.label)
             .body(box)
             .positive("保存") {

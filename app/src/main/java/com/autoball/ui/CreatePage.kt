@@ -114,14 +114,7 @@ class CreatePage(context: Context, private val host: PageHost) : FrameLayout(con
     init {
         val root = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
 
-        root.addView(TextView(context).apply {
-            text = "制作"
-            textSize = 20f
-            setTypeface(null, Typeface.BOLD)
-            setTextColor(Theme.textPri())
-            setPadding(Display.dpInt(context, 16f), Display.dpInt(context, 18f),
-                Display.dpInt(context, 16f), Display.dpInt(context, 10f))
-        })
+        root.addView(Ui.pageTitle(context, "制作"))
 
         val panel = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
@@ -135,23 +128,12 @@ class CreatePage(context: Context, private val host: PageHost) : FrameLayout(con
             layoutParams = lp
         }
 
-        panel.addView(TextView(context).apply {
-            text = "新建脚本"
-            textSize = 16f
-            setTextColor(Theme.textPri())
-            setPadding(0, 0, 0, Display.dpInt(context, 12f))
-        })
-
-        panel.addView(option("开始录制", "照着点一遍，动作自动记下来", "#4A9EFF") {
-            host.startRecording()
-        })
-        panel.addView(option("空白脚本", "从添加第一个动作开始", "#7C3AED") {
-            val s = Script.blank("未命名脚本")
-            AB.store.save(s)
-            host.openScript(s)
-        })
-        panel.addView(option("导入分享码", "粘贴一串码，整脚本到手", "#35D08A") {
-            showImportDialog()
+        // 三个入口：统一改为底部半框（v3：占屏 1/4，右上圆形关闭）
+        panel.addView(Ui.sheetOption(context, "●", Theme.ok(), "新建脚本",
+            "开始录制 / 空白脚本 / 导入分享码") { showNewSheet() })
+        panel.addView(Ui.sheetOption(context, "▶", Theme.pri2(), "继续上次录制",
+            if (controller != null) "有进行中的录制" else "暂无进行中的录制") {
+            controller?.let { RecordOverlay.show(context as? Activity ?: return@sheetOption, it) }
         })
         root.addView(panel)
 
@@ -195,6 +177,27 @@ class CreatePage(context: Context, private val host: PageHost) : FrameLayout(con
         })
         row.addView(mid)
         return row
+    }
+
+    /** 「新建脚本」底部半框（v3：图标 + 标题 + 说明三入口，右上角圆形关闭） */
+    fun showNewSheet() {
+        val act = context as? Activity ?: return
+        val box = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
+        box.addView(Ui.sheetOption(act, "●", Theme.ok(), "开始录制",
+            "照着点一遍，动作自动记下来") {
+            host.startRecording()
+        })
+        box.addView(Ui.sheetOption(act, "＋", Theme.pri(), "空白脚本",
+            "从添加第一个动作开始") {
+            val s = Script.blank("未命名脚本")
+            AB.store.save(s)
+            host.openScript(s)
+        })
+        box.addView(Ui.sheetOption(act, "🔗", Theme.pri2(), "导入分享码",
+            "粘贴一串码，整脚本到手") {
+            showImportDialog()
+        })
+        Ui.sheet(act, "新建脚本").body(box).show()
     }
 
     private fun showImportDialog() {

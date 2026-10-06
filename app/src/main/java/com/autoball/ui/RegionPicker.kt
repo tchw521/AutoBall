@@ -191,6 +191,15 @@ object RegionPicker {
                 (background as android.graphics.drawable.GradientDrawable).cornerRadius =
                     Display.dp(context, 16f)
             }
+            val tipTv = TextView(context).apply {
+                text = "滑动屏幕来调节位置"
+                textSize = 11.5f
+                setTextColor(Theme.textSec())
+                gravity = Gravity.CENTER
+                setPadding(0, 0, 0, Display.dpInt(context, 6f))
+            }
+            bar.addView(tipTv, 0)
+
             sizeText = TextView(context).apply {
                 textSize = 12.5f
                 setTypeface(null, android.graphics.Typeface.BOLD)
@@ -204,7 +213,22 @@ object RegionPicker {
             cancel.setOnClickListener { close() }
             btns.addView(cancel, LinearLayout.LayoutParams(0,
                 Display.dpInt(context, 39f), 1f).apply {
-                marginEnd = Display.dpInt(context, 9f)
+                marginEnd = Display.dpInt(context, 6f)
+            })
+            // 「选择区域」：重置为默认框，便于重新框选（v3 三按钮布局）
+            val reset = Ui.button(context, "选择区域", false)
+            reset.setOnClickListener {
+                lx = 30f; ty = 30f; rw = 40f; rh = 40f
+                invalidate()
+                val w = width.toFloat(); val h = height.toFloat()
+                if (w > 0f && h > 0f) {
+                    sizeText.text = "%d × %d px".format((rw / 100f * w).toInt(), (rh / 100f * h).toInt())
+                }
+                Ui.toast(context, "已重置取景框，拖动框体或四角调整")
+            }
+            btns.addView(reset, LinearLayout.LayoutParams(0,
+                Display.dpInt(context, 39f), 1f).apply {
+                marginEnd = Display.dpInt(context, 6f)
             })
             val ok = Ui.button(context, "确定", true)
             ok.setOnClickListener { confirm() }

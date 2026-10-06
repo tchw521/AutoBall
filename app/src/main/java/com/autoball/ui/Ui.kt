@@ -31,6 +31,166 @@ import com.autoball.core.util.Display
 object Ui {
 
     // =====================================================================
+    // 底部半框（v3：占屏幕 1/4，右上角圆形关闭，用于「新建脚本」这类入口选择）
+    // =====================================================================
+
+    class SheetBuilder(private val ctx: Context, private val title: String) {
+
+        private var body: View? = null
+        private var closeable = true
+
+        fun body(v: View) = apply { body = v }
+        /** 是否显示右上角圆形关闭按钮 */
+        fun closeable(v: Boolean) = apply { closeable = v }
+
+        fun show(): AlertDialog {
+            val wrap = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
+
+            // ---- 头：标题 + 右上角圆形关闭 ----
+            val head = FrameLayout(ctx).apply {
+                setPadding(Display.dpInt(ctx, 18f), Display.dpInt(ctx, 16f),
+                    Display.dpInt(ctx, 14f), Display.dpInt(ctx, 8f))
+            }
+            head.addView(TextView(ctx).apply {
+                text = title
+                textSize = 15f
+                setTypeface(null, Typeface.BOLD)
+                setTextColor(Theme.textPri())
+                layoutParams = FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.WRAP_CONTENT,
+                    FrameLayout.LayoutParams.WRAP_CONTENT).apply {
+                    gravity = Gravity.START or Gravity.CENTER_VERTICAL
+                }
+            })
+            var dlg: AlertDialog? = null
+            if (closeable) {
+                head.addView(TextView(ctx).apply {
+                    text = "✕"
+                    textSize = 13f
+                    setTypeface(null, Typeface.BOLD)
+                    setTextColor(Theme.textSec())
+                    gravity = Gravity.CENTER
+                    background = Theme.bubbleRound(ctx, Theme.surface2())
+                    val s = Display.dpInt(ctx, 28f)
+                    layoutParams = FrameLayout.LayoutParams(s, s).apply {
+                        gravity = Gravity.END or Gravity.CENTER_VERTICAL
+                    }
+                    setOnClickListener { dlg?.dismiss() }
+                })
+            }
+            wrap.addView(head)
+
+            // ---- 体 ----
+            body?.let {
+                wrap.addView(it, LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT))
+            }
+
+            // 底部安全留白
+            wrap.addView(View(ctx).apply {
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    Display.dpInt(ctx, 10f))
+            })
+
+            // 玻璃面板底：顶部圆角 24dp
+            val gd = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
+                if (Theme.isDark()) intArrayOf(Theme.surface(), Theme.bg1())
+                else intArrayOf(Color.WHITE, Theme.surface2())).apply {
+                cornerRadii = floatArrayOf(
+                    Display.dp(ctx, 24f), Display.dp(ctx, 24f),
+                    Display.dp(ctx, 24f), Display.dp(ctx, 24f),
+                    0f, 0f, 0f, 0f)
+                setStroke(1, Theme.line())
+            }
+            wrap.background = gd
+
+            dlg = AlertDialog.Builder(ctx).setView(wrap).setCancelable(true).create()
+            dlg.show()
+            dlg.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+            dlg.window?.setGravity(Gravity.BOTTOM)
+            dlg.window?.setLayout(ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT)
+            // 入场：底部滑入 + 轻微上浮
+            wrap.translationY = Display.dp(ctx, 48f)
+            wrap.alpha = 0f
+            wrap.animate().translationY(0f).alpha(1f).setDuration(260).start()
+            return dlg
+        }
+    }
+
+    fun sheet(ctx: Context, title: String): SheetBuilder = SheetBuilder(ctx, title)
+
+    /** 页面大标题（各页统一，消除散落的硬编码 TextView） */
+    fun pageTitle(ctx: Context, text: String): TextView = TextView(ctx).apply {
+        this.text = text
+        textSize = 20f
+        setTypeface(null, Typeface.BOLD)
+        setTextColor(Theme.textPri())
+        setPadding(Display.dpInt(ctx, 16f), Display.dpInt(ctx, 18f),
+            Display.dpInt(ctx, 16f), Display.dpInt(ctx, 10f))
+    }
+
+    /** 弹窗内的多行说明块 */
+    fun note(ctx: Context, text: String): TextView = TextView(ctx).apply {
+        this.text = text
+        textSize = 11.5f
+        setTextColor(Theme.textSec())
+        setLineSpacing(Display.dp(ctx, 3f), 1.4f)
+        setPadding(Display.dpInt(ctx, 14f), Display.dpInt(ctx, 10f),
+            Display.dpInt(ctx, 14f), Display.dpInt(ctx, 10f))
+    }
+
+    /** 底部半框的圆形图标选项行：图标 + 标题 + 说明（v3「新建脚本」三入口） */
+    fun sheetOption(ctx: Context, icon: String, iconColor: Int, title: String,
+                    desc: String, onClick: () -> Unit): LinearLayout {
+        val row = LinearLayout(ctx).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT)
+            lp.setMargins(Display.dpInt(ctx, 14f), Display.dpInt(ctx, 4f),
+                Display.dpInt(ctx, 14f), Display.dpInt(ctx, 4f))
+            layoutParams = lp
+            setPadding(Display.dpInt(ctx, 12f), Display.dpInt(ctx, 11f),
+                Display.dpInt(ctx, 12f), Display.dpInt(ctx, 11f))
+            background = Theme.bubble(ctx, Theme.surface2(), 14f)
+            setOnClickListener { onClick() }
+        }
+        row.addView(TextView(ctx).apply {
+            text = icon
+            textSize = 16f
+            setTextColor(Color.WHITE)
+            gravity = Gravity.CENTER
+            background = GradientDrawable(Theme.orientation(),
+                intArrayOf(iconColor, iconColor)).apply {
+                shape = GradientDrawable.OVAL
+            }
+            layoutParams = LinearLayout.LayoutParams(Display.dpInt(ctx, 36f),
+                Display.dpInt(ctx, 36f))
+        })
+        val col = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
+        col.addView(TextView(ctx).apply {
+            text = title
+            textSize = 14f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(Theme.textPri())
+        })
+        col.addView(TextView(ctx).apply {
+            text = desc
+            textSize = 11f
+            setTextColor(Theme.textSec())
+            setPadding(0, Display.dpInt(ctx, 2f), 0, 0)
+        })
+        row.addView(col, LinearLayout.LayoutParams(0,
+            LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+            marginStart = Display.dpInt(ctx, 12f)
+        })
+        return row
+    }
+
+    // =====================================================================
     // 弹窗（v3：302dp 宽、18dp 圆角、头/体/底三段、scale .94→1 弹性入场）
     // =====================================================================
 
@@ -311,7 +471,10 @@ object Ui {
                 setOnClickListener { tip(this, "说明", help) }
             })
         }
-        onClick?.let { cb -> r.setOnClickListener { cb() } }
+        onClick?.let { cb ->
+            r.setOnClickListener { cb() }
+            r.isClickable = true
+        }
         return r
     }
 

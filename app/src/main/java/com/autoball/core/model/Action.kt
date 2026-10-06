@@ -7,6 +7,7 @@ import org.json.JSONObject
 data class Pt(val x: Float, val y: Float) {
     fun toJson(): JSONObject = JSONObject().put("x", x.toDouble()).put("y", y.toDouble())
     companion object {
+
         fun fromJson(o: JSONObject?): Pt? =
             if (o == null) null else Pt(o.optDouble("x").toFloat(), o.optDouble("y").toFloat())
         fun listFromJson(arr: JSONArray?): List<Pt> {
@@ -113,6 +114,9 @@ class Action {
     // ---- 路由 ----
     var backendHint: String? = null  // null=自动择优；"accessibility" / "shizuku"
 
+    /** 监听动作：触发阶段名 -> 该时机要执行的动作（v3 listenDlg，7 个阶段） */
+    var listeners: MutableMap<String, Action> = LinkedHashMap()
+
     var unknown: JSONObject? = null
 
     fun requiredCaps(): Set<Cap> = type.required
@@ -130,6 +134,11 @@ class Action {
         put("repeatIntervalMs", repeatIntervalMs)
         condition?.let { put("condition", it) }
         put("timeoutMs", timeoutMs)
+        if (listeners.isNotEmpty()) {
+            val lobj = JSONObject()
+            listeners.forEach { (k, v) -> lobj.put(k, v.toJson()) }
+            put("listeners", lobj)
+        }
 
         put("x", x.toDouble()); put("y", y.toDouble())
         put("x2", x2.toDouble()); put("y2", y2.toDouble())
@@ -178,6 +187,18 @@ class Action {
     companion object {
         fun newId(): String = "a" + System.nanoTime().toString(36)
 
+        private fun listenersFromJson(o: JSONObject?): MutableMap<String, Action> {
+            val out = LinkedHashMap<String, Action>()
+            val lobj = o ?: return out
+            val it = lobj.keys()
+            while (it.hasNext()) {
+                val k = it.next()
+                val sub = lobj.optJSONObject(k) ?: continue
+                out[k] = fromJson(sub)
+            }
+            return out
+        }
+
         fun fromJson(o: JSONObject): Action {
             val a = Action()
             a.id = o.optStringOrNull("id") ?: newId()
@@ -190,6 +211,7 @@ class Action {
             a.repeatIntervalMs = o.optLong("repeatIntervalMs", 0)
             a.condition = o.optStringOrNull("condition")
             a.timeoutMs = o.optLong("timeoutMs", 10_000)
+            a.listeners = listenersFromJson(o.optJSONObject("listeners"))
 
             a.x = o.optDouble("x").toFloat()
             a.y = o.optDouble("y").toFloat()
