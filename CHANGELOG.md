@@ -4,6 +4,29 @@
 
 ---
 
+## v0.4.1 · 修复启动闪退
+
+**修复（启动即闪退）**
+
+- **根因：底部导航构造时触发无限递归**。`LiquidNavView` 初始化调用 `select(0)`，
+  `select()` 回传 `onSelect()` → `MainActivity.showPage()` → 又调 `nav.select()`，
+  形成 `select → showPage → select` 的死循环，**启动瞬间 StackOverflowError**。
+  修复：把「视觉选中」与「通知外部」拆开，只有用户真实点击才回调页面切换。
+- 前台服务类型：manifest 声明了 `foregroundServiceType="specialUse"`，但调用的是两参
+  `startForeground()`，Android 14 会抛 `SecurityException`。已移除类型声明（悬浮层与
+  本地执行不属于任何特殊类型），并对 `startForeground` 加保护，失败只记录不连带崩进程。
+- 通知图标：原使用彩色渐变 `ic_launcher` 作为通知小图标，部分 ROM 会因
+  "Bad notification posted" 崩溃。新增纯 alpha 白色图标 `ic_stat` 专供通知使用。
+- `onDraw` 在尺寸为 0 时创建 `LinearGradient` 会抛 `IllegalArgumentException`，已加保护。
+
+**新增**
+
+- 全局崩溃捕获：堆栈写入私有目录，下次启动主动弹窗展示并支持复制（真机无 logcat 时唯一可用手段）
+- 「我的」页新增崩溃日志入口
+- 页面构建失败降级为错误页，不再拖垮整个 App
+
+---
+
 ## v0.4.0 · 多分辨率适配 + 构建稳定化
 
 **新增**

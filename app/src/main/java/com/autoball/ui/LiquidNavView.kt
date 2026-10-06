@@ -58,7 +58,10 @@ class LiquidNavView(
                 textSize = 11f
                 gravity = Gravity.CENTER
                 setTextColor(Theme.textSec())
-                setOnClickListener { if (i != 2) select(i) }
+                // 只有用户真实点击才通知外部。
+                // 若把回调放进 select()，会形成 select → showPage → select 的无限递归，
+                // 启动时直接 StackOverflowError 闪退。
+                setOnClickListener { if (i != 2) { select(i); onSelect(i) } }
             }
             tabs.add(tv)
             row.addView(tv, lp)
@@ -91,12 +94,15 @@ class LiquidNavView(
             tv.visibility = if (i == 2) View.INVISIBLE else View.VISIBLE
         }
         invalidate()
-        if (index != 2) onSelect(index)
+        // 不再在此回调 onSelect：select() 同时被外部同步调用（如 showPage），
+        // 回传会形成递归。页面切换统一由用户点击驱动。
     }
 
     override fun onDraw(canvas: Canvas) {
         val w = width.toFloat()
         val h = height.toFloat()
+        // 尺寸为 0 时 LinearGradient 会抛 IllegalArgumentException，直接跳过
+        if (w <= 0f || h <= 0f) return
         val r = Display.dp(context, 26f)
 
         // 半透明凝胶底
@@ -140,6 +146,7 @@ class LiquidNavView(
 
         override fun onDraw(canvas: Canvas) {
             val w = width.toFloat(); val h = height.toFloat()
+            if (w <= 0f || h <= 0f) return
             val cx = w / 2f; val cy = h / 2f
             val r = (if (w < h) w else h) / 2f
 

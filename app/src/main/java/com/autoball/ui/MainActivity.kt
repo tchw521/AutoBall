@@ -11,6 +11,7 @@ import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import com.autoball.R
+import com.autoball.core.log.CrashGuard
 import com.autoball.core.model.Script
 import com.autoball.core.util.Display
 import com.autoball.float.FloatManager
@@ -42,6 +43,8 @@ class MainActivity : Activity(), PageHost {
         }
         buildUi()
         showPage(0)
+        // 上次闪退的堆栈：真机拿不到 logcat，这里主动展示便于定位
+        CrashGuard.showIfSaved(this)
     }
 
     private fun buildUi() {
@@ -81,10 +84,27 @@ class MainActivity : Activity(), PageHost {
     override fun showPage(index: Int) {
         current = index
         content.removeAllViews()
-        val v = pages[index] ?: createPage(index).also { pages[index] = it }
+        // 单个页面构建失败不应拖垮整个 App：降级为可读的错误页，
+        // 配合 CrashGuard 已落盘的堆栈定位问题
+        val v = runCatching {
+            pages[index] ?: createPage(index).also { pages[index] = it }
+        }.getOrElse { err ->
+            pages[index] = null
+            CrashGuard.report("构建页面 $index 失败", err)
+            errorPage(index, err)
+        }
         content.addView(v, FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
         nav.select(index)
+    }
+
+    private fun errorPage(index: Int, err: Throwable): View = TextView(this).apply {
+        text = "「${LiquidNavView.TABS[index]}」页加载失败\n\n${err.javaClass.simpleName}: " +
+            (err.message ?: "") + "\n\n详情已写入崩溃日志，可在「我的」页查看或重启后弹窗查看。"
+        textSize = 13f
+        setTextColor(0xFFFF6B7A.toInt())
+        gravity = Gravity.CENTER
+        setPadding(48, 48, 48, 48)
     }
 
     private fun createPage(index: Int): View = when (index) {

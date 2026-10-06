@@ -43,7 +43,10 @@ class FloatingService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        startForeground(NOTIFY_ID, buildNotification(getString(R.string.notify_idle)))
+        // 前台服务启动失败不应连带把进程拖崩：失败时记录原因并继续以普通服务运行
+        runCatching {
+            startForeground(NOTIFY_ID, buildNotification(getString(R.string.notify_idle)))
+        }.onFailure { AB.log.error("service", "前台通知启动失败：${it.message}") }
         AB.log.info("service", "悬浮服务已启动")
     }
 
@@ -105,15 +108,28 @@ class FloatingService : Service() {
             @Suppress("DEPRECATION")
             Notification.Builder(this)
         }
-        return b.setSmallIcon(R.drawable.ic_launcher)
+        return b.setSmallIcon(R.drawable.ic_stat)
             .setContentTitle("AutoBall")
             .setContentText(text)
             .setContentIntent(pi)
             .setOngoing(true)
-            .addAction(Notification.Action.Builder(
-                android.graphics.drawable.Icon.createWithResource(this, R.drawable.ic_launcher),
-                "停止", stopPi).build())
+            .addAction(buildStopAction(stopPi))
             .build()
+    }
+
+    /**
+     * 通知动作图标：Android 6.0（API 23）才有 Icon，低版本用旧的 int 资源重载。
+     * 图标必须是纯 alpha 图，否则部分 ROM 会因 "Bad notification posted" 崩溃。
+     */
+    private fun buildStopAction(stopPi: PendingIntent): Notification.Action {
+        @Suppress("DEPRECATION")
+        return if (Build.VERSION.SDK_INT >= 23) {
+            Notification.Action.Builder(
+                android.graphics.drawable.Icon.createWithResource(this, R.drawable.ic_stat),
+                "停止", stopPi).build()
+        } else {
+            Notification.Action.Builder(R.drawable.ic_stat, "停止", stopPi).build()
+        }
     }
 
     /** 供外部刷新通知文案 */

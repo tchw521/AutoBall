@@ -23,6 +23,7 @@ import com.autoball.float.FloatManager
 import com.autoball.service.AutoBallAccessibilityService
 import com.autoball.service.FloatingService
 import com.autoball.service.ShizukuClient
+import com.autoball.core.log.CrashGuard
 import com.autoball.ui.ChangeLog
 
 /**
@@ -208,9 +209,32 @@ class MinePage(context: Context, private val host: PageHost) : FrameLayout(conte
         box.addView(section("关于"))
         box.addView(infoRow("脚本引擎", JsEngines.engineName() + if (JsEngines.engineName() == "quickjs")
             "（未内置源码时自动降级为纯 Java 引擎）" else ""))
-        box.addView(infoRow("版本", "v0.4.0"))
-        box.addView(infoRow("更新日志", "查看") .apply {
-            setOnClickListener { ChangeLog.show(context as Activity) }
+        box.addView(infoRow("版本", "v0.4.1"))
+        box.addView(infoRow("更新日志", "查看").apply {
+            setOnClickListener { ChangeLog.show(context as? Activity ?: return@setOnClickListener) }
+        })
+
+        // 崩溃日志：真机拿不到 logcat，这里可直接查看与复制
+        box.addView(infoRow("崩溃日志",
+            if (CrashGuard.hasSavedCrash()) "有记录 · 点击查看" else "无记录").apply {
+            setOnClickListener {
+                val act = context as? Activity ?: return@setOnClickListener
+                android.app.AlertDialog.Builder(act)
+                    .setTitle("崩溃日志")
+                    .setMessage(if (CrashGuard.hasSavedCrash()) CrashGuard.savedCrash().take(6000)
+                                else "暂无崩溃记录")
+                    .setPositiveButton("复制并清空") { d, _ ->
+                        runCatching {
+                            val cm = act.getSystemService(Context.CLIPBOARD_SERVICE)
+                                    as? android.content.ClipboardManager
+                            cm?.setPrimaryClip(android.content.ClipData.newPlainText(
+                                "autoball-crash", CrashGuard.savedCrash()))
+                        }
+                        CrashGuard.clear(); rebuild(); d.dismiss()
+                    }
+                    .setNegativeButton("关闭", null)
+                    .show()
+            }
         })
 
         box.addView(TextView(context).apply {

@@ -5,6 +5,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.os.Build
 import com.autoball.core.backend.BackendRouter
+import com.autoball.core.log.CrashGuard
 import com.autoball.core.log.RunLog
 import com.autoball.core.store.ScriptStore
 import com.autoball.service.ShizukuClient
@@ -14,6 +15,7 @@ class App : Application() {
     override fun onCreate() {
         super.onCreate()
         appRef = this
+        CrashGuard.install()
         createChannels()
         // Shizuku 握手走后台线程：失败不影响主线程启动，也不影响无障碍后端
         Thread {

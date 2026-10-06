@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 通知小图标：必须是纯 alpha 图形（白色），彩色图标在部分 ROM 上会导致
+     "Bad notification posted" 崩溃。这里用白色实心圆，由系统按 alpha 着色。 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="oval">
+    <solid android:color="#FFFFFFFF" />
+    <size android:width="24dp" android:height="24dp" />
+</shape>
