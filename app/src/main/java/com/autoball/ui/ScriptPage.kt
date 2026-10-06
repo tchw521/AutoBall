@@ -435,7 +435,8 @@ class ScriptPage(
                             renderList(); updateMulti()
                         }
                         3 -> {
-                            sel.forEach { AB.store.delete(it) }
+                            AB.store.delete(sel.toSet())
+                            AB.log.info("script", "已删除 ${sel.size} 个脚本")
                             exitMulti(); renderList()
                         }
                     }
