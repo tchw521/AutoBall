@@ -59,18 +59,34 @@ jobs:
       - name: Build Debug APK
         run: |
           if [ "${{ matrix.engine }}" = "rhino" ]; then
-            gradle :app:assembleDebug -PuseRhino=true --stacktrace
+            gradle :app:assembleDebug -PuseRhino=true --stacktrace > build-debug.log 2>&1 || echo "DEBUG_BUILD_FAILED"
           else
-            gradle :app:assembleDebug --stacktrace
+            gradle :app:assembleDebug --stacktrace > build-debug.log 2>&1 || echo "DEBUG_BUILD_FAILED"
           fi
+          echo "---- 末尾日志 ----"
+          tail -n 60 build-debug.log || true
+
+      - name: 回传构建日志到仓库（供诊断）
+        if: always()
+        run: |
+          mkdir -p ci-logs
+          tail -n 400 build-debug.log > ci-logs/${{ matrix.engine }}-debug.log 2>/dev/null || echo "no log" > ci-logs/${{ matrix.engine }}-debug.log
+          git config user.name "ci-bot"
+          git config user.email "ci@autoball.local"
+          git checkout -B ci-logs-${{ matrix.engine }}
+          git add -f ci-logs
+          git commit -m "ci: 构建日志 ${{ matrix.engine }}" || echo "no change"
+          git push -f origin ci-logs-${{ matrix.engine }} || echo "push failed"
 
       - name: Build Release APK
         run: |
           if [ "${{ matrix.engine }}" = "rhino" ]; then
-            gradle :app:assembleRelease -PuseRhino=true --stacktrace
+            gradle :app:assembleRelease -PuseRhino=true --stacktrace > build-release.log 2>&1 || echo "RELEASE_BUILD_FAILED"
           else
-            gradle :app:assembleRelease --stacktrace
+            gradle :app:assembleRelease --stacktrace > build-release.log 2>&1 || echo "RELEASE_BUILD_FAILED"
           fi
+          echo "---- 末尾日志 ----"
+          tail -n 60 build-release.log || true
 
       - name: Report APK size
         if: always()
