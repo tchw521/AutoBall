@@ -272,7 +272,7 @@ class ScriptPage(
     }
 
     private fun filtered(): List<Script> {
-        var l = AB.store.all()
+        var l: List<Script> = AB.store.all()
         val gs = groups()
         if (groupIdx >= gs.size) groupIdx = 0
         if (groupIdx > 0) {
@@ -429,7 +429,11 @@ class ScriptPage(
                 layoutParams = lp
                 setOnClickListener {
                     when (i) {
-                        0 -> { sel.addAll(AB.store.all().map { it.id }); renderList(); updateMulti() }
+                        0 -> {
+                            sel.clear()
+                            filtered().forEach { sel.add(it.id) }
+                            renderList(); updateMulti()
+                        }
                         3 -> {
                             sel.forEach { AB.store.delete(it) }
                             exitMulti(); renderList()
