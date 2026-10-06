@@ -15,6 +15,8 @@ import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
+import android.widget.FrameLayout
+import android.widget.LinearLayout
 import android.widget.TextView
 import com.autoball.core.util.Display
 import com.autoball.float.FloatManager
@@ -180,7 +182,7 @@ object CoordPicker {
             buildBar()
         }
 
-        private val posText: TextView
+        private lateinit var posText: TextView
 
         private fun buildBar() {
             val bar = LinearLayout(context).apply {
