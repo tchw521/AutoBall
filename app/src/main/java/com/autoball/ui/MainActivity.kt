@@ -76,7 +76,8 @@ class MainActivity : Activity(), PageHost {
         }
         nav = LiquidNavView(this, { idx -> showPage(idx) }, { openCreate() }).apply {
             layoutParams = FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT, Display.dpInt(this@MainActivity, 62f))
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                Display.dpInt(this@MainActivity, LiquidNavView.heightDp()))
         }
         navWrap.addView(nav)
         root.addView(navWrap)

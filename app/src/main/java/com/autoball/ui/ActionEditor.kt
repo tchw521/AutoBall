@@ -45,6 +45,8 @@ object ActionEditor {
 
     private fun showFormDialog(activity: Activity, a: Action, onSave: (Action) -> Unit) {
         val ctx = activity
+        // 先声明再赋值：拾取坐标时需要把本弹窗临时隐藏，让出屏幕给目标应用
+        var dialog: AlertDialog? = null
         val box = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(Display.dpInt(ctx, 18f), Display.dpInt(ctx, 12f),
@@ -76,7 +78,7 @@ object ActionEditor {
             row.addView(xEd, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
             row.addView(yEd, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
             box.addView(row)
-            box.addView(pickButton(ctx, "拾取坐标") { px, py ->
+            box.addView(pickButton(ctx, { dialog }, "拾取坐标") { px, py ->
                 xEd?.setText(px.toInt().toString())
                 yEd?.setText(py.toInt().toString())
             })
@@ -91,7 +93,7 @@ object ActionEditor {
             row.addView(x2Ed, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
             row.addView(y2Ed, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
             box.addView(row)
-            box.addView(pickButton(ctx, "拾取结束点") { px, py ->
+            box.addView(pickButton(ctx, { dialog }, "拾取结束点") { px, py ->
                 x2Ed?.setText(px.toInt().toString())
                 y2Ed?.setText(py.toInt().toString())
             })
@@ -272,6 +274,7 @@ object ActionEditor {
             }
             .setNegativeButton("取消", null)
             .create()
+        dialog = d
         d.show()
         sizeDialog(activity, d, 252f)
     }
@@ -317,7 +320,9 @@ object ActionEditor {
         setHintTextColor(Theme.textSec())
     }
 
-    private fun pickButton(ctx: Activity, text: String, onPicked: (Float, Float) -> Unit): TextView =
+    /** hostProvider 用延迟取值：调用时弹窗尚未 create，直接传引用会拿到 null */
+    private fun pickButton(ctx: Activity, hostProvider: () -> android.app.Dialog?, text: String,
+                           onPicked: (Float, Float) -> Unit): TextView =
         TextView(ctx).apply {
             this.text = text
             textSize = 12f
@@ -330,6 +335,6 @@ object ActionEditor {
                 LinearLayout.LayoutParams.WRAP_CONTENT)
             lp.setMargins(0, Display.dpInt(ctx, 6f), 0, 0)
             layoutParams = lp
-            setOnClickListener { CoordPicker.pick(ctx, ctx, onPicked) }
+            setOnClickListener { CoordPicker.pick(ctx, hostProvider(), onPicked) }
         }
 }

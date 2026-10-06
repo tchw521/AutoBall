@@ -3,6 +3,9 @@ package com.autoball.ui
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.Context
+import android.content.Intent
+import android.os.Handler
+import android.os.Looper
 import android.graphics.Color
 import android.graphics.Typeface
 import android.view.Gravity
@@ -45,6 +48,16 @@ class CreatePage(context: Context, private val host: PageHost) : FrameLayout(con
                     if (state == RecordController.State.RECORDING) {
                         FloatManager.setRecording(true)
                         RecordOverlay.show(activity, c)
+                        // 录的是别的应用上的操作：开始录制后让出屏幕回到桌面，
+                        // 用户再打开目标应用，否则采集层只能采到本应用自己的界面
+                        Handler(Looper.getMainLooper()).postDelayed({
+                            runCatching {
+                                activity.startActivity(Intent(Intent.ACTION_MAIN).apply {
+                                    addCategory(Intent.CATEGORY_HOME)
+                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                })
+                            }
+                        }, 120)
                     } else if (state == RecordController.State.IDLE) {
                         FloatManager.setRecording(false)
                         RecordOverlay.hide()

@@ -3,6 +3,7 @@ package com.autoball.ui
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.Context
+import android.content.DialogInterface
 import android.content.Intent
 import android.graphics.Canvas
 import android.graphics.Color
@@ -20,17 +21,20 @@ import com.autoball.core.util.Display
 import com.autoball.float.FloatManager
 
 /**
- * 坐标拾取：把本应用收到后台、隐藏自身所有悬浮层，只留一个可拖动的小准星，
- * 用户把它拖到目标应用 / 桌面上的真实位置，点击即取回坐标。
+ * 跨应用坐标拾取。
  *
- * 与旧实现的区别：旧版用全屏透明层盖住整个屏幕，只能在本应用内取点，
- * 看不到也点不到其他应用；新版为准星浮标，不遮挡目标界面，可跨应用取真实坐标。
+ * 流程：隐藏本应用的一切窗口（弹窗 / 悬浮球 / 悬浮窗）→ 回到桌面
+ * → 用户可自由打开任意应用或停在桌面 → 拖动准星瞄准真实位置 → 点一下取回坐标
+ * → 自动回到本应用并恢复弹窗与悬浮球。
  *
- * 已知限制：坐标为绝对像素，换机型/转屏会偏移（v0.4 起动作流已支持自动缩放）。
+ * 与旧实现的根本区别：旧版用全屏透明层在本应用内取点，既看不到也点不到其他应用；
+ * 新版是一枚不遮挡目标界面的可拖动准星，取的是其他应用 / 桌面上的**真实坐标**。
+ *
+ * 已知限制：坐标为绝对像素；动作流自 v0.4 起支持按屏幕签名自动缩放。
  */
 object CoordPicker {
 
-    private const val STAR_DP = 68f
+    private const val STAR_DP = 76f
 
     @Volatile
     private var view: PickerView? = null
@@ -41,31 +45,48 @@ object CoordPicker {
     @Volatile
     private var hostActivity: Activity? = null
     @Volatile
+    private var hostDialog: android.app.Dialog? = null
+    @Volatile
     private var wasBallShown = false
 
     private val handler = Handler(Looper.getMainLooper())
 
-    /**
-     * @param activity 调用方界面，拾取时会被收到后台以露出目标应用
-     * @param onPicked 取回的是屏幕绝对像素坐标
-     */
     fun pick(context: Context, activity: Activity?, onPicked: (Float, Float) -> Unit) {
+        pick(context, activity, null, onPicked)
+    }
+
+    /**
+     * @param hostDialog 触发拾取的弹窗（可为空）；拾取期间隐藏，取完自动恢复
+     */
+    fun pick(context: Context, activity: Activity?, hostDialog: android.app.Dialog?,
+             onPicked: (Float, Float) -> Unit) {
         if (!Display.canDrawOverlay(context)) {
             Display.openOverlaySettings(context)
             return
         }
-        close()
+        removeViewNow()
+
         val ctx = context.applicationContext
         val manager = ctx.getSystemService(Context.WINDOW_SERVICE) as WindowManager
 
-        // 拾取期间隐藏本应用的一切遮挡：悬浮球、悬浮窗，以及界面本身
+        // 1) 隐藏本应用的一切遮挡
         wasBallShown = FloatManager.isBallShown()
         FloatManager.hideAll()
         hostActivity = activity
-        handler.postDelayed({
-            runCatching { activity?.moveTaskToBack(true) }
-        }, 120)
+        this.hostDialog = hostDialog
+        runCatching { hostDialog?.hide() }
 
+        // 2) 真正离开本应用：回桌面，之后用户可打开任意目标应用
+        handler.postDelayed({
+            runCatching {
+                activity?.startActivity(Intent(Intent.ACTION_MAIN).apply {
+                    addCategory(Intent.CATEGORY_HOME)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                })
+            }
+        }, 80)
+
+        // 3) 只留一枚可拖动准星
         val size = Display.dpInt(ctx, STAR_DP)
         val sw = Display.screenSize(ctx)
         val p = WindowManager.LayoutParams(
@@ -91,28 +112,38 @@ object CoordPicker {
         params = p
     }
 
+    /** 完成取点：移除准星，恢复弹窗与悬浮球，并把本应用带回前台 */
     fun close() {
         handler.post {
-            val v = view ?: return@post
-            runCatching { wm?.removeView(v) }
-            view = null
-            wm = null
-            params = null
-            // 回到本应用并恢复悬浮球
+            removeViewNow()
             val act = hostActivity
             hostActivity = null
+            val dlg = hostDialog
+            hostDialog = null
+
             if (act != null) {
                 runCatching {
                     act.startActivity(Intent(act, MainActivity::class.java)
                         .addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or
-                                Intent.FLAG_ACTIVITY_SINGLE_TOP))
+                                Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                                Intent.FLAG_ACTIVITY_NEW_TASK))
                 }
             }
+            runCatching { dlg?.show() }
             if (wasBallShown) {
-                val app = act ?: runCatching { com.autoball.App.get() }.getOrNull() ?: return@post
-                FloatManager.showBall(app)
+                val app = act ?: runCatching { com.autoball.App.get() }.getOrNull()
+                if (app != null) FloatManager.showBall(app)
             }
         }
+    }
+
+    /** 仅移除准星，不动宿主状态 */
+    private fun removeViewNow() {
+        val v = view
+        if (v != null) runCatching { wm?.removeView(v) }
+        view = null
+        wm = null
+        params = null
     }
 
     private fun overlayType(): Int =
@@ -172,7 +203,7 @@ object CoordPicker {
             val w = width.toFloat(); val h = height.toFloat()
             if (w <= 0f || h <= 0f) return
             val c = w / 2f
-            // 半透明底盘，保证在其他应用上也能看清
+            // 底部小面板：显示坐标，保证在任何应用上都看得清
             canvas.drawRoundRect(0f, h - Display.dp(context, 18f), w, h,
                 Display.dp(context, 8f), Display.dp(context, 8f), panel)
             canvas.drawText("${cx.toInt()} , ${cy.toInt()}", w / 2f,
@@ -189,7 +220,8 @@ object CoordPicker {
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     downX = event.rawX; downY = event.rawY
-                    startX = paramsX(); startY = paramsY()
+                    startX = CoordPicker.params?.x ?: 0
+                    startY = CoordPicker.params?.y ?: 0
                     moved = false
                     return true
                 }
@@ -209,7 +241,6 @@ object CoordPicker {
                 }
                 MotionEvent.ACTION_UP -> {
                     if (!moved) {
-                        // 点击准星 = 确认
                         syncCenter()
                         onPicked(cx, cy)
                     }
@@ -218,9 +249,6 @@ object CoordPicker {
             }
             return true
         }
-
-        private fun paramsX(): Int = CoordPicker.params?.x ?: 0
-        private fun paramsY(): Int = CoordPicker.params?.y ?: 0
 
         private fun syncCenter() {
             val p = CoordPicker.params ?: return
@@ -232,7 +260,7 @@ object CoordPicker {
 
     /** 提示文案，用于表单「?」帮助 */
     fun helpText(field: String): String = when (field) {
-        "点击位置" -> "屏幕绝对像素坐标。点「拾取」后本应用会收到后台，拖动准星到目标位置再点一下即可取回真实坐标。"
+        "点击位置" -> "屏幕绝对像素坐标。点「拾取」后本应用会让出屏幕回到桌面，拖动准星到任意应用或桌面的目标位置，点一下准星即取回真实坐标。"
         "按下时间" -> "按下到抬起的时长，单位毫秒。≥350ms 会被识别为长按。"
         "滑动时长" -> "滑动过程持续时间，越短越快。建议 300ms 左右。"
         "文本内容" -> "输入到当前焦点输入框的文本；无障碍后端要求输入框已获得焦点。"
