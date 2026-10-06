@@ -116,7 +116,7 @@ class MinePage(context: Context, private val host: PageHost) : FrameLayout(conte
             action = "去开启"
         ) { Display.openOverlaySettings(context) })
 
-        box.addView(switchRow("悬浮球常驻", AB.store.getBool("float_persistent", true)) { v ->
+        box.addView(Ui.switchRow(context, "悬浮球常驻", AB.store.getBool("float_persistent", true)) { v ->
             AB.store.putBool("float_persistent", v)
             if (v) FloatingService.start(context) else FloatManager.hideAll()
         })
@@ -209,7 +209,7 @@ class MinePage(context: Context, private val host: PageHost) : FrameLayout(conte
         box.addView(section("关于"))
         box.addView(infoRow("脚本引擎", JsEngines.engineName() + if (JsEngines.engineName() == "quickjs")
             "（未内置源码时自动降级为纯 Java 引擎）" else ""))
-        box.addView(infoRow("版本", "v0.4.3"))
+        box.addView(infoRow("版本", "v0.5.0"))
         box.addView(infoRow("更新日志", "查看").apply {
             setOnClickListener { ChangeLog.show(context as? Activity ?: return@setOnClickListener) }
         })

@@ -27,20 +27,43 @@ object ActionEditor {
         showTypeDialog(activity, existing, onSave)
     }
 
+    /** 动作宫格（v3：宫格选类型，比长列表更好点） */
     private fun showTypeDialog(activity: Activity, existing: Action?, onSave: (Action) -> Unit) {
+        val ctx = activity
         val names = ActionType.values()
-        val labels = names.map { it.label }.toTypedArray()
-        val d = AlertDialog.Builder(activity)
-            .setTitle(if (existing == null) "选择动作类型" else "修改动作类型")
-            .setItems(labels) { _, w ->
-                val a = existing ?: Action().apply { id = Action.newId() }
-                a.type = names[w]
-                showFormDialog(activity, a, onSave)
+        val grid = android.widget.GridLayout(ctx).apply {
+            columnCount = 3
+            setPadding(Display.dpInt(ctx, 4f), Display.dpInt(ctx, 4f),
+                Display.dpInt(ctx, 4f), Display.dpInt(ctx, 4f))
+        }
+        for (i in names.indices) {
+            val cell = TextView(ctx).apply {
+                text = names[i].label
+                textSize = 12.5f
+                setTypeface(null, android.graphics.Typeface.BOLD)
+                setTextColor(Theme.textPri())
+                gravity = Gravity.CENTER
+                background = Theme.bubble(ctx, Theme.surface2(), 12f)
+                setPadding(Display.dpInt(ctx, 6f), Display.dpInt(ctx, 12f),
+                    Display.dpInt(ctx, 6f), Display.dpInt(ctx, 12f))
+                setOnClickListener {
+                    val a = existing ?: Action().apply { id = Action.newId() }
+                    a.type = names[i]
+                    showFormDialog(activity, a, onSave)
+                }
             }
-            .setNegativeButton("取消", null)
-            .create()
-        d.show()
-        sizeDialog(activity, d, 240f)
+            val lp = android.widget.GridLayout.LayoutParams().apply {
+                width = 0
+                columnSpec = android.widget.GridLayout.spec(i % 3, 1f)
+                setMargins(Display.dpInt(ctx, 4f), Display.dpInt(ctx, 4f),
+                    Display.dpInt(ctx, 4f), Display.dpInt(ctx, 4f))
+            }
+            grid.addView(cell, lp)
+        }
+        Ui.dialog(ctx, if (existing == null) "选择动作类型" else "修改动作类型")
+            .body(grid)
+            .negative("取消")
+            .show()
     }
 
     private fun showFormDialog(activity: Activity, a: Action, onSave: (Action) -> Unit) {
@@ -49,12 +72,11 @@ object ActionEditor {
         var dialog: AlertDialog? = null
         val box = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(Display.dpInt(ctx, 18f), Display.dpInt(ctx, 12f),
-                Display.dpInt(ctx, 18f), Display.dpInt(ctx, 4f))
+            setPadding(Display.dpInt(ctx, 12f), Display.dpInt(ctx, 4f),
+                Display.dpInt(ctx, 12f), Display.dpInt(ctx, 4f))
         }
 
         box.addView(title(ctx, a.type.label))
-
         val groups = a.type.fieldGroups
         var xEd: EditText? = null
         var yEd: EditText? = null
@@ -93,10 +115,24 @@ object ActionEditor {
             row.addView(x2Ed, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
             row.addView(y2Ed, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
             box.addView(row)
-            box.addView(pickButton(ctx, { dialog }, "拾取结束点") { px, py ->
+            val pickRow = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL }
+            val p1 = pickButton(ctx, { dialog }, "拾取结束点") { px, py ->
                 x2Ed?.setText(px.toInt().toString())
                 y2Ed?.setText(py.toInt().toString())
-            })
+            }
+            pickRow.addView(p1, LinearLayout.LayoutParams(0,
+                LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+            val p2 = pickButton(ctx, { dialog }, "框选区域") { l, t, r, b ->
+                xEd?.setText(l.toInt().toString())
+                yEd?.setText(t.toInt().toString())
+                x2Ed?.setText(r.toInt().toString())
+                y2Ed?.setText(b.toInt().toString())
+            }
+            (p2.layoutParams as LinearLayout.LayoutParams).weight = 1f
+            (p2.layoutParams as LinearLayout.LayoutParams).width = 0
+            (p2.layoutParams as LinearLayout.LayoutParams).marginStart = Display.dpInt(ctx, 6f)
+            pickRow.addView(p2)
+            box.addView(pickRow)
         }
 
         if (groups.contains(FieldGroup.PRESS_DURATION)) {
@@ -236,11 +272,9 @@ object ActionEditor {
         box.addView(condEd)
         box.addView(help(ctx, "运行条件"))
 
-        val scroll = ScrollView(ctx).apply { addView(box) }
-        val d = AlertDialog.Builder(activity)
-            .setTitle(a.type.label)
-            .setView(scroll)
-            .setPositiveButton("保存") { _, _ ->
+        dialog = Ui.dialog(ctx, a.type.label)
+            .body(box)
+            .positive("保存") {
                 xEd?.let { a.x = it.text.toString().toFloatOrNull() ?: a.x }
                 yEd?.let { a.y = it.text.toString().toFloatOrNull() ?: a.y }
                 x2Ed?.let { a.x2 = it.text.toString().toFloatOrNull() ?: a.x2 }
@@ -271,12 +305,30 @@ object ActionEditor {
                 a.condition = if (c.isEmpty()) null else c
                 if (a.type == ActionType.SET_VAR && a.varValue == null) a.varValue = a.text
                 onSave(a)
+                true
             }
-            .setNegativeButton("取消", null)
-            .create()
-        dialog = d
-        d.show()
-        sizeDialog(activity, d, 252f)
+            .negative("取消")
+            .show()
+                    }
+                }
+                scriptSpinner?.let {
+                    val scripts = AB.store.all()
+                    if (scripts.isNotEmpty()) a.scriptId = scripts[it.selectedItemPosition].id
+                }
+                controlSpinner?.let { a.controlOp = ControlOp.values()[it.selectedItemPosition] }
+                a.waitMs = waitEd.text.toString().toLongOrNull() ?: a.waitMs
+                a.repeat = repeatEd.text.toString().toIntOrNull() ?: a.repeat
+                val c = condEd.text.toString().trim()
+                a.condition = if (c.isEmpty()) null else c
+                if (a.type == ActionType.SET_VAR && a.varValue == null) a.varValue = a.text
+                onSave(a)
+            }
+        dialog = Ui.dialog(ctx, a.type.label)
+            .body(box)
+            .positive("保存") { commit(); true }
+            .negative("取消")
+            .width(302f)
+            .show()
     }
 
     // ---------- 小部件 ----------
@@ -321,6 +373,25 @@ object ActionEditor {
     }
 
     /** hostProvider 用延迟取值：调用时弹窗尚未 create，直接传引用会拿到 null */
+    private fun pickButton(ctx: Activity, hostProvider: () -> android.app.Dialog?, text: String,
+                           onRegion: (Float, Float, Float, Float) -> Unit, unused: Boolean = true): TextView =
+        TextView(ctx).apply {
+            this.text = text
+            textSize = 12f
+            setTextColor(Color.WHITE)
+            gravity = Gravity.CENTER
+            background = Theme.bubble(ctx, Theme.ok(), 10f)
+            setPadding(Display.dpInt(ctx, 12f), Display.dpInt(ctx, 6f),
+                Display.dpInt(ctx, 12f), Display.dpInt(ctx, 6f))
+            val lp = LinearLayout.LayoutParams(0,
+                LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            lp.setMargins(0, Display.dpInt(ctx, 6f), 0, 0)
+            layoutParams = lp
+            setOnClickListener {
+                RegionPicker.pick(ctx, ctx, hostProvider()) { l, t, r, b -> onRegion(l, t, r, b) }
+            }
+        }
+
     private fun pickButton(ctx: Activity, hostProvider: () -> android.app.Dialog?, text: String,
                            onPicked: (Float, Float) -> Unit): TextView =
         TextView(ctx).apply {
