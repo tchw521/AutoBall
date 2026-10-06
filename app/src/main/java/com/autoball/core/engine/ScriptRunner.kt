@@ -74,7 +74,7 @@ object ScriptRunner {
             if (scale.reason != null) AB.log.warn(ctx.runId, scale.reason!!)
             else if (scale.active) AB.log.info(ctx.runId, "已按屏幕尺寸缩放坐标 %.2f×%.2f".format(scale.sx, scale.sy))
 
-            val runner = FlowRunner(router, control, ctx, AB.log, jsEval, null, scale) { sid ->
+            val runner = FlowRunner(router, control, ctx, AB.log, jsEval, null, scale, runScript = { sid ->
                 val sub = AB.store.get(sid)
                 if (sub == null) { AB.log.warn(ctx.runId, "子脚本不存在: $sid"); false }
                 else runNested(sub, router, control, ctx, timeoutMs)

@@ -8,6 +8,7 @@ import android.graphics.Typeface
 import android.view.Gravity
 import android.widget.FrameLayout
 import android.widget.LinearLayout
+import android.view.View
 import android.widget.TextView
 import com.autoball.AB
 import com.autoball.core.model.Script

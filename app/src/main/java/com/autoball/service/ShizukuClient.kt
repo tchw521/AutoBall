@@ -270,11 +270,11 @@ class ShizukuClient {
     private fun q(s: String): String =
         if (s.matches(Regex("[A-Za-z0-9_./:=@%+,-]+"))) s else "'" + s.replace("'", "'\\''") + "'"
 
-    private fun drain(ins: java.io.InputStream): java.util.concurrent.Callable<String> {
-        val task = java.util.concurrent.Callable<String> {
-            String(readAll(ins), Charsets.UTF_8)
+    private fun drain(ins: java.io.InputStream): java.util.concurrent.Future<String> {
+        val callable = object : java.util.concurrent.Callable<String> {
+            override fun call(): String = String(readAll(ins), Charsets.UTF_8)
         }
-        val f = java.util.concurrent.FutureTask(task)
+        val f = java.util.concurrent.FutureTask(callable)
         val t = Thread(f, "ab-cmd-drain")
         t.isDaemon = true
         t.start()
@@ -282,9 +282,12 @@ class ShizukuClient {
     }
 
     private fun waitFor(p: Process, timeoutMs: Long): Boolean {
-        val f = java.util.concurrent.FutureTask(java.util.concurrent.Callable<Boolean> {
-            try { p.waitFor(); true } catch (e: Throwable) { true }
-        })
+        val callable = object : java.util.concurrent.Callable<Boolean> {
+            override fun call(): Boolean {
+                return try { p.waitFor(); true } catch (e: Throwable) { true }
+            }
+        }
+        val f = java.util.concurrent.FutureTask(callable)
         val t = Thread(f, "ab-cmd-wait")
         t.isDaemon = true
         t.start()

@@ -410,7 +410,8 @@ class MinePage(context: Context, private val host: PageHost) : FrameLayout(conte
         return sw
     }
 
-    private fun sliderRow(title: String, init: Float, min: Float, max: Float, onChange: (Float) -> Unit): View {
+    private fun sliderRow(title: String, init: Float, minVal: Float, maxVal: Float,
+                          onChange: (Float) -> Unit): View {
         val row = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             background = Theme.bubble(context, Theme.card(), 14f)
@@ -427,19 +428,19 @@ class MinePage(context: Context, private val host: PageHost) : FrameLayout(conte
             setTextColor(Theme.textPri())
         }
         row.addView(label)
-        val bar = android.widget.SeekBar(context).apply {
-            max = 100
-            progress = ((init - min) / (max - min) * 100).toInt().coerceIn(0, 100)
-            setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
-                override fun onProgressChanged(sb: android.widget.SeekBar?, p: Int, fromUser: Boolean) {
-                    val v = min + (max - min) * p / 100f
-                    label.text = "$title：%.2f".format(v)
-                    if (fromUser) onChange(v)
-                }
-                override fun onStartTrackingTouch(sb: android.widget.SeekBar?) { }
-                override fun onStopTrackingTouch(sb: android.widget.SeekBar?) { }
-            })
-        }
+        val ratio = ((init - minVal) / (maxVal - minVal) * 100).toInt().coerceIn(0, 100)
+        val bar = android.widget.SeekBar(context)
+        bar.max = 100
+        bar.progress = ratio
+        bar.setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(sb: android.widget.SeekBar?, p: Int, fromUser: Boolean) {
+                val v = minVal + (maxVal - minVal) * p / 100f
+                label.text = "$title：%.2f".format(v)
+                if (fromUser) onChange(v)
+            }
+            override fun onStartTrackingTouch(sb: android.widget.SeekBar?) { }
+            override fun onStopTrackingTouch(sb: android.widget.SeekBar?) { }
+        })
         row.addView(bar)
         return row
     }

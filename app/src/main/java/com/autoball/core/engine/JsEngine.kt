@@ -1,5 +1,8 @@
 package com.autoball.core.engine
 
+import com.autoball.core.engine.quickjs.QuickJsEngine
+import com.autoball.core.engine.rhino.RhinoEngine
+
 /** JS 执行结果 */
 class JsOutcome(
     val ok: Boolean,

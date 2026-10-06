@@ -3,7 +3,7 @@ package com.autoball.core.backend
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
 import android.accessibilityservice.AccessibilityService.GestureResultCallback
-import android.accessibilityservice.AccessibilityNodeInfo
+import android.view.accessibility.AccessibilityNodeInfo
 import android.annotation.SuppressLint
 import android.content.Intent
 import android.graphics.Bitmap
@@ -363,12 +363,13 @@ class AccessibilityBackend : InputBackend {
             val o = m.invoke(r)
             if (o is Bitmap) return o
         } catch (ignored: Throwable) { }
-        if (Build.VERSION.SDK_INT >= 26) {
+        // 从 HardwareBuffer 取 Bitmap 需 API 28 的 wrapHardwareBuffer；低版本返回 null 由上层显式提示
+        if (Build.VERSION.SDK_INT >= 28) {
             try {
                 val m = r.javaClass.getMethod("getHardwareBuffer")
                 val hb = m.invoke(r)
                 if (hb is android.hardware.HardwareBuffer) {
-                    return Bitmap.createBitmap(hb, null as android.graphics.ColorSpace?)
+                    return Bitmap.wrapHardwareBuffer(hb, null)
                 }
             } catch (ignored: Throwable) { }
         }
