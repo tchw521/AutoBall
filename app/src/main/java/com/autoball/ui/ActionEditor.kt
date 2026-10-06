@@ -115,10 +115,15 @@ object ActionEditor {
             row.addView(y2Ed, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
             box.addView(row)
             val pickRow = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL }
-            pickRow.addView(pickButton(ctx, { dialog }, "拾取结束点") { px, py ->
+            val endBtn = pickButton(ctx, { dialog }, "拾取结束点") { px, py ->
                 x2Ed?.setText(px.toInt().toString())
                 y2Ed?.setText(py.toInt().toString())
-            }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+            }
+            endBtn.layoutParams = LinearLayout.LayoutParams(0,
+                LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                setMargins(0, Display.dpInt(ctx, 6f), 0, 0)
+            }
+            pickRow.addView(endBtn)
             pickRow.addView(regionButton(ctx, { dialog }, "框选区域") { l, t, r, b ->
                 xEd?.setText(l.toInt().toString())
                 yEd?.setText(t.toInt().toString())
@@ -367,8 +372,7 @@ object ActionEditor {
 
     /** hostProvider 用延迟取值：调用时弹窗尚未 create，直接传引用会拿到 null */
     private fun pickButton(ctx: Activity, hostProvider: () -> android.app.Dialog?, text: String,
-                           onPicked: (Float, Float) -> Unit,
-                           lp: LinearLayout.LayoutParams? = null): TextView =
+                           onPicked: (Float, Float) -> Unit): TextView =
         TextView(ctx).apply {
             this.text = text
             textSize = 12f
@@ -377,7 +381,7 @@ object ActionEditor {
             background = Theme.bubble(ctx, Color.parseColor(Theme.PURPLE), 10f)
             setPadding(Display.dpInt(ctx, 12f), Display.dpInt(ctx, 6f),
                 Display.dpInt(ctx, 12f), Display.dpInt(ctx, 6f))
-            this.layoutParams = lp ?: LinearLayout.LayoutParams(
+            layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT).apply {
                 setMargins(0, Display.dpInt(ctx, 6f), 0, 0)
