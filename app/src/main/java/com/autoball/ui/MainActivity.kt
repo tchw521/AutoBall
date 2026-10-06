@@ -10,6 +10,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.LinearLayout
+import android.widget.TextView
 import com.autoball.R
 import com.autoball.core.log.CrashGuard
 import com.autoball.core.model.Script
