@@ -132,7 +132,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ENGINE: ${{ matrix.engine }}
-        run: python3 .github/publish_apk.py app/build/outputs/apk || echo "apk 入库失败"
+        run: python3 .github/publish_apk.py app/build/outputs/apk
 
       - name: Upload APK
         if: always()

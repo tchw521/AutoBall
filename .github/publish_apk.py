@@ -9,6 +9,7 @@ import json
 import os
 import subprocess
 import sys
+import urllib.error
 import urllib.request
 
 TOKEN = os.environ.get("GH_TOKEN", "")
@@ -28,6 +29,9 @@ def api(method, path, data=None):
         with urllib.request.urlopen(r, timeout=180) as x:
             t = x.read().decode()
             return json.loads(t) if t else {}
+    except urllib.error.HTTPError as e:
+        print("api error:", method, path, e.code, e.read().decode()[:300])
+        return {}
     except Exception as e:
         print("api error:", method, path, e)
         return {}
@@ -85,7 +89,7 @@ def main():
     t = api("POST", "/repos/%s/git/trees" % REPO, payload)
     if not t.get("sha"):
         print("tree 创建失败")
-        return
+        sys.exit(3)
     c = api("POST", "/repos/%s/git/commits" % REPO, {
         "message": "apk: v%s %s 构建产物" % (version, engine),
         "tree": t["sha"],
@@ -98,7 +102,9 @@ def main():
     else:
         r = api("POST", "/repos/%s/git/refs" % REPO,
                 {"ref": "refs/heads/%s" % BRANCH, "sha": c["sha"]})
-    print("已提交到分支", BRANCH, c["sha"], r.get("object", {}).get("sha", ""))
+    print("已提交到分支", BRANCH, c["sha"], json.dumps(r)[:200])
+    if not r.get("object", {}).get("sha"):
+        sys.exit(2)
 
 
 if __name__ == "__main__":
