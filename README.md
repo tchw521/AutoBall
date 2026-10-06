@@ -43,11 +43,14 @@ Android 本地自动化点击器。以悬浮球为交互主体，支持 **点击
 
 ```bash
 # 默认：QuickJS（需要 NDK）
-./gradlew :app:assembleRelease
+gradle :app:assembleRelease
 
 # 无 NDK 时：纯 Java 引擎逃生口
-./gradlew :app:assembleRelease -PuseRhino=true
+gradle :app:assembleRelease -PuseRhino=true
 ```
+
+> 仓库未提交 gradle-wrapper.jar。本地首次构建建议先执行 `gradle wrapper` 生成 wrapper，
+> 之后即可使用 `./gradlew`；CI 直接使用安装的 Gradle，不依赖 wrapper。
 
 QuickJS 源码与 Shizuku AIDL 由 `scripts/` 下的脚本在构建前按需拉取，
 拉取失败不阻断构建：JS 通道自动降级，动作流与无障碍执行不受影响。

@@ -45,23 +45,25 @@ jobs:
       - name: Fetch Shizuku AIDL (best-effort)
         run: bash scripts/fetch_shizuku_aidl.sh
 
-      - name: Grant execute permission
-        run: chmod +x ./gradlew
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.5
 
       - name: Build Debug APK
         run: |
           if [ "${{ matrix.engine }}" = "rhino" ]; then
-            ./gradlew :app:assembleDebug -PuseRhino=true --stacktrace
+            gradle :app:assembleDebug -PuseRhino=true --stacktrace
           else
-            ./gradlew :app:assembleDebug --stacktrace
+            gradle :app:assembleDebug --stacktrace
           fi
 
       - name: Build Release APK
         run: |
           if [ "${{ matrix.engine }}" = "rhino" ]; then
-            ./gradlew :app:assembleRelease -PuseRhino=true --stacktrace
+            gradle :app:assembleRelease -PuseRhino=true --stacktrace
           else
-            ./gradlew :app:assembleRelease --stacktrace
+            gradle :app:assembleRelease --stacktrace
           fi
 
       - name: Report APK size
