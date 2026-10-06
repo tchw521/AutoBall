@@ -4,6 +4,34 @@
 
 ---
 
+## v0.4.2 · 修复前台服务崩溃 + 跨应用坐标拾取 + 中央按钮
+
+**修复（点「开始录制」即闪退）**
+
+- **根因：`ForegroundServiceDidNotStartInTimeException`**。Android 14+ 强制要求前台服务声明
+  `foregroundServiceType`，v0.4.1 为规避 SecurityException 移除了该声明，结果
+  `startForeground()` 抛 `MissingForegroundServiceTypeException`；而当时用 `runCatching`
+  把异常静默吞掉，服务停留在"已承诺前台但未进前台"的状态，系统数秒后判定超时直接杀进程。
+  修复：manifest 恢复 `specialUse` 类型声明，代码改用与类型匹配的三参
+  `startForeground(id, notification, FOREGROUND_SERVICE_TYPE_SPECIAL_USE)`；
+  **异常不再静默吞掉**——失败即 `stopSelf()` 止损。
+- 后台启动前台服务（Android 12+ 会拒绝）改为返回失败并记录，不再抛出。
+
+**修复（底部导航中央图标）**
+
+- 中央 56dp 按钮带 `-26dp` 负 margin 顶出上沿，但导航自身仍是默认裁剪，
+  上半截被切掉。已关闭导航与外层容器的裁剪。
+- 「制作」标签此前被设为不可见；现改为常显在圆钮正下方、导航栏内部，不与选中胶囊冲突。
+
+**改进（坐标拾取）**
+
+- 旧版用**全屏透明层**取点，只能在本应用内操作，看不到也点不到其他应用。
+- 新版：拾取时自动隐藏悬浮球与悬浮窗、并把本应用收到后台，只保留一个**可拖动的十字准星**，
+  拖到目标应用或桌面上的真实位置后点一下即取回坐标，随后自动回到本应用并恢复悬浮球。
+- 准星不遮挡目标界面，底部实时显示坐标数值。
+
+---
+
 ## v0.4.1 · 修复启动闪退
 
 **修复（启动即闪退）**

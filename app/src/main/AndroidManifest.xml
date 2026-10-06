@@ -72,12 +72,17 @@
         </service>
 
         <!-- 悬浮球/悬浮窗宿主 + 保活 -->
-        <!-- 不声明 foregroundServiceType：Android 14 对声明了类型却用两参
-             startForeground() 的情况会抛 SecurityException，而悬浮层与本地执行
-             不属于任何特殊类型，保持默认即可。 -->
+        <!-- Android 14+ 强制要求声明 foregroundServiceType，否则 startForeground 抛
+             MissingForegroundServiceTypeException，服务进不了前台就会被系统判定超时崩溃。
+             悬浮层 + 本地自动化执行属于 specialUse，需同时声明 subtype 说明用途。 -->
         <service
             android:name=".service.FloatingService"
-            android:exported="false" />
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="用户显式启动、可随时停止的本地自动化执行与悬浮控制" />
+        </service>
 
         <receiver
             android:name=".service.BootReceiver"

@@ -4,6 +4,7 @@ import android.app.Notification
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
+import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
 import com.autoball.AB
@@ -27,12 +28,16 @@ class FloatingService : Service() {
         const val ACTION_RUN = "com.autoball.action.RUN"
         const val EXTRA_SCRIPT_ID = "script_id"
 
-        fun start(context: android.content.Context) {
+        fun start(context: android.content.Context): Boolean {
             val i = Intent(context, FloatingService::class.java).setAction(ACTION_START)
-            if (Build.VERSION.SDK_INT >= 26) {
-                context.startForegroundService(i)
-            } else {
-                context.startService(i)
+            // Android 12+ 后台启动前台服务会被系统拒绝；失败只记录，不让调用方崩
+            return try {
+                if (Build.VERSION.SDK_INT >= 26) context.startForegroundService(i)
+                else context.startService(i)
+                true
+            } catch (e: Throwable) {
+                AB.log.error("service", "启动悬浮服务失败：${e.javaClass.simpleName}")
+                false
             }
         }
 
@@ -43,11 +48,31 @@ class FloatingService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        // 前台服务启动失败不应连带把进程拖崩：失败时记录原因并继续以普通服务运行
-        runCatching {
-            startForeground(NOTIFY_ID, buildNotification(getString(R.string.notify_idle)))
-        }.onFailure { AB.log.error("service", "前台通知启动失败：${it.message}") }
+        // 关键：调用 startForegroundService() 后必须在数秒内真正调用 startForeground()，
+        // 否则系统会抛 ForegroundServiceDidNotStartInTimeException 直接杀进程。
+        // 因此这里不能用 runCatching 静默吞掉异常——失败必须止损（stopSelf），
+        // 否则服务留在"已承诺前台"状态却没进前台，必定超时崩溃。
+        val ok = startForegroundCompat()
+        if (!ok) {
+            AB.log.error("service", "前台化失败，服务主动停止以避免系统超时崩溃")
+            stopSelf()
+            return
+        }
         AB.log.info("service", "悬浮服务已启动")
+    }
+
+    /** 与 manifest 声明的 specialUse 类型保持一致；低版本用两参重载 */
+    private fun startForegroundCompat(): Boolean = try {
+        val n = buildNotification(getString(R.string.notify_idle))
+        if (Build.VERSION.SDK_INT >= 34) {
+            startForeground(NOTIFY_ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+        } else {
+            startForeground(NOTIFY_ID, n)
+        }
+        true
+    } catch (e: Throwable) {
+        AB.log.error("service", "startForeground 失败：${e.javaClass.simpleName} ${e.message}")
+        false
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {

@@ -52,6 +52,9 @@ class MainActivity : Activity(), PageHost {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(Color.TRANSPARENT)
+            // 让中央按钮顶出导航上沿的部分不被裁剪
+            clipChildren = false
+            clipToPadding = false
         }
 
         content = FrameLayout(this).apply {

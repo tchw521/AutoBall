@@ -46,17 +46,28 @@ class LiquidNavView(
 
     init {
         setWillNotDraw(false)
-        setPadding(Display.dpInt(context, 8f), 0, Display.dpInt(context, 8f), 0)
+        // 中央按钮带负 margin 顶出上沿，必须关闭自身裁剪，否则上半截会被切掉
+        clipChildren = false
+        clipToPadding = false
+        // 左右留白交给 row，避免 padding 影响中央按钮的负 margin 基准
+        val row = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(Display.dpInt(context, 8f), 0, Display.dpInt(context, 8f), 0)
+        }
         // 双层外投影
         elevation = Display.dp(context, 12f)
-
-        val row = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
         for (i in TABS.indices) {
             val lp = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f)
             val tv = TextView(context).apply {
                 text = TABS[i]
                 textSize = 11f
-                gravity = Gravity.CENTER
+                // 中间「制作」的标签要落在圆钮正下方、导航栏内部
+                if (i == 2) {
+                    gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+                    setPadding(0, 0, 0, Display.dpInt(context, 7f))
+                } else {
+                    gravity = Gravity.CENTER
+                }
                 setTextColor(Theme.textSec())
                 // 只有用户真实点击才通知外部。
                 // 若把回调放进 select()，会形成 select → showPage → select 的无限递归，
@@ -86,12 +97,12 @@ class LiquidNavView(
         for (i in tabs.indices) {
             val tv = tabs[i]
             tv.setTextColor(if (i == index) Theme.textPri() else Theme.textSec())
-            tv.textSize = if (i == index) 12f else 11f
+            tv.textSize = if (i == index && i != 2) 12f else 11f
             // 选中态：图标后垫一块更小的模糊胶囊（像手指按在凝胶上陷下去）
-            tv.background = if (i == index)
+            tv.background = if (i == index && i != 2)
                 Theme.bubble(context, Color.parseColor(if (Theme.isDark()) "#33FFFFFF" else "#1F000000"), 13f)
             else null
-            tv.visibility = if (i == 2) View.INVISIBLE else View.VISIBLE
+            tv.visibility = View.VISIBLE
         }
         invalidate()
         // 不再在此回调 onSelect：select() 同时被外部同步调用（如 showPage），
