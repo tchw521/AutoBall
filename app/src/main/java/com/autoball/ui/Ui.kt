@@ -213,7 +213,7 @@ object Ui {
         fun show(): AlertDialog {
             val box = LinearLayout(ctx).apply {
                 orientation = LinearLayout.VERTICAL
-                background = Theme.dialogBg(Theme.line())
+                background = Theme.dialogBg()
                 (background as GradientDrawable).cornerRadius = Display.dp(ctx, 18f)
             }
 

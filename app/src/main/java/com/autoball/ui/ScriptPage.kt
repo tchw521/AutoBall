@@ -1,368 +1,476 @@
 package com.autoball.ui
 
-import android.app.Activity
-import android.app.AlertDialog
+import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Color
 import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
 import android.view.Gravity
+import android.view.MotionEvent
 import android.view.View
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import com.autoball.AB
-import com.autoball.core.engine.ScriptLauncher
 import com.autoball.core.model.Script
-import com.autoball.core.model.ScriptKind
 import com.autoball.core.util.Display
 
 /**
- * 脚本页：左侧分组栏（自定义分组 + 按应用分组并存）+ 右侧脚本卡片列表。
+ * 脚本页（v3 #p-script）：顶栏 + 左分组气泡栏 + 右列表卡片。
  *
- * 长按卡片弹出菜单；多选模式底部出现操作条（全选 / 移动 / 删除 / 取消）。
- * 无 RecyclerView（零第三方依赖），列表用 ScrollView + 动态构建，脚本量级下无性能问题。
+ * 一比一对齐：
+ * - 顶栏 h1 26px 800 + 副标题 12px --tx2 + 两个 36dp iconbtn
+ * - 左分组栏 100px：气泡小框 .bub.c1..c7 / .all / .add，选中项左侧 3px 渐变竖条
+ * - 右列表：chips 筛选条 + 卡片（40dp 徽标 js/rec、名称+tag、meta、38dp 运行按钮）
  */
-class ScriptPage(context: Context, private val host: PageHost) : FrameLayout(context) {
+class ScriptPage(
+    context: Context,
+    private val host: PageHost
+) : FrameLayout(context) {
 
-    private var currentGroup = "default"
+    companion object { const val TAG = "脚本" }
+
+    private var groupIdx = 0
+    private var chipIdx = 0
+    private val CHIPS = arrayOf("全部", "最近运行", "已绑定手势", "已禁用")
+    private val sel = HashSet<String>()
     private var multiMode = false
-    private val selectedIds = LinkedHashSet<String>()
 
-    private val groupBar = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
-    private val listBox = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
-    private val actionBar = LinearLayout(context).apply {
-        orientation = LinearLayout.HORIZONTAL
-        gravity = Gravity.CENTER
-        visibility = View.GONE
+    private lateinit var groupBar: LinearLayout
+    private lateinit var chipRow: LinearLayout
+    private lateinit var listBox: LinearLayout
+    private lateinit var multiBar: LinearLayout
+    private lateinit var countTv: TextView
+
+    /** 分组：0=全部，其后为真实分组 */
+    private fun groups(): List<Pair<String?, Int>> {
+        val used = AB.store.all().map { it.groupId }.distinct()
+        val out = ArrayList<Pair<String?, Int>>()
+        out.add(null to 0) // 全部（渐变实心）
+        used.forEachIndexed { i, g -> out.add(g to (i + 1)) }
+        return out
     }
-    private val title = TextView(context)
 
-    init {
+    init { build() }
+
+    @SuppressLint("ClickableViewAccessibility")
+    private fun build() {
         val root = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+        root.addView(topbar())
 
-        title.text = "脚本"
-        title.textSize = 20f
-        title.setTypeface(null, Typeface.BOLD)
-        title.setTextColor(Theme.textPri())
-        title.setPadding(Display.dpInt(context, 16f), Display.dpInt(context, 18f),
-            Display.dpInt(context, 16f), Display.dpInt(context, 10f))
-        root.addView(title)
-
+        // 主体：左分组 + 右列表
         val body = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
-        val groupScroll = ScrollView(context).apply {
-            layoutParams = LinearLayout.LayoutParams(Display.dpInt(context, 88f),
-                LinearLayout.LayoutParams.MATCH_PARENT)
-            setBackgroundColor(Color.TRANSPARENT)
+        body.layoutParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f)
+
+        groupBar = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(if (Theme.isDark()) Color.parseColor("#0D7C3AED")
+            else Color.parseColor("#0A2F6BFF"))
+            setPadding(0, Display.dpInt(context, 8f), 0, Display.dpInt(context, 12f))
         }
-        groupScroll.addView(groupBar, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
-        body.addView(groupScroll)
-
-        val listScroll = ScrollView(context).apply {
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f)
+        val gScroll = ScrollView(context).apply {
+            addView(groupBar)
+            isVerticalScrollBarEnabled = false
         }
-        listScroll.addView(listBox, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
-        body.addView(listScroll)
+        body.addView(gScroll, LinearLayout.LayoutParams(
+            Display.dpInt(context, Theme.GROUPBAR_W),
+            LinearLayout.LayoutParams.MATCH_PARENT))
 
-        // 列表底部留 96dp，避免被悬浮导航遮住
-        listBox.setPadding(Display.dpInt(context, 10f), 0,
-            Display.dpInt(context, 10f), Display.dpInt(context, 96f))
+        val right = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+        chipRow = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(Display.dpInt(context, 14f), Display.dpInt(context, 12f),
+                Display.dpInt(context, 14f), Display.dpInt(context, 8f))
+        }
+        right.addView(chipRow)
 
-        root.addView(body, LinearLayout.LayoutParams(
+        listBox = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+        val lScroll = ScrollView(context).apply {
+            addView(listBox)
+            isVerticalScrollBarEnabled = false
+            setPadding(Display.dpInt(context, 14f), 0,
+                Display.dpInt(context, 14f), Display.dpInt(context, 96f))
+        }
+        right.addView(lScroll, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
+        body.addView(right, LinearLayout.LayoutParams(0,
+            LinearLayout.LayoutParams.MATCH_PARENT, 1f))
+        root.addView(body)
 
-        buildActionBar()
-        root.addView(actionBar, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+        multiBar = buildMultiBar()
+        addView(root)
+        addView(multiBar)
 
-        addView(root, FrameLayout.LayoutParams(
-            FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
-
-        rebuildGroups()
-        rebuildList()
+        renderGroups()
+        renderChips()
+        renderList()
     }
 
-    private fun buildActionBar() {
-        actionBar.setBackgroundColor(Theme.card())
-        actionBar.setPadding(Display.dpInt(context, 8f), Display.dpInt(context, 8f),
-            Display.dpInt(context, 8f), Display.dpInt(context, 8f))
-        actionBar.addView(barBtn("全选") {
-            val all = visibleScripts()
-            selectedIds.clear()
-            if (selectedIds.size == all.size) selectedIds.clear() else all.forEach { selectedIds.add(it.id) }
-            rebuildList()
-        })
-        actionBar.addView(barBtn("移动") { moveSelected() })
-        actionBar.addView(barBtn("删除") {
-            AB.store.delete(selectedIds)
-            exitMulti()
-            rebuildList()
-        })
-        actionBar.addView(barBtn("取消") { exitMulti() })
-    }
-
-    private fun barBtn(text: String, onClick: () -> Unit): TextView =
-        TextView(context).apply {
-            this.text = text
-            textSize = 13f
-            setTextColor(Color.WHITE)
-            gravity = Gravity.CENTER
-            background = Theme.bubble(context, Color.parseColor(Theme.BLUE), 12f)
-            setPadding(Display.dpInt(context, 16f), Display.dpInt(context, 8f),
-                Display.dpInt(context, 16f), Display.dpInt(context, 8f))
-            val lp = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-            lp.setMargins(Display.dpInt(context, 4f), 0, Display.dpInt(context, 4f), 0)
-            layoutParams = lp
-            setOnClickListener { onClick() }
+    private fun topbar(): LinearLayout {
+        val b = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(Display.dpInt(context, 18f), Display.dpInt(context, 6f),
+                Display.dpInt(context, 18f), Display.dpInt(context, 12f))
+            gravity = Gravity.BOTTOM
         }
+        val l = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+        l.addView(TextView(context).apply {
+            text = "脚本"
+            textSize = 26f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(Theme.textPri())
+            includeFontPadding = false
+        })
+        l.addView(TextView(context).apply {
+            val n = AB.store.all().size
+            text = "共 $n 个脚本 · 本地运行"
+            textSize = 12f
+            setTextColor(Theme.textSec())
+            setPadding(0, Display.dpInt(context, 3f), 0, 0)
+        })
+        b.addView(l, LinearLayout.LayoutParams(0,
+            LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
 
-    // ---------- 数据 ----------
-
-    private fun visibleScripts(): List<Script> {
-        val all = AB.store.all()
-        return if (currentGroup == "__all") all
-        else all.filter { it.groupId == currentGroup }
-            .sortedByDescending { it.updatedAt }
+        b.addView(iconBtn("＋") { NewScriptSheet.show(context as android.app.Activity, host) })
+        b.addView(iconBtn("⋯") {
+            Ui.toast(context, "排序 / 批量 / 导入")
+        })
+        return b
     }
 
-    private fun rebuildGroups() {
+    private fun iconBtn(glyph: String, onClick: () -> Unit): TextView = TextView(context).apply {
+        text = glyph
+        textSize = 17f
+        setTypeface(null, Typeface.BOLD)
+        setTextColor(Theme.textSec())
+        gravity = Gravity.CENTER
+        background = Theme.rect(Theme.surface(), 12f, context, Theme.line())
+        val s = Display.dpInt(context, 36f)
+        layoutParams = LinearLayout.LayoutParams(s, s).apply {
+            marginStart = Display.dpInt(context, 6f)
+        }
+        setOnClickListener { onClick() }
+    }
+
+    private fun renderGroups() {
         groupBar.removeAllViews()
-        val groups = AB.store.groups()
-
-        groupBar.addView(groupChip("全部", currentGroup == "__all", 0) { currentGroup = "__all"; rebuildGroups(); rebuildList() })
-        groups.forEachIndexed { i, g ->
-            groupBar.addView(groupChip(g.name, currentGroup == g.id, i) {
-                currentGroup = g.id; rebuildGroups(); rebuildList()
-            })
-        }
-        // 按应用分组：有目标应用的脚本自动生成
-        val pkgs = AB.store.all().mapNotNull { it.targetPkg }.distinct()
-        if (pkgs.isNotEmpty()) {
-            val divider = TextView(context).apply {
-                text = "按应用"
-                textSize = 10f
-                setTextColor(Theme.textSec())
-                setPadding(Display.dpInt(context, 10f), Display.dpInt(context, 12f), 0, Display.dpInt(context, 4f))
+        val gs = groups()
+        gs.forEachIndexed { i, (name, _) ->
+            val on = i == groupIdx
+            val row = LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                val lp = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT)
+                lp.setMargins(Display.dpInt(context, 7f), Display.dpInt(context, 3f),
+                    Display.dpInt(context, 7f), Display.dpInt(context, 3f))
+                layoutParams = lp
+                setPadding(Display.dpInt(context, 9f), Display.dpInt(context, 7f),
+                    Display.dpInt(context, 9f), Display.dpInt(context, 7f))
+                background = Theme.rect(if (on) Theme.surface() else Color.TRANSPARENT,
+                    12f, context)
+                setOnClickListener { groupIdx = i; renderGroups(); renderList() }
+                setOnLongClickListener {
+                    if (i > 0) Ui.toast(context, "长按分组：重命名 / 删除")
+                    true
+                }
             }
-            groupBar.addView(divider)
-            pkgs.forEach { pkg ->
-                groupBar.addView(groupChip(pkg, currentGroup == pkg, 0) {
-                    currentGroup = pkg; rebuildGroups(); rebuildList()
+            // 选中项左侧 3px 渐变竖条
+            if (on) {
+                row.addView(View(context).apply {
+                    background = Theme.gradOval()
+                    val lp = LinearLayout.LayoutParams(Display.dpInt(context, 3f),
+                        Display.dpInt(context, 20f))
+                    lp.marginEnd = Display.dpInt(context, 6f)
+                    lp.leftMargin = -Display.dpInt(context, 9f)
+                    layoutParams = lp
                 })
             }
+            val cnt = if (name == null) AB.store.all().size
+            else AB.store.all().count { it.groupId == name }
+            row.addView(bubble(if (i == 0) "全部" else name ?: "默认", i - 1, i == 0))
+            row.addView(TextView(context).apply {
+                text = cnt.toString()
+                textSize = 10f
+                setTypeface(null, Typeface.BOLD)
+                setTextColor(Theme.textTer())
+            })
+            groupBar.addView(row)
         }
+        // 「+」新增分组（虚线边框 .bub.add）
+        groupBar.addView(TextView(context).apply {
+            text = "＋ 分组"
+            textSize = 11.5f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(Theme.textTer())
+            gravity = Gravity.CENTER
+            val lp = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                Display.dpInt(context, 30f))
+            lp.setMargins(Display.dpInt(context, 7f), Display.dpInt(context, 3f),
+                Display.dpInt(context, 7f), Display.dpInt(context, 3f))
+            layoutParams = lp
+            background = GradientDrawable().apply {
+                cornerRadius = Display.dp(context, 9f)
+                setColor(Color.TRANSPARENT)
+                setStroke(Display.dpInt(context, 1f), Theme.line2())
+                // 虚线近似为细描边 + 低透明度
+            }
+            setOnClickListener { Ui.toast(context, "新建分组") }
+        })
     }
 
-    private fun groupChip(name: String, selected: Boolean, colorIdx: Int, onClick: () -> Unit): TextView =
+    /** 气泡小框：全部=渐变实心；其余 .bub.cN */
+    private fun bubble(name: String, colorIdx: Int, all: Boolean): TextView =
         TextView(context).apply {
             text = name
-            textSize = 11f
-            gravity = Gravity.CENTER_VERTICAL
-            setTextColor(if (selected) Color.WHITE else Theme.textSec())
-            maxLines = 1
-            background = Theme.bubble(context,
-                if (selected) Theme.GROUP_COLORS[colorIdx % Theme.GROUP_COLORS.size]
-                else Color.parseColor(if (Theme.isDark()) "#2A2347" else "#EDEEF5"), 10f)
-            setPadding(Display.dpInt(context, 10f), Display.dpInt(context, 8f),
-                Display.dpInt(context, 10f), Display.dpInt(context, 8f))
-            val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT)
-            lp.setMargins(Display.dpInt(context, 6f), Display.dpInt(context, 4f),
-                Display.dpInt(context, 6f), Display.dpInt(context, 4f))
-            layoutParams = lp
-            setOnClickListener { onClick() }
+            textSize = 11.5f
+            setTypeface(null, Typeface.BOLD)
+            setSingleLine(true)
+            maxWidth = Display.dpInt(context, Theme.BUB_MAX)
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            setPadding(Display.dpInt(context, 9f), Display.dpInt(context, 4f),
+                Display.dpInt(context, 9f), Display.dpInt(context, 4f))
+            background = if (all) {
+                Theme.grad(context, 9f)
+            } else {
+                val k = if (colorIdx < 0) 0 else colorIdx
+                GradientDrawable().apply {
+                    cornerRadius = Display.dp(context, 9f)
+                    setColor(Theme.gTint(k))
+                    setStroke(Display.dpInt(context, 1f), Theme.gEdge(k))
+                }
+            }
+            setTextColor(if (all) Color.WHITE else Theme.gInk(if (colorIdx < 0) 0 else colorIdx))
+            layoutParams = LinearLayout.LayoutParams(0,
+                LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
 
-    private fun rebuildList() {
-        listBox.removeAllViews()
-        val list = visibleScripts()
-        val count = TextView(context).apply {
-            text = "共 ${list.size} 个脚本"
-            textSize = 11f
-            setTextColor(Theme.textSec())
-            setPadding(Display.dpInt(context, 6f), Display.dpInt(context, 4f), 0, Display.dpInt(context, 8f))
-        }
-        listBox.addView(count)
-
-        if (list.isEmpty()) {
-            listBox.addView(TextView(context).apply {
-                text = "这个分组还没有脚本，点下方「制作」新建"
-                textSize = 13f
-                setTextColor(Theme.textSec())
-                gravity = Gravity.CENTER
-                setPadding(0, Display.dpInt(context, 48f), 0, 0)
+    private fun renderChips() {
+        chipRow.removeAllViews()
+        CHIPS.forEachIndexed { i, t ->
+            chipRow.addView(TextView(context).apply {
+                text = t
+                textSize = 11.5f
+                setTypeface(null, if (i == chipIdx) Typeface.BOLD else Typeface.NORMAL)
+                setTextColor(if (i == chipIdx) Color.WHITE else Theme.textSec())
+                setPadding(Display.dpInt(context, 11f), Display.dpInt(context, 5f),
+                    Display.dpInt(context, 11f), Display.dpInt(context, 5f))
+                background = if (i == chipIdx) Theme.grad(context, 9f)
+                else Theme.rect(Theme.surface(), 9f, context, Theme.line())
+                val lp = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT)
+                if (i > 0) lp.marginStart = Display.dpInt(context, 6f)
+                layoutParams = lp
+                setOnClickListener { chipIdx = i; renderChips(); renderList() }
             })
-            return
         }
-        for (s in list) listBox.addView(card(s))
     }
 
-    private fun card(s: Script): View {
-        val card = LinearLayout(context).apply {
+    private fun filtered(): List<Script> {
+        var l = AB.store.all()
+        val gs = groups()
+        if (groupIdx >= gs.size) groupIdx = 0
+        if (groupIdx > 0) {
+            val g = gs[groupIdx].first
+            l = l.filter { it.groupId == g }
+        }
+        l = when (chipIdx) {
+            1 -> l.sortedByDescending { it.runCount }
+            2 -> l.filter { it.slot != com.autoball.core.model.BallSlot.NONE }
+            3 -> l.filter { !it.enabled }
+            else -> l
+        }
+        return l
+    }
+
+    private fun renderList() {
+        listBox.removeAllViews()
+        val list = filtered()
+        if (list.isEmpty()) {
+            listBox.addView(Ui.hint(context, "这个分组还没有脚本。点右上「＋」新建，或从分享码导入。"))
+            return
+        }
+        list.forEach { s -> listBox.addView(card(s)) }
+    }
+
+    @SuppressLint("ClickableViewAccessibility")
+    private fun card(s: Script): LinearLayout {
+        val rec = s.kind == com.autoball.core.model.ScriptKind.FLOW
+        val c = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            background = if (multiMode && selectedIds.contains(s.id))
-                Theme.bubble(context, Color.parseColor("#3A2E6B"), 16f, Color.parseColor("#8FDBFF"))
-            else Theme.bubble(context, Theme.card(), 16f)
-            setPadding(Display.dpInt(context, 14f), Display.dpInt(context, 12f),
-                Display.dpInt(context, 12f), Display.dpInt(context, 12f))
-            val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,
+            background = Theme.cardBg(context)
+            val lp = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT)
             lp.setMargins(0, 0, 0, Display.dpInt(context, 10f))
             layoutParams = lp
+            setPadding(Display.dpInt(context, 12f), Display.dpInt(context, 12f),
+                Display.dpInt(context, 12f), Display.dpInt(context, 12f))
         }
 
-        val left = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        // 复选框（多选态出现）
+        if (multiMode) {
+            c.addView(Ui.check(context, sel.contains(s.id)).apply {
+                setOnClickListener {
+                    if (sel.contains(s.id)) sel.remove(s.id) else sel.add(s.id)
+                    renderList(); updateMulti()
+                }
+            })
+            val lp = c.getChildAt(0).layoutParams as LinearLayout.LayoutParams
+            lp.marginEnd = Display.dpInt(context, 11f)
         }
-        left.addView(TextView(context).apply {
-            text = s.name
-            textSize = 15f
+
+        // 徽标 40dp
+        c.addView(TextView(context).apply {
+            text = if (rec) "录" else "JS"
+            textSize = 11f
             setTypeface(null, Typeface.BOLD)
-            setTextColor(Theme.textPri())
-            maxLines = 1
-        })
-
-        val badges = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
-        badges.addView(badge(if (s.kind == ScriptKind.JS) "JS" else "录",
-            if (s.kind == ScriptKind.JS) Theme.PURPLE else Theme.BLUE))
-        if (s.isDefault) badges.addView(badge("默认", "#35D08A"))
-        if (s.slot != com.autoball.core.model.BallSlot.NONE) badges.addView(badge(s.slot.label, "#FFB020"))
-        left.addView(badges)
-
-        card.addView(left)
-
-        card.addView(TextView(context).apply {
-            text = if (multiMode) (if (selectedIds.contains(s.id)) "☑" else "☐") else "运行"
-            textSize = 13f
             setTextColor(Color.WHITE)
             gravity = Gravity.CENTER
-            background = Theme.bubble(context, Color.parseColor(Theme.BLUE), 12f)
-            setPadding(Display.dpInt(context, 14f), Display.dpInt(context, 7f),
-                Display.dpInt(context, 14f), Display.dpInt(context, 7f))
-            setOnClickListener {
-                if (multiMode) {
-                    if (selectedIds.contains(s.id)) selectedIds.remove(s.id) else selectedIds.add(s.id)
-                    rebuildList()
-                } else {
-                    ScriptLauncher.launch(context.applicationContext, s)
-                }
-            }
+            background = GradientDrawable(Theme.orientation(),
+                if (rec) intArrayOf(Theme.ok(), Color.parseColor("#0E9F5D"))
+                else intArrayOf(Theme.pri2(), Color.parseColor("#5B8DEF"))
+            ).apply { cornerRadius = Display.dp(context, 12f) }
+            layoutParams = LinearLayout.LayoutParams(Display.dpInt(context, 40f),
+                Display.dpInt(context, 40f))
         })
 
-        card.setOnLongClickListener {
-            if (!multiMode) showCardMenu(s)
+        val main = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+        val nameRow = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
+        nameRow.addView(TextView(context).apply {
+            text = s.name
+            textSize = 14.5f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(Theme.textPri())
+            setSingleLine(true)
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            layoutParams = LinearLayout.LayoutParams(0,
+                LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        })
+        if (s.isDefault) nameRow.addView(Ui.tag(context, "默认", 0))
+        if (s.slot != com.autoball.core.model.BallSlot.NONE) {
+            nameRow.addView(Ui.tag(context, s.slot.label, 1))
+        }
+        main.addView(nameRow)
+        main.addView(TextView(context).apply {
+            text = "已运行 ${s.runCount} 次"
+            textSize = 11.5f
+            setTextColor(Theme.textSec())
+            setPadding(0, Display.dpInt(context, 4f), 0, 0)
+        })
+        c.addView(main, LinearLayout.LayoutParams(0,
+            LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+            marginStart = Display.dpInt(context, 11f)
+        })
+
+        // 运行按钮 38dp
+        c.addView(Ui.runButton(context) { host.runScript(s) })
+
+        // 点击进入编辑；长按进入多选
+        c.setOnClickListener { if (multiMode) toggle(s) else host.openScript(s) }
+        c.setOnLongClickListener {
+            if (!multiMode) { multiMode = true; sel.add(s.id); renderList(); updateMulti() }
             true
         }
-        return card
+        return c
     }
 
-    private fun badge(text: String, color: String): TextView =
-        TextView(context).apply {
-            this.text = text
-            textSize = 10f
-            setTextColor(Color.WHITE)
-            background = Theme.bubble(context, Color.parseColor(color), 8f)
-            setPadding(Display.dpInt(context, 7f), Display.dpInt(context, 2f),
-                Display.dpInt(context, 7f), Display.dpInt(context, 2f))
-            val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT)
-            lp.setMargins(0, Display.dpInt(context, 4f), Display.dpInt(context, 5f), 0)
-            layoutParams = lp
-        }
+    private fun toggle(s: Script) {
+        if (sel.contains(s.id)) sel.remove(s.id) else sel.add(s.id)
+        renderList(); updateMulti()
+    }
 
-    // ---------- 菜单 ----------
-
-    private fun showCardMenu(s: Script) {
-        val act = context as? Activity ?: return
-        val items = arrayOf("编辑", "重命名", "移动分组", "多选", "在此分组新建", "删除")
-        AlertDialog.Builder(act).setTitle(s.name).setItems(items) { _, which ->
-            when (which) {
-                0 -> host.openScript(s)
-                1 -> askText("重命名", s.name) { v -> s.name = v; AB.store.save(s); rebuildList() }
-                2 -> moveOne(s)
-                3 -> enterMulti(s)
-                4 -> createInGroup()
-                5 -> confirm("删除「${s.name}」？") { AB.store.delete(listOf(s.id)); rebuildList() }
+    private fun buildMultiBar(): LinearLayout {
+        val b = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            background = Theme.rect(Theme.surface(), 16f, context, Theme.line2())
+            setPadding(Display.dpInt(context, 12f), Display.dpInt(context, 10f),
+                Display.dpInt(context, 12f), Display.dpInt(context, 10f))
+            val lp = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply {
+                leftMargin = Display.dpInt(context, 14f)
+                rightMargin = Display.dpInt(context, 14f)
+                bottomMargin = Display.dpInt(context, 96f)
+                gravity = Gravity.BOTTOM
             }
-        }.show()
+            layoutParams = lp
+            visibility = View.GONE
+        }
+        countTv = TextView(context).apply {
+            textSize = 12.5f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(Theme.textPri())
+            setPadding(Display.dpInt(context, 2f), 0, 0, 0)
+            layoutParams = LinearLayout.LayoutParams(0,
+                LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        b.addView(countTv)
+        listOf("全选" to {}, "移动" to {}, "启用" to {}, "删除" to {}).forEachIndexed { i, (t, _) ->
+            val btn = TextView(context).apply {
+                text = t
+                textSize = 12f
+                setTypeface(null, Typeface.BOLD)
+                setTextColor(if (i == 2 || i == 3) Color.WHITE else Theme.textSec())
+                setPadding(Display.dpInt(context, 11f), Display.dpInt(context, 7f),
+                    Display.dpInt(context, 11f), Display.dpInt(context, 7f))
+                background = if (i == 2) Theme.grad(context, 10f)
+                else if (i == 3) Theme.rect(Theme.danger(), 10f, context)
+                else Theme.rect(Theme.surface2(), 10f, context, Theme.line())
+                val lp = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT)
+                if (i > 0) lp.marginStart = Display.dpInt(context, 7f)
+                layoutParams = lp
+                setOnClickListener {
+                    when (i) {
+                        0 -> { sel.addAll(AB.store.all().map { it.id }); renderList(); updateMulti() }
+                        3 -> {
+                            sel.forEach { AB.store.delete(it) }
+                            exitMulti(); renderList()
+                        }
+                    }
+                }
+            }
+            b.addView(btn)
+        }
+        b.addView(TextView(context).apply {
+            text = "取消"
+            textSize = 12f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(Theme.textSec())
+            setPadding(Display.dpInt(context, 11f), Display.dpInt(context, 7f),
+                Display.dpInt(context, 11f), Display.dpInt(context, 7f))
+            background = Theme.rect(Theme.surface2(), 10f, context, Theme.line())
+            val lp = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT)
+            lp.marginStart = Display.dpInt(context, 7f)
+            layoutParams = lp
+            setOnClickListener { exitMulti(); renderList() }
+        })
+        return b
     }
 
-    private fun enterMulti(first: Script) {
-        multiMode = true
-        selectedIds.clear()
-        selectedIds.add(first.id)
-        actionBar.visibility = View.VISIBLE
-        rebuildList()
+    private fun updateMulti() {
+        if (sel.isEmpty()) { exitMulti(); return }
+        multiBar.visibility = View.VISIBLE
+        countTv.text = "已选 ${sel.size} 项"
     }
 
     private fun exitMulti() {
         multiMode = false
-        selectedIds.clear()
-        actionBar.visibility = View.GONE
-        rebuildList()
+        sel.clear()
+        multiBar.visibility = View.GONE
     }
 
-    private fun moveSelected() {
-        val groups = AB.store.groups()
-        val act = context as? Activity ?: return
-        val names = groups.map { it.name }.toTypedArray()
-        AlertDialog.Builder(act).setTitle("移动到").setItems(names) { _, w ->
-            AB.store.move(selectedIds, groups[w].id)
-            exitMulti(); rebuildList()
-        }.show()
-    }
+    fun refresh() { renderGroups(); renderChips(); renderList() }
 
-    private fun moveOne(s: Script) {
-        val groups = AB.store.groups()
-        val act = context as? Activity ?: return
-        val names = groups.map { it.name }.toTypedArray()
-        AlertDialog.Builder(act).setTitle("移动到").setItems(names) { _, w ->
-            s.groupId = groups[w].id
-            AB.store.save(s)
-            rebuildList()
-        }.show()
-    }
-
-    private fun createInGroup() {
-        askText("新建脚本", "未命名脚本") { v ->
-            val s = Script.blank(v)
-            s.groupId = currentGroup
-            AB.store.save(s)
-            host.openScript(s)
-        }
-    }
-
-    // ---------- 通用输入弹窗 ----------
-
-    private fun askText(title: String, def: String, onOk: (String) -> Unit) {
-        val act = context as? Activity ?: return
-        val et = android.widget.EditText(act).apply {
-            setText(def)
-            setTextColor(Theme.textPri())
-            setPadding(Display.dpInt(context, 16f), Display.dpInt(context, 12f),
-                Display.dpInt(context, 16f), Display.dpInt(context, 12f))
-        }
-        val box = LinearLayout(act).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(Display.dpInt(context, 20f), Display.dpInt(context, 12f),
-                Display.dpInt(context, 20f), 0)
-            addView(et)
-        }
-        AlertDialog.Builder(act).setTitle(title).setView(box)
-            .setPositiveButton("确定") { d, _ -> onOk(et.text.toString()); d.dismiss() }
-            .setNegativeButton("取消", null).show()
-    }
-
-    private fun confirm(msg: String, onOk: () -> Unit) {
-        val act = context as? Activity ?: return
-        AlertDialog.Builder(act).setMessage(msg)
-            .setPositiveButton("确定") { d, _ -> onOk(); d.dismiss() }
-            .setNegativeButton("取消", null).show()
-    }
-
-    fun refresh() { rebuildGroups(); rebuildList() }
+    @SuppressLint("ClickableViewAccessibility")
+    override fun onTouchEvent(event: MotionEvent): Boolean = true
 }

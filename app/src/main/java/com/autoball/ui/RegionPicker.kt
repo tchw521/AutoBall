@@ -187,7 +187,7 @@ object RegionPicker {
                 orientation = LinearLayout.VERTICAL
                 setPadding(Display.dpInt(context, 14f), Display.dpInt(context, 10f),
                     Display.dpInt(context, 14f), Display.dpInt(context, 14f))
-                background = Theme.dialogBg(Theme.line2())
+                background = Theme.dialogBg()
                 (background as android.graphics.drawable.GradientDrawable).cornerRadius =
                     Display.dp(context, 16f)
             }

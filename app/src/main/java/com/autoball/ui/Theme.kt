@@ -7,38 +7,76 @@ import com.autoball.AB
 import com.autoball.core.util.Display
 
 /**
- * 设计令牌与主题（对齐 UI 设计方案 v3）。
+ * 设计令牌 —— 一比一对齐 UI 设计方案 v3 的 CSS 变量。
  *
- * v3 要点：
- * - 统一层级栈（遮罩 50 / 菜单 62 / 全屏选点 94 / 弹窗 96 / 二级弹窗 97 / 弹窗内下拉 100 / 气泡 105 / Toast 120）
- * - 统一渐变方向 135°、圆角 16、毛玻璃强度、色板（g1..g7）
- * - 深浅双主题，切换开关只在「我的」页
+ * 深色：
+ *   --bg0:#0B0913  --bg1:#141022  --surface:#1B1730  --surface2:#221C3A
+ *   --line:rgba(255,255,255,.07)  --line2:rgba(255,255,255,.13)
+ *   --tx:#F4F2FF  --tx2:#9A92BD  --tx3:#6B6390
+ *   --pri:#7C3AED  --pri2:#2F6BFF  --ok:#12B76A  --warn:#F79009
+ *   --radius:16px  --shadow:0 8px 28px rgba(0,0,0,.4)
+ * 浅色：
+ *   --bg0:#F4F5F9  --bg1:#FFFFFF  --surface:#FFFFFF  --surface2:#F7F8FC
+ *   --tx:#16121F  --tx2:#6B6488  --tx3:#9A93B5
+ *   --shadow:0 6px 20px rgba(23,15,73,.10)
  *
- * 所有"图标"一律用纯色 shape 绘制，不引入图标资源——对包体零负担。
+ * 渐变方向 --gd:135deg；毛玻璃 blur(22px) saturate(150%)。
  */
 object Theme {
 
     const val KEY_DARK = "theme_dark"
 
     fun isDark(): Boolean = AB.store.getBool(KEY_DARK, true)
-
     fun setDark(v: Boolean) { AB.store.putBool(KEY_DARK, v) }
+    fun toggleDark() { setDark(!isDark()) }
 
-    // ---------- 层级栈（R1/R5：避免弹窗互相压住）----------
+    // ---------- 层级栈（R1/R5）----------
     const val Z_MASK = 50
     const val Z_MENU = 62
-    const val Z_FS = 94      // 全屏选点 / 区域选择
+    const val Z_FS = 94
     const val Z_DIALOG = 96
-    const val Z_SUB = 97     // 二级弹窗（坐标编辑等）
-    const val Z_POP = 100    // 弹窗内下拉菜单
-    const val Z_TIP = 105    // 弹窗内气泡 / 变量提示框
-    const val Z_TOAST = 120  // Toast 永远最上
+    const val Z_SUB = 97
+    const val Z_POP = 100
+    const val Z_TIP = 105
+    const val Z_TOAST = 120
 
-    // ---------- 渐变方向 ----------
-    /** 135°（左上→右下），GradientDrawable 用 TL_BR 近似 */
-    fun orientation(): GradientDrawable.Orientation = GradientDrawable.Orientation.TL_BR
+    // ---------- 尺寸（v3 标称值）----------
+    const val RADIUS = 16f            // --radius
+    const val CARD_PAD = 12f
+    const val CARD_GAP = 11f
+    const val CARD_MB = 10f
+    const val BADGE = 40f             // .badge 40x40 / radius 12
+    const val BADGE_R = 12f
+    const val RUN = 38f               // .run 圆形运行按钮
+    const val GROUPBAR_W = 100f       // 左分组栏宽度
+    const val BUB_MAX = 74f           // 气泡小框最大宽度
+    const val TABBAR_H = 64f          // 底部导航高
+    const val TABBAR_R = 32f          // 圆角（呼吸 32↔34）
+    const val TABBAR_LR = 12f         // 左右边距
+    const val TABBAR_B = 14f          // 离底
+    const val FAB = 56f               // 中央四角星直径
+    const val FAB_TOP = -18f          // 凸起于导航栏
+    const val FABSLOT = 68f           // 占位槽宽
+    const val SHEET_H = 25f           // 底部半框：占屏 25%
+    const val SHEET_MIN = 186f
+    const val SHEET_R = 26f
+    const val ROW_PAD = 13f           // .row padding 13x14 / radius 14 / mb 9
+    const val ROW_R = 14f
+    const val ROW_MB = 9f
+    const val SW_W = 42f              // .sw 42x24，滑块 18 @3
+    const val SW_H = 24f
+    const val SW_KNOB = 18f
+    const val SEC_PAD_T = 14f
+    const val SEC_PAD_B = 8f
+    const val TOAST_B = 100f
+    const val MULTI_B = 96f
+    const val BTN_H = 44f             // .btn 高 / radius 13
+    const val BTN_R = 13f
+    const val DIALOG_W = 206f         // .adlg 添加动作弹窗宽
+    const val DIALOG_R = 18f
+    const val GDLG_R = 18f
 
-    // ---------- 深色 ----------
+    // ---------- 色板 ----------
     const val D_BG0 = "#0B0913"
     const val D_BG1 = "#141022"
     const val D_SURFACE = "#1B1730"
@@ -49,7 +87,6 @@ object Theme {
     const val D_TX2 = "#9A92BD"
     const val D_TX3 = "#6B6390"
 
-    // ---------- 浅色 ----------
     const val L_BG0 = "#F4F5F9"
     const val L_BG1 = "#FFFFFF"
     const val L_SURFACE = "#FFFFFF"
@@ -60,16 +97,50 @@ object Theme {
     const val L_TX2 = "#6B6488"
     const val L_TX3 = "#9A93B5"
 
-    // ---------- 主色与语义色（两主题共用）----------
-    const val PRI = "#7C3AED"      // 紫
-    const val PRI2 = "#2F6BFF"     // 蓝
+    const val PRI = "#7C3AED"
+    const val PRI2 = "#2F6BFF"
     const val OK = "#12B76A"
     const val WARN = "#F79009"
     const val DANGER = "#E5484D"
-    const val BLUE = "#2F6BFF"
-    const val PURPLE = "#7C3AED"
 
-    /** 悬浮球 / FAB 天蓝渐变（v3：155deg #F4FBFF → #C6ECFD → #79D5F7 → #2FA2DA） */
+    /** 分组气泡 7 色（g1..g7）：深色底 16%/45% 边，浅色底 10% + 主色字 */
+    val G = intArrayOf(
+        Color.parseColor("#7C3AED"), Color.parseColor("#2F6BFF"),
+        Color.parseColor("#12B76A"), Color.parseColor("#F79009"),
+        Color.parseColor("#EC4899"), Color.parseColor("#0EA5E9"),
+        Color.parseColor("#6B7280")
+    )
+    /** 深色下气泡文字色（.bub.cN 的 color） */
+    val G_INK_D = intArrayOf(
+        Color.parseColor("#B794F6"), Color.parseColor("#7EA6FF"),
+        Color.parseColor("#4ADE80"), Color.parseColor("#FBBF24"),
+        Color.parseColor("#F472B6"), Color.parseColor("#38BDF8"),
+        Color.parseColor("#9CA3AF")
+    )
+    /** 浅色下气泡文字色 */
+    val G_INK_L = intArrayOf(
+        Color.parseColor("#7C3AED"), Color.parseColor("#2563EB"),
+        Color.parseColor("#059669"), Color.parseColor("#D97706"),
+        Color.parseColor("#DB2777"), Color.parseColor("#0284C7"),
+        Color.parseColor("#6B7280")
+    )
+
+    fun gInk(i: Int): Int {
+        val k = i % G.size
+        return if (isDark()) G_INK_D[k] else G_INK_L[k]
+    }
+
+    fun gTint(i: Int): Int {
+        val c = G[i % G.size]
+        return Color.argb(if (isDark()) 41 else 26, Color.red(c), Color.green(c), Color.blue(c))
+    }
+
+    fun gEdge(i: Int): Int {
+        val c = G[i % G.size]
+        return Color.argb(115, Color.red(c), Color.green(c), Color.blue(c))
+    }
+
+    /** FAB 天蓝渐变（155deg #F4FBFF → #C6ECFD → #79D5F7 → #2FA2DA） */
     val FAB_STOPS = intArrayOf(
         Color.parseColor("#F4FBFF"),
         Color.parseColor("#C6ECFD"),
@@ -77,34 +148,7 @@ object Theme {
         Color.parseColor("#2FA2DA")
     )
     const val FAB_STROKE = "#BFFFFFFF"
-    const val FAB_GLOW = "#2C0EA5E9"
-    const val FAB_ICON = "#0E7FB8"
-
-    /** 分组气泡色板（零图标，纯色值）g1..g7 */
-    val GROUP_COLORS = intArrayOf(
-        Color.parseColor("#7C3AED"), Color.parseColor("#2F6BFF"),
-        Color.parseColor("#12B76A"), Color.parseColor("#F79009"),
-        Color.parseColor("#EC4899"), Color.parseColor("#6B7280"),
-        Color.parseColor("#0EA5E9")
-    )
-
-    /** 分组气泡的浅底 / 深字（v3 浅色主题用 10% 底 + 主色字） */
-    fun groupTint(i: Int): Int {
-        val c = GROUP_COLORS[i % GROUP_COLORS.size]
-        return Color.argb(if (isDark()) 42 else 26, Color.red(c), Color.green(c), Color.blue(c))
-    }
-
-    fun groupInk(i: Int): Int {
-        val c = GROUP_COLORS[i % GROUP_COLORS.size]
-        return if (isDark()) lighten(c) else c
-    }
-
-    private fun lighten(c: Int): Int {
-        val r = (Color.red(c) + (255 - Color.red(c)) * 0.35f).toInt()
-        val g = (Color.green(c) + (255 - Color.green(c)) * 0.35f).toInt()
-        val b = (Color.blue(c) + (255 - Color.blue(c)) * 0.35f).toInt()
-        return Color.rgb(r, g, b)
-    }
+    const val FAB_GLOW = "#7DD3FC"
 
     // ---------- 取色 ----------
     fun bg0(): Int = c(if (isDark()) D_BG0 else L_BG0)
@@ -122,53 +166,66 @@ object Theme {
     fun warn(): Int = c(WARN)
     fun danger(): Int = c(DANGER)
 
-    /** 兼容旧调用：卡片底色 */
+    /** 兼容旧调用 */
     fun card(): Int = surface()
     fun bg(): Int = bg0()
+    fun purple(): Int = pri()
 
     private fun c(hex: String): Int = Color.parseColor(hex)
 
-    /** 主色渐变（135° 蓝→紫） */
+    /** 主色渐变 135°（--grad） */
     fun gradStops(): IntArray = intArrayOf(c(PRI2), c(PRI))
+    fun orientation(): GradientDrawable.Orientation = GradientDrawable.Orientation.TL_BR
 
     // ---------- Shape ----------
 
-    /** 卡片/气泡通用圆角背景 */
-    fun bubble(ctx: Context, color: Int, radiusDp: Float, stroke: Int = 0): GradientDrawable =
+    fun rect(color: Int, rDp: Float, ctx: Context, stroke: Int = 0): GradientDrawable =
         GradientDrawable().apply {
             shape = GradientDrawable.RECTANGLE
-            cornerRadius = Display.dp(ctx, radiusDp)
+            cornerRadius = Display.dp(ctx, rDp)
             setColor(color)
             if (stroke != 0) setStroke(1, stroke)
         }
 
-    /** 胶囊：圆角取半高，调用方给定高度换算 */
-    fun capsule(ctx: Context, color: Int, radiusDp: Float): GradientDrawable =
-        bubble(ctx, color, radiusDp)
+    /** 卡片：--radius 16 + --shadow */
+    fun cardBg(ctx: Context): GradientDrawable = rect(surface(), RADIUS, ctx, line())
 
-    fun bubbleRound(ctx: Context, color: Int): GradientDrawable =
+    fun oval(color: Int): GradientDrawable =
         GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(color) }
 
-    /** 主色渐变 135° */
-    fun gradient(ctx: Context, radiusDp: Float): GradientDrawable =
+    fun grad(ctx: Context, rDp: Float): GradientDrawable =
         GradientDrawable(orientation(), gradStops()).apply {
-            cornerRadius = Display.dp(ctx, radiusDp)
+            cornerRadius = Display.dp(ctx, rDp)
         }
 
-    /** FAB 天蓝渐变（155° 用 LEFT_RIGHT 由上到下近似，v3 主视觉） */
-    fun fabGradient(): GradientDrawable =
+    fun gradOval(): GradientDrawable =
+        GradientDrawable(orientation(), gradStops()).apply { shape = GradientDrawable.OVAL }
+
+    /** FAB 天蓝渐变球（155deg 近似为自上而下） */
+    fun fab(): GradientDrawable =
         GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, FAB_STOPS).apply {
             shape = GradientDrawable.OVAL
         }
 
-    /** 弹窗底：竖向三段渐变（v3 gdlg） */
-    fun dialogBg(strokeColor: Int): GradientDrawable =
+    /** 弹窗底（v3 gdlg：竖向三段渐变） */
+    fun dialogBg(): GradientDrawable =
         GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
             if (isDark()) intArrayOf(c("#241F3E"), c("#1E1A34"), c("#191528"))
             else intArrayOf(c("#FFFFFF"), c("#FCFCFE"), c("#F5F6FA"))
-        ).apply { setStroke(1, strokeColor) }
+        ).apply { cornerRadius = 0f; setStroke(1, line()) }
 
-    /** 分离线（1px） */
+    // ---------- 兼容别名（历史调用点）----------
+    fun bubble(ctx: Context, color: Int, rDp: Float, stroke: Int = 0): GradientDrawable =
+        rect(color, rDp, ctx, stroke)
+    fun bubbleRound(ctx: Context, color: Int): GradientDrawable = oval(color)
+    fun gradient(ctx: Context, rDp: Float): GradientDrawable = grad(ctx, rDp)
+    fun fabGradient(): GradientDrawable = fab()
+    const val BLUE = PRI2
+    const val PURPLE = PRI
+    val GROUP_COLORS: IntArray get() = G
+    fun groupTint(i: Int): Int = gTint(i)
+    fun groupInk(i: Int): Int = gInk(i)
+
     fun hairline(ctx: Context): android.view.View = android.view.View(ctx).apply {
         setBackgroundColor(line())
     }

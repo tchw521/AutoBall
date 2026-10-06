@@ -26,6 +26,8 @@ interface PageHost {
     fun openCreate()
     fun refreshAll()
     fun startRecording()
+    fun runScript(script: Script)
+    fun toggleTheme()
 }
 
 class MainActivity : Activity(), PageHost {
@@ -137,6 +139,22 @@ class MainActivity : Activity(), PageHost {
         val idx = current
         content.removeAllViews()
         showPage(idx)
+    }
+
+    override fun runScript(script: Script) {
+        // 统一入口：与悬浮球手势一致，全局单实例、重复触发转为停止
+        if (com.autoball.core.engine.ScriptLauncher.isRunning()) {
+            com.autoball.core.engine.ScriptLauncher.stop()
+            Ui.toast(this, "已停止")
+            return
+        }
+        Ui.toast(this, "开始运行「${script.name}」")
+        com.autoball.core.engine.ScriptLauncher.launch(this, script)
+    }
+
+    override fun toggleTheme() {
+        Theme.toggleDark()
+        recreate()
     }
 
     override fun startRecording() {
