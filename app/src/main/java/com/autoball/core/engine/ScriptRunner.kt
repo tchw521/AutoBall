@@ -6,6 +6,8 @@ import com.autoball.core.backend.BackendRouter
 import com.autoball.core.backend.ExecContext
 import com.autoball.core.model.Script
 import com.autoball.core.model.ScriptKind
+import com.autoball.core.util.CoordMapper
+import com.autoball.core.util.Display
 
 /**
  * 脚本运行入口：把「JS 脚本」与「动作流」两种脚本统一调度起来。
@@ -63,7 +65,16 @@ object ScriptRunner {
         var flowOk = true
         val flow = script.flow
         if (flow != null) {
-            val runner = FlowRunner(router, control, ctx, AB.log, jsEval) { sid ->
+            // 多分辨率适配：按录制时的屏幕签名缩放坐标
+            val scale = runCatching {
+                val p = Display.screenSize(com.autoball.App.get())
+                val rot = com.autoball.App.get().resources.configuration.orientation
+                CoordMapper.compute(flow.display, p.x, p.y, rot)
+            }.getOrElse { CoordMapper.Scale.NONE }
+            if (scale.reason != null) AB.log.warn(ctx.runId, scale.reason!!)
+            else if (scale.active) AB.log.info(ctx.runId, "已按屏幕尺寸缩放坐标 %.2f×%.2f".format(scale.sx, scale.sy))
+
+            val runner = FlowRunner(router, control, ctx, AB.log, jsEval, null, scale) { sid ->
                 val sub = AB.store.get(sid)
                 if (sub == null) { AB.log.warn(ctx.runId, "子脚本不存在: $sid"); false }
                 else runNested(sub, router, control, ctx, timeoutMs)

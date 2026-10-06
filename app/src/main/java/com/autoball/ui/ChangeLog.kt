@@ -11,6 +11,12 @@ import com.autoball.core.util.Display
 object ChangeLog {
 
     private val entries = listOf(
+        "v0.4.0" to listOf(
+            "坐标归一化：按录制时的屏幕签名自动缩放坐标、路径与多指轨迹",
+            "转屏保护：方向不同时不静默换算，改为提示重新校准",
+            "修复 Shizuku AIDL 桩语法导致构建失败的问题",
+            "修正 QuickJS 源码拉取缺失头文件的问题"
+        ),
         "v0.3.0" to listOf(
             "执行层重写：无障碍与 Shizuku 两种授权并行对等，任意一种即可运行完整脚本",
             "新增动作级能力路由：按动作所需能力自动选择后端，失败自动切换到另一种",
@@ -40,7 +46,7 @@ object ChangeLog {
             sb.append('\n')
         }
         sb.append("已知限制\n")
-        sb.append("  · 坐标为绝对像素，换机型或转屏会偏移，归一化支持规划在 v0.8\n")
+        sb.append("  · 坐标已支持自动缩放，但 JS 脚本内手写坐标仍按绝对像素执行\n")
         sb.append("  · 多指手势在无障碍通道依赖并行 stroke，部分厂商 ROM 会降级为单指\n")
         sb.append("  · 图像匹配与 OCR 不进入初始安装包，需按需下载\n")
 

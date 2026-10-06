@@ -6,6 +6,7 @@ import com.autoball.core.backend.ExecContext
 import com.autoball.core.log.RunLog
 import com.autoball.core.model.*
 import com.autoball.core.util.Condition
+import com.autoball.core.util.CoordMapper
 
 /**
  * 动作流执行器：**不经 JS 引擎**，直接把结构化动作交给后端执行。
@@ -21,7 +22,9 @@ class FlowRunner(
     /** 运行 JS 片段（RUN_JS 动作）；无引擎时返回 false 并记录 */
     private val jsEval: ((String, ExecContext) -> Boolean)? = null,
     /** 运行子脚本（RUN_SCRIPT 动作）；由协调器注入以防重入 */
-    private val runScript: ((String) -> Boolean)? = null
+    private val runScript: ((String) -> Boolean)? = null,
+    /** 坐标缩放（多分辨率适配）：由调用方按录制签名计算后传入 */
+    private val scale: CoordMapper.Scale = CoordMapper.Scale.NONE
 ) {
 
     class Outcome(
@@ -101,7 +104,7 @@ class FlowRunner(
             ActionType.CONTROL_FLOW -> execControl(a)
             ActionType.RUN_ACTIONS -> {
                 if (a.subActions.isEmpty()) return true
-                val sub = FlowRunner(router, control, ctx, log, jsEval, runScript)
+                val sub = FlowRunner(router, control, ctx, log, jsEval, runScript, scale)
                 val nested = Flow().apply {
                     actions = a.subActions
                     speed = 1f
@@ -125,10 +128,11 @@ class FlowRunner(
                 if (fn == null) { log.warn(ctx.runId, "无法运行子脚本"); false } else fn(sid)
             }
             else -> {
-                val r = router.execute(a, ctx)
+                val target = CoordMapper.applyTo(a, scale)
+                val r = router.execute(target, ctx)
                 log.add(ctx.runId,
                     if (r.ok) RunLog.Level.OK else RunLog.Level.ERROR,
-                    a.type.label, r.message, a.id, r.backend.label, r.latencyMs)
+                    target.type.label, r.message, a.id, r.backend.label, r.latencyMs)
                 if (r.degraded) log.warn(ctx.runId, "降级执行：${r.message}")
                 r.ok
             }
