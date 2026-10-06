@@ -9,6 +9,5 @@
 .externalNativeBuild
 /.cxx
 /app/src/main/cpp/quickjs/
-signing.properties
 *.apk
 *.aab

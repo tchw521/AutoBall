@@ -32,17 +32,21 @@ android {
         resourceConfigurations += listOf("zh", "en")
     }
 
-    // 统一签名：debug 与 release 共用同一 keystore。
-    // 否则 debug 用本机默认 debug key、release 用另一把（或干脆不签名），
-    // 两个包签名不一致 → 装不上 / 无法覆盖升级。
     signingConfigs {
-        val sf = keystoreProps.getProperty("storeFile")
-        if (sf != null && rootProject.file(sf).exists()) {
+        // 统一签名：debug 与 release 共用同一 keystore。
+        // 否则 debug 用本机默认 debug key、release 用另一把（或干脆不签名），
+        // 两个包签名不一致 → 装不上 / 无法覆盖升级。
+        // keystore 随仓库提供；signing.properties 只是可选覆盖手段。
+        val sf = keystoreProps.getProperty("storeFile") ?: "app/autoball.jks"
+        val sp = keystoreProps.getProperty("storePassword") ?: "autoball2026"
+        val ka = keystoreProps.getProperty("keyAlias") ?: "autoball"
+        val kp = keystoreProps.getProperty("keyPassword") ?: "autoball2026"
+        if (rootProject.file(sf).exists()) {
             create("unified") {
                 storeFile = rootProject.file(sf)
-                storePassword = keystoreProps.getProperty("storePassword") ?: ""
-                keyAlias = keystoreProps.getProperty("keyAlias") ?: ""
-                keyPassword = keystoreProps.getProperty("keyPassword") ?: ""
+                storePassword = sp
+                keyAlias = ka
+                keyPassword = kp
             }
         }
     }
