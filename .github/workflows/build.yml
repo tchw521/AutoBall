@@ -10,6 +10,11 @@ on:
         type: boolean
         default: false
 
+permissions:
+  contents: read
+  actions: write
+  issues: write
+
 jobs:
   build:
     runs-on: ubuntu-24.04
@@ -66,17 +71,12 @@ jobs:
           echo "---- 末尾日志 ----"
           tail -n 60 build-debug.log || true
 
-      - name: 回传构建日志到仓库（供诊断）
+      - name: 回传构建诊断（Issue）
         if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          mkdir -p ci-logs
-          tail -n 400 build-debug.log > ci-logs/${{ matrix.engine }}-debug.log 2>/dev/null || echo "no log" > ci-logs/${{ matrix.engine }}-debug.log
-          git config user.name "ci-bot"
-          git config user.email "ci@autoball.local"
-          git checkout -B ci-logs-${{ matrix.engine }}
-          git add -f ci-logs
-          git commit -m "ci: 构建日志 ${{ matrix.engine }}" || echo "no change"
-          git push -f origin ci-logs-${{ matrix.engine }} || echo "push failed"
+          python3 .github/ci_report.py build-debug.log "debug-${{ matrix.engine }}" || echo "report failed"
 
       - name: Build Release APK
         run: |
@@ -87,6 +87,13 @@ jobs:
           fi
           echo "---- 末尾日志 ----"
           tail -n 60 build-release.log || true
+
+      - name: 回传 Release 诊断（Issue）
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3 .github/ci_report.py build-release.log "release-${{ matrix.engine }}" || echo "report failed"
 
       - name: Report APK size
         if: always()
