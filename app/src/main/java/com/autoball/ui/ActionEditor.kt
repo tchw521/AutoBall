@@ -27,14 +27,12 @@ object ActionEditor {
         showTypeDialog(activity, existing, onSave)
     }
 
-    /** 动作宫格（v3：宫格选类型，比长列表更好点） */
+    /** 动作宫格（v3：3 列宫格选类型，比长列表好点） */
     private fun showTypeDialog(activity: Activity, existing: Action?, onSave: (Action) -> Unit) {
         val ctx = activity
         val names = ActionType.values()
         val grid = android.widget.GridLayout(ctx).apply {
             columnCount = 3
-            setPadding(Display.dpInt(ctx, 4f), Display.dpInt(ctx, 4f),
-                Display.dpInt(ctx, 4f), Display.dpInt(ctx, 4f))
         }
         for (i in names.indices) {
             val cell = TextView(ctx).apply {
@@ -44,8 +42,8 @@ object ActionEditor {
                 setTextColor(Theme.textPri())
                 gravity = Gravity.CENTER
                 background = Theme.bubble(ctx, Theme.surface2(), 12f)
-                setPadding(Display.dpInt(ctx, 6f), Display.dpInt(ctx, 12f),
-                    Display.dpInt(ctx, 6f), Display.dpInt(ctx, 12f))
+                setPadding(Display.dpInt(ctx, 4f), Display.dpInt(ctx, 12f),
+                    Display.dpInt(ctx, 4f), Display.dpInt(ctx, 12f))
                 setOnClickListener {
                     val a = existing ?: Action().apply { id = Action.newId() }
                     a.type = names[i]
@@ -77,6 +75,7 @@ object ActionEditor {
         }
 
         box.addView(title(ctx, a.type.label))
+
         val groups = a.type.fieldGroups
         var xEd: EditText? = null
         var yEd: EditText? = null
@@ -116,22 +115,16 @@ object ActionEditor {
             row.addView(y2Ed, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
             box.addView(row)
             val pickRow = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL }
-            val p1 = pickButton(ctx, { dialog }, "拾取结束点") { px, py ->
+            pickRow.addView(pickButton(ctx, { dialog }, "拾取结束点") { px, py ->
                 x2Ed?.setText(px.toInt().toString())
                 y2Ed?.setText(py.toInt().toString())
-            }
-            pickRow.addView(p1, LinearLayout.LayoutParams(0,
-                LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-            val p2 = pickButton(ctx, { dialog }, "框选区域") { l, t, r, b ->
+            }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+            pickRow.addView(regionButton(ctx, { dialog }, "框选区域") { l, t, r, b ->
                 xEd?.setText(l.toInt().toString())
                 yEd?.setText(t.toInt().toString())
                 x2Ed?.setText(r.toInt().toString())
                 y2Ed?.setText(b.toInt().toString())
-            }
-            (p2.layoutParams as LinearLayout.LayoutParams).weight = 1f
-            (p2.layoutParams as LinearLayout.LayoutParams).width = 0
-            (p2.layoutParams as LinearLayout.LayoutParams).marginStart = Display.dpInt(ctx, 6f)
-            pickRow.addView(p2)
+            })
             box.addView(pickRow)
         }
 
@@ -309,27 +302,27 @@ object ActionEditor {
             }
             .negative("取消")
             .show()
-                    }
-                }
-                scriptSpinner?.let {
-                    val scripts = AB.store.all()
-                    if (scripts.isNotEmpty()) a.scriptId = scripts[it.selectedItemPosition].id
-                }
-                controlSpinner?.let { a.controlOp = ControlOp.values()[it.selectedItemPosition] }
-                a.waitMs = waitEd.text.toString().toLongOrNull() ?: a.waitMs
-                a.repeat = repeatEd.text.toString().toIntOrNull() ?: a.repeat
-                val c = condEd.text.toString().trim()
-                a.condition = if (c.isEmpty()) null else c
-                if (a.type == ActionType.SET_VAR && a.varValue == null) a.varValue = a.text
-                onSave(a)
-            }
-        dialog = Ui.dialog(ctx, a.type.label)
-            .body(box)
-            .positive("保存") { commit(); true }
-            .negative("取消")
-            .width(302f)
-            .show()
     }
+
+    /** 框选区域：一次填满起点与终点（对齐 v3 P-64） */
+    private fun regionButton(ctx: Activity, hostProvider: () -> android.app.Dialog?, text: String,
+                             onPicked: (Float, Float, Float, Float) -> Unit): TextView =
+        TextView(ctx).apply {
+            this.text = text
+            textSize = 12f
+            setTextColor(Color.WHITE)
+            gravity = Gravity.CENTER
+            background = Theme.bubble(ctx, Theme.ok(), 10f)
+            setPadding(Display.dpInt(ctx, 12f), Display.dpInt(ctx, 6f),
+                Display.dpInt(ctx, 12f), Display.dpInt(ctx, 6f))
+            layoutParams = LinearLayout.LayoutParams(0,
+                LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                setMargins(Display.dpInt(ctx, 6f), Display.dpInt(ctx, 6f), 0, 0)
+            }
+            setOnClickListener {
+                RegionPicker.pick(ctx, ctx, hostProvider()) { l, t, r, b -> onPicked(l, t, r, b) }
+            }
+        }
 
     // ---------- 小部件 ----------
 
@@ -374,26 +367,8 @@ object ActionEditor {
 
     /** hostProvider 用延迟取值：调用时弹窗尚未 create，直接传引用会拿到 null */
     private fun pickButton(ctx: Activity, hostProvider: () -> android.app.Dialog?, text: String,
-                           onRegion: (Float, Float, Float, Float) -> Unit, unused: Boolean = true): TextView =
-        TextView(ctx).apply {
-            this.text = text
-            textSize = 12f
-            setTextColor(Color.WHITE)
-            gravity = Gravity.CENTER
-            background = Theme.bubble(ctx, Theme.ok(), 10f)
-            setPadding(Display.dpInt(ctx, 12f), Display.dpInt(ctx, 6f),
-                Display.dpInt(ctx, 12f), Display.dpInt(ctx, 6f))
-            val lp = LinearLayout.LayoutParams(0,
-                LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-            lp.setMargins(0, Display.dpInt(ctx, 6f), 0, 0)
-            layoutParams = lp
-            setOnClickListener {
-                RegionPicker.pick(ctx, ctx, hostProvider()) { l, t, r, b -> onRegion(l, t, r, b) }
-            }
-        }
-
-    private fun pickButton(ctx: Activity, hostProvider: () -> android.app.Dialog?, text: String,
-                           onPicked: (Float, Float) -> Unit): TextView =
+                           onPicked: (Float, Float) -> Unit,
+                           lp: LinearLayout.LayoutParams? = null): TextView =
         TextView(ctx).apply {
             this.text = text
             textSize = 12f
@@ -402,10 +377,11 @@ object ActionEditor {
             background = Theme.bubble(ctx, Color.parseColor(Theme.PURPLE), 10f)
             setPadding(Display.dpInt(ctx, 12f), Display.dpInt(ctx, 6f),
                 Display.dpInt(ctx, 12f), Display.dpInt(ctx, 6f))
-            val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT)
-            lp.setMargins(0, Display.dpInt(ctx, 6f), 0, 0)
-            layoutParams = lp
+            this.layoutParams = lp ?: LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                setMargins(0, Display.dpInt(ctx, 6f), 0, 0)
+            }
             setOnClickListener { CoordPicker.pick(ctx, ctx, hostProvider(), onPicked) }
         }
 }
