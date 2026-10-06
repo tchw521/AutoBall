@@ -335,6 +335,6 @@ object ActionEditor {
                 LinearLayout.LayoutParams.WRAP_CONTENT)
             lp.setMargins(0, Display.dpInt(ctx, 6f), 0, 0)
             layoutParams = lp
-            setOnClickListener { CoordPicker.pick(ctx, hostProvider(), onPicked) }
+            setOnClickListener { CoordPicker.pick(ctx, ctx, hostProvider(), onPicked) }
         }
 }

@@ -51,10 +51,6 @@ object CoordPicker {
 
     private val handler = Handler(Looper.getMainLooper())
 
-    fun pick(context: Context, activity: Activity?, onPicked: (Float, Float) -> Unit) {
-        pick(context, activity, null, onPicked)
-    }
-
     /**
      * @param hostDialog 触发拾取的弹窗（可为空）；拾取期间隐藏，取完自动恢复
      */
