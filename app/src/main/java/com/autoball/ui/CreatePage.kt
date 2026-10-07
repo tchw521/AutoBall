@@ -52,7 +52,7 @@ class CreatePage(context: Context, private val host: PageHost) : FrameLayout(con
                     if (state == RecordController.State.RECORDING) {
                         FloatManager.setRecording(true)
                         RecordOverlay.show(activity, c)
-                        RecChrome.show(activity, c, c.name)
+                        RecChrome.show(activity, c, "未命名脚本")
                         // 录的是别的应用上的操作：开始录制后让出屏幕回到桌面，
                         // 用户再打开目标应用，否则采集层只能采到本应用自己的界面
                         Handler(Looper.getMainLooper()).postDelayed({
@@ -106,7 +106,7 @@ class CreatePage(context: Context, private val host: PageHost) : FrameLayout(con
                 .setNeutralButton("继续录制") { d, _ ->
                     c?.resume()
                     RecordOverlay.show(activity, c!!)
-                    RecChrome.show(activity, c, c.name)
+                    RecChrome.show(activity, c, "未命名脚本")
                     d.dismiss()
                 }
                 .setNegativeButton("放弃") { d, _ ->

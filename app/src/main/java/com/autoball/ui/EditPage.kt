@@ -434,11 +434,12 @@ class EditPage(context: Context, private val host: PageHost) : FrameLayout(conte
                 android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> {
                     handler.removeCallbacksAndMessages(null)
                     if (dragging) {
-                        val rowH = (v.height.takeIf { it > 0 } ?: Display.dpInt(context, 56f))
-                            .toFloat()
+                        val rowH = (v.height.takeIf { it > 0 }
+                            ?: Display.dpInt(context, 56f)).toFloat()
                         val delta = (e.rawY - startY) / rowH
-                        val target = (index + kotlin.math.round(delta))
-                            .coerceIn(0, (script?.flow?.actions?.size ?: 1) - 1)
+                        val maxIdx = (script?.flow?.actions?.size ?: 1) - 1
+                        val target = (index + kotlin.math.round(delta)).toInt()
+                            .coerceIn(0, if (maxIdx < 0) 0 else maxIdx)
                         v.animate().scaleX(1f).scaleY(1f).translationY(0f)
                             .translationZ(0f).setDuration(140).start()
                         v.background = Theme.rect(Theme.surface(), 13f, context, Theme.line())
