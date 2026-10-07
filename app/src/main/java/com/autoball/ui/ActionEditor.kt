@@ -89,13 +89,14 @@ object ActionEditor {
 
         // ---- 类型 ----
         rows.add {
-            box.addView(Ui.adRow(ctx, "动作类型", a.type.label, true, {
+            box.addView(Ui.adRow(ctx, "动作类型", a.type.label, true,
+                "共 ${ActionType.values().size} 类动作，按需挑选") {
                 Ui.popMenu(ctx, box, ActionType.labels().toList(),
                     ActionType.values().indexOf(a.type)) { i ->
                     a.type = ActionType.values()[i]
                     rebuild()
                 }
-            }) { Ui.toast(ctx, "共 ${ActionType.values().size} 类动作，按需挑选") })
+            })
         }
 
         // ---- 按类型分组的字段 ----
@@ -104,27 +105,29 @@ object ActionEditor {
 
         if (groups.contains(com.autoball.core.model.FieldGroup.POINT)) {
             rows.add {
-                box.addView(Ui.adRow(ctx, "位置", "(${a.x.toInt()}%, ${a.y.toInt()}%)", true) {
+                box.addView(Ui.adRow(ctx, "位置", "(${a.x.toInt()}%, ${a.y.toInt()}%)", true,
+                    "百分比坐标，换机型不会点偏") {
                     dialog?.let { d ->
                         CoordPicker.pick(ctx, activity, d) { px, py ->
                             a.x = px; a.y = py
                             rebuild()
                         }
                     }
-                } { Ui.toast(ctx, "百分比坐标，换机型不会点偏") })
+                })
             }
         }
         if (groups.contains(com.autoball.core.model.FieldGroup.POINT_END)) {
             rows.add {
                 box.addView(Ui.adRow(ctx, "结束位置",
-                    "(${a.x2.toInt()}%, ${a.y2.toInt()}%)", a.x2 != 0f || a.y2 != 0f) {
+                    "(${a.x2.toInt()}%, ${a.y2.toInt()}%)", a.x2 != 0f || a.y2 != 0f,
+                    "框选起点与终点，一次填满两个坐标") {
                     dialog?.let { d ->
                         RegionPicker.pick(ctx, activity, d) { l, t, r, b ->
                             a.x = l; a.y = t; a.x2 = l + r; a.y2 = t + b
                             rebuild()
                         }
                     }
-                } { Ui.toast(ctx, "框选起点与终点，一次填满两个坐标") })
+                })
             }
         }
         if (groups.contains(com.autoball.core.model.FieldGroup.PRESS_DURATION)) {
@@ -161,7 +164,8 @@ object ActionEditor {
         }
         if (groups.contains(com.autoball.core.model.FieldGroup.CONTROL)) {
             rows.add {
-                box.addView(Ui.adRow(ctx, "控制", a.controlOp.label, true) {
+                box.addView(Ui.adRow(ctx, "控制", a.controlOp.label, true,
+                "暂停 / 继续 / 停止 / 跳转 / 等待") {
                     Ui.popMenu(ctx, box, ControlOp.values().map { it.label },
                         ControlOp.values().indexOf(a.controlOp)) { i ->
                         a.controlOp = ControlOp.values()[i]
@@ -179,16 +183,17 @@ object ActionEditor {
         rows.add { box.addView(repRow) }
 
         rows.add {
-            box.addView(Ui.adRow(ctx, "运行条件", a.condition ?: "未设置", a.condition != null) {
+            box.addView(Ui.adRow(ctx, "运行条件", a.condition ?: "未设置", a.condition != null,
+                "条件成立才执行本动作") {
                 ConditionDialog.show(ctx, a) { rebuild() }
-            } { Ui.toast(ctx, "条件成立才执行本动作") })
+            })
         }
         rows.add {
             box.addView(Ui.adRow(ctx, "监听动作",
                 if (a.listeners.isEmpty()) "未设置" else "已设置 ${a.listeners.size} 项",
-                a.listeners.isNotEmpty()) {
+                a.listeners.isNotEmpty(), "在指定时机自动执行附加动作") {
                 ListenerDialog.show(ctx, a) { rebuild() }
-            } { Ui.toast(ctx, "在指定时机自动执行附加动作") })
+            })
         }
 
         // ---- 备注 ----

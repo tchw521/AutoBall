@@ -314,7 +314,7 @@ object Ui {
 
     /** .adrow：标签 + 值 + 问号。行高 23dp、圆角 6、左右 padding 5 */
     fun adRow(ctx: Context, label: String, value: String, set: Boolean,
-              onValue: () -> Unit, onHelp: (() -> Unit)? = null): LinearLayout {
+              help: String? = null, onValue: () -> Unit): LinearLayout {
         val row = LinearLayout(ctx).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -350,7 +350,7 @@ object Ui {
                 6f, ctx)
         })
         // .adq：17dp 圆形问号
-        if (onHelp != null) {
+        if (help != null) {
             row.addView(TextView(ctx).apply {
                 text = "?"
                 textSize = 9.5f
@@ -362,7 +362,7 @@ object Ui {
                 layoutParams = LinearLayout.LayoutParams(sz, sz).apply {
                     marginStart = Display.dpInt(ctx, 4f)
                 }
-                setOnClickListener { onHelp.invoke() }
+                setOnClickListener { tip(this, "说明", help) }
             })
         }
         return row

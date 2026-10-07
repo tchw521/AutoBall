@@ -52,13 +52,13 @@ object ConditionDialog {
         fun rebuild() {
             box.removeAllViews()
 
-            box.addView(Ui.adRow(ctx, "条件类型", kind.label, kind != Kind.NONE) {
+            box.addView(Ui.adRow(ctx, "条件类型", kind.label, kind != Kind.NONE, kind.desc) {
                 Ui.popMenu(ctx, box, Kind.values().map { it.label },
                     Kind.values().indexOf(kind)) { i ->
                     kind = Kind.values()[i]
                     rebuild()
                 }
-            } { Ui.toast(ctx, kind.desc) })
+            })
 
             if (kind != Kind.NONE) {
                 box.addView(Ui.adSec(ctx))
@@ -74,14 +74,16 @@ object ConditionDialog {
                 exprRef = et
 
                 box.addView(Ui.adSec(ctx))
-                box.addView(Ui.adRow(ctx, "条件区域", "整屏", false) {
+                box.addView(Ui.adRow(ctx, "条件区域", "整屏", false,
+                    "缩小检测范围可提速") {
                     Ui.toast(ctx, "区域选择：可限定只在屏幕一部分内检测")
-                } { Ui.toast(ctx, "缩小检测范围可提速") })
-                box.addView(Ui.adRow(ctx, "相似度", "90%", true) {
+                })
+                box.addView(Ui.adRow(ctx, "相似度", "90%", true,
+                    "越高越严格，越容易漏检") {
                     Ui.popMenu(ctx, box, listOf("70%", "80%", "90%", "95%"), 2) {
                         Ui.toast(ctx, "已设置相似度")
                     }
-                } { Ui.toast(ctx, "越高越严格，越容易漏检") })
+                })
                 box.addView(Ui.adRow(ctx, "条件不成立时", "跳过本动作", true) {
                     Ui.popMenu(ctx, box, listOf("跳过本动作", "等待重试", "停止脚本"), 0) {}
                 })
