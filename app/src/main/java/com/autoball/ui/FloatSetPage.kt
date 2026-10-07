@@ -32,7 +32,7 @@ class FloatSetPage(context: Context, private val host: PageHost) : FrameLayout(c
     private fun build() {
         val root = Kit.root(context)
         root.addView(Kit.statusBar(context))
-        root.addView(Kit.subbar(context, "悬浮设置") { host.showPage(4) })
+        root.addView(Kit.subbar(context, "悬浮设置", onBack = { host.showPage(4) }))
 
         segRow = Kit.segment(context, listOf("悬浮球", "悬浮窗"), pane) { i ->
             pane = i

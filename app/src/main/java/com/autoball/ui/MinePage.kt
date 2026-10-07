@@ -291,6 +291,30 @@ class MinePage(context: Context, private val host: PageHost) : FrameLayout(conte
         }
     }
 
+    /** 权限行：左侧状态点 + 主副标题 + 右侧状态/动作按钮 */
+    private fun permRow(title: String, sub: String, on: Boolean,
+                        action: String, onClick: () -> Unit): LinearLayout {
+        val row = Kit.rowCard(context)
+        row.addView(android.view.View(context).apply {
+            background = Theme.oval(if (on) Theme.ok() else Theme.danger())
+            layoutParams = LinearLayout.LayoutParams(Display.dpInt(context, 10f),
+                Display.dpInt(context, 10f))
+        })
+        row.addView(Kit.twoLine(context, title, sub))
+        row.addView(TextView(context).apply {
+            text = if (on) "已开启" else action
+            textSize = 11.5f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(if (on) Theme.ok() else Theme.pri2())
+            gravity = Gravity.CENTER
+            background = Theme.rect(Theme.surface2(), 8f, context)
+            setPadding(Display.dpInt(context, 10f), Display.dpInt(context, 5f),
+                Display.dpInt(context, 10f), Display.dpInt(context, 5f))
+            setOnClickListener { onClick() }
+        })
+        return row
+    }
+
     private fun statusLine(): TextView {
         val st = AB.router.status()
         val txt = st.joinToString("  ") { (id, h) -> "${id.label}: ${h.name}" }

@@ -397,7 +397,7 @@ object Kit {
      * 滑块行（v3 .sz）。
      * 用系统 SeekBar 实现真实拖动，而非早前的「点一次跳一档」。
      */
-    fun sliderRow(ctx: Context, title: String, init: Float, min: Float, max: Float,
+    fun sliderRow(ctx: Context, title: String, init: Float, minVal: Float, maxVal: Float,
                   unit: String, onChange: (Float) -> Unit): LinearLayout {
         val row = rowCard(ctx)
         row.addView(TextView(ctx).apply {
@@ -408,7 +408,7 @@ object Kit {
             layoutParams = LinearLayout.LayoutParams(Display.dpInt(ctx, 78f),
                 LinearLayout.LayoutParams.WRAP_CONTENT)
         })
-        val v0 = init.coerceIn(min, max)
+        val v0 = init.coerceIn(minVal, maxVal)
         val valTv = TextView(ctx).apply {
             text = fmt(v0, unit)
             textSize = 11.5f
@@ -418,18 +418,18 @@ object Kit {
             gravity = Gravity.END
         }
         val bar = SeekBar(ctx).apply {
-            max = 1000
+            setMax(1000)
             if (Build.VERSION.SDK_INT >= 21) {
                 progressTintList = android.content.res.ColorStateList.valueOf(Theme.pri2())
                 thumbTintList = android.content.res.ColorStateList.valueOf(Theme.pri2())
             }
-            progress = (((v0 - min) / (max - min).coerceAtLeast(0.0001f)) * 1000)
+            progress = (((v0 - minVal) / (maxVal - minVal).coerceAtLeast(0.0001f)) * 1000)
                 .toInt().coerceIn(0, 1000)
             layoutParams = LinearLayout.LayoutParams(0,
                 LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
                 override fun onProgressChanged(sb: SeekBar, p: Int, fromUser: Boolean) {
-                    val v = min + (max - min) * (p / 1000f)
+                    val v = minVal + (maxVal - minVal) * (p / 1000f)
                     valTv.text = fmt(v, unit)
                     if (fromUser) onChange(v)
                 }
