@@ -109,61 +109,27 @@ class ScriptPage(
     }
 
     private fun topbar(): LinearLayout {
-        val b = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            setPadding(Display.dpInt(context, 18f), Display.dpInt(context, 6f),
-                Display.dpInt(context, 18f), Display.dpInt(context, 12f))
-            gravity = Gravity.BOTTOM
-        }
-        val l = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
-        l.addView(TextView(context).apply {
-            text = "脚本"
-            textSize = 26f
-            setTypeface(null, Typeface.BOLD)
-            setTextColor(Theme.textPri())
-            includeFontPadding = false
-        })
-        l.addView(TextView(context).apply {
-            val n = AB.store.all().size
-            text = "共 $n 个脚本 · 本地运行"
-            textSize = 12f
-            setTextColor(Theme.textSec())
-            setPadding(0, Display.dpInt(context, 3f), 0, 0)
-        })
-        b.addView(l, LinearLayout.LayoutParams(0,
-            LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-
-        b.addView(iconBtn("＋") { NewScriptSheet.show(context as android.app.Activity, host) })
-        b.addView(iconBtn("⋯") {
-            Ui.menu(context, this,
-                listOf("添加脚本" to false, "导入分享码" to false,
-                       "多选管理" to false, "全部导出" to false)) { i ->
-                when (i) {
-                    0 -> NewScriptSheet.show(context as android.app.Activity, host)
-                    1 -> {
-                        val act = context as? android.app.Activity ?: return@menu
-                        ShareImportDialog.show(act, host)
+        val n = AB.store.all().size
+        return Kit.topbar(context, "脚本", "共 $n 个脚本 · 本地运行", listOf(
+            Kit.actionBtn(context, "＋") {
+                NewScriptSheet.show(context as android.app.Activity, host)
+            },
+            Kit.actionBtn(context, "⋯") {
+                Ui.menu(context, this@ScriptPage,
+                    listOf("添加脚本" to false, "导入分享码" to false,
+                           "多选管理" to false, "全部导出" to false)) { i ->
+                    when (i) {
+                        0 -> NewScriptSheet.show(context as android.app.Activity, host)
+                        1 -> {
+                            val act = context as? android.app.Activity ?: return@menu
+                            ShareImportDialog.show(act, host)
+                        }
+                        2 -> { multiMode = true; renderList() }
+                        3 -> Ui.toast(context, "已复制全部脚本的分享码（暂为逐条）")
                     }
-                    2 -> { multiMode = true; renderList() }
-                    3 -> Ui.toast(context, "已复制全部脚本的分享码（暂为逐条）")
                 }
             }
-        })
-        return b
-    }
-
-    private fun iconBtn(glyph: String, onClick: () -> Unit): TextView = TextView(context).apply {
-        text = glyph
-        textSize = 17f
-        setTypeface(null, Typeface.BOLD)
-        setTextColor(Theme.textSec())
-        gravity = Gravity.CENTER
-        background = Theme.rect(Theme.surface(), 12f, context, Theme.line())
-        val s = Display.dpInt(context, 36f)
-        layoutParams = LinearLayout.LayoutParams(s, s).apply {
-            marginStart = Display.dpInt(context, 6f)
-        }
-        setOnClickListener { onClick() }
+        ))
     }
 
     private fun renderGroups() {

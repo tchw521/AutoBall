@@ -4,6 +4,48 @@
 
 ---
 
+## v1.3.0 · 组件统一与缺陷修复
+
+**新增 `Kit.kt`：统一组件库**
+
+此前各页各自私有一份组件，`topbar` 抄了 5 遍、`section` 4 遍、
+`switchRow` / `sliderRow` / `hintBox` / `miniBtn` / 分段控件各抄 3–6 遍，
+同一规格改一处要动 N 个文件。按「三次法则」收口为单一实现：
+
+- 顶栏类：`topbar`（一级页）/ `subbar`（二级页）/ `statusBar` / `actionBtn` /
+  `backBtn` / `themeBtn`
+- 容器类：`root` / `column` / `scroller` / `card` / `settingCard` / `rowCard` / `field`
+- 分区类：`section` / `groupHead` / `secRow`（标题 + 渐变胶囊按钮）
+- 行组件：`switchRow` / `valueRow` / `sliderRow` / `iconBox` / `twoLine`
+- 按钮类：`button` / `btnLine` / `pill` / `miniBtn` / `roundBtn`
+- 其它：`segment` / `statCard` / `statCards` / `hintBox` / `tip` / `note`
+
+页面改为只负责拼装与数据，不再各自实现规格。
+
+**复用落地**
+
+SetPage、LogPage、FloatSetPage 整体重写为 Kit 拼装；EditPage、JsPage、
+MarketPage、MinePage、ScriptPage 的私有组件逐步替换为 Kit 调用，
+删除各自的 `topbar` / `section` / `switchRow` / `sliderRow` / `iconBtn` /
+`miniBtn` / `statusBar` / `btn` / `segment` 私有副本。
+
+**缺陷修复**
+
+1. **拖动排序误伤其它消息**：收尾时用 `handler.removeCallbacksAndMessages(null)`
+   会清掉该 Handler 上排队的所有消息。改为持有 `Runnable` 引用，
+   用 `removeCallbacks(task)` 精确取消。
+2. **表单取值顺序耦合**：原实现按「第几个输入框」回读，字段一增删就错位。
+   改为给控件打 key 精确回读（本次已清理掉该隐式依赖）。
+3. **滑块是假的**：原「点一次跳一档」的伪滑块换成系统 `SeekBar`，
+   可真实拖动，进度条与数值实时联动。
+4. **透明度量纲不一致**：「我的」页存 0–1、悬浮设置页存 0–100，
+   同一配置项两套量纲会互相覆盖。统一为 0–1，UI 层做 ×100 换算，
+   改动滑块后立即重建悬浮球生效。
+5. **统计卡间距**：`statCards` 抽出单卡 `statCard`，间距由容器统一给，
+   不再靠调用方补 margin。
+
+---
+
 ## v1.2.0 · 录制悬浮三件套 + 拖动排序 + 悬浮窗皮肤
 
 **录制悬浮三件套（v3，新增 `RecChrome.kt`）**

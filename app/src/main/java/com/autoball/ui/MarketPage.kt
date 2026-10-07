@@ -64,19 +64,12 @@ class MarketPage(context: Context, private val host: PageHost) : FrameLayout(con
         val root = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
         root.addView(topbar())
 
-        segRow = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            background = Theme.rect(Theme.surface(), 12f, context, Theme.line())
-            setPadding(Display.dpInt(context, 4f), Display.dpInt(context, 4f),
-                Display.dpInt(context, 4f), Display.dpInt(context, 4f))
-            val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT)
-            lp.setMargins(Display.dpInt(context, 18f), 0,
-                Display.dpInt(context, 18f), Display.dpInt(context, 12f))
-            layoutParams = lp
+        segRow = Kit.segment(context, SEGS.toList(), segIdx) { i ->
+            segIdx = i
+            renderSeg()
+            renderList()
         }
         root.addView(segRow)
-        renderSeg()
 
         val pad = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
@@ -95,62 +88,23 @@ class MarketPage(context: Context, private val host: PageHost) : FrameLayout(con
     }
 
     private fun topbar(): LinearLayout {
-        val b = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            setPadding(Display.dpInt(context, 18f), Display.dpInt(context, 6f),
-                Display.dpInt(context, 18f), Display.dpInt(context, 12f))
-            gravity = Gravity.BOTTOM
+        val importBtn = Kit.pill(context, "🔗") {
+            val act = context as? Activity ?: return@pill
+            ShareImportDialog.show(act, host)
         }
-        val l = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
-        l.addView(TextView(context).apply {
-            text = "社区"
-            textSize = 26f
-            setTypeface(null, Typeface.BOLD)
-            setTextColor(Theme.textPri())
-            includeFontPadding = false
-        })
-        l.addView(TextView(context).apply {
-            text = "示例脚本 · 扩展模块 · 分享码"
-            textSize = 12f
-            setTextColor(Theme.textSec())
-            setPadding(0, Display.dpInt(context, 3f), 0, 0)
-        })
-        b.addView(l, LinearLayout.LayoutParams(0,
-            LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-        b.addView(TextView(context).apply {
-            text = "🔗"
-            textSize = 15f
-            gravity = Gravity.CENTER
-            setTextColor(Theme.textSec())
-            background = Theme.rect(Theme.surface(), 12f, context, Theme.line())
-            val s = Display.dpInt(context, 36f)
-            layoutParams = LinearLayout.LayoutParams(s, s)
-            setOnClickListener {
-                val act = context as? Activity ?: return@setOnClickListener
-                ShareImportDialog.show(act, host)
-            }
-        })
-        return b
+        return Kit.topbar(context, "社区", "示例脚本 · 扩展模块 · 分享码", listOf(importBtn))
     }
 
-    /** .seg：4 段 */
     private fun renderSeg() {
-        segRow.removeAllViews()
-        SEGS.forEachIndexed { i, t ->
-            segRow.addView(TextView(context).apply {
-                text = t
-                textSize = 13f
-                setTypeface(null, Typeface.BOLD)
-                setTextColor(if (i == segIdx) Color.WHITE else Theme.textSec())
-                gravity = Gravity.CENTER
-                background = if (i == segIdx) Theme.grad(context, 9f)
-                else Theme.rect(Color.TRANSPARENT, 9f, context)
-                setPadding(0, Display.dpInt(context, 8f), 0, Display.dpInt(context, 8f))
-                layoutParams = LinearLayout.LayoutParams(0,
-                    LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-                setOnClickListener { segIdx = i; renderSeg(); renderList() }
-            })
+        val parent = segRow.parent as? LinearLayout
+        val idx = parent?.indexOfChild(segRow) ?: -1
+        parent?.removeView(segRow)
+        segRow = Kit.segment(context, SEGS.toList(), segIdx) { i ->
+            segIdx = i
+            renderSeg()
+            renderList()
         }
+        if (parent != null && idx >= 0) parent.addView(segRow, idx)
     }
 
     private fun renderList() {
@@ -162,14 +116,7 @@ class MarketPage(context: Context, private val host: PageHost) : FrameLayout(con
             3 -> renderMine()
         }
         if (box.childCount == 0) {
-            box.addView(TextView(context).apply {
-                text = "这里还没有内容。"
-                textSize = 12.5f
-                setTextColor(Theme.textSec())
-                setPadding(Display.dpInt(context, 14f), Display.dpInt(context, 13f),
-                    Display.dpInt(context, 14f), Display.dpInt(context, 13f))
-                background = Theme.dashed(context, 13f)
-            })
+            box.addView(Kit.hintBox(context, "这里还没有内容。"))
         }
         box.addView(Theme.hairline(context).apply {
             layoutParams = LinearLayout.LayoutParams(
@@ -328,7 +275,7 @@ class MarketPage(context: Context, private val host: PageHost) : FrameLayout(con
         val miniGlyphs = listOf("▶" to onPreview, "★" to { Ui.toast(context, "已收藏") },
             "⋯" to { Ui.toast(context, "更多") })
         miniGlyphs.forEach { (g, act) ->
-            foot.addView(mini(g, act))
+            foot.addView(Kit.roundBtn(context, g, act))
         }
         foot.addView(TextView(context).apply {
             text = "导入"
@@ -348,22 +295,6 @@ class MarketPage(context: Context, private val host: PageHost) : FrameLayout(con
         })
         c.addView(foot)
         return c
-    }
-
-    /** .mini：38dp 圆形 */
-    private fun mini(glyph: String, onClick: () -> Unit): TextView = TextView(context).apply {
-        text = glyph
-        textSize = 14f
-        setTextColor(if (Theme.isDark()) Color.parseColor("#B9B2D6")
-        else Color.parseColor("#5B5570"))
-        gravity = Gravity.CENTER
-        background = Theme.oval(if (Theme.isDark()) Color.parseColor("#2A2340")
-        else Color.parseColor("#FFFFFF"))
-        layoutParams = LinearLayout.LayoutParams(
-            Display.dpInt(context, 38f), Display.dpInt(context, 38f)).apply {
-            marginEnd = Display.dpInt(context, 14f)
-        }
-        setOnClickListener { onClick() }
     }
 
     // ---------- 内置示例流 ----------

@@ -60,7 +60,7 @@ class MinePage(context: Context, private val host: PageHost) : FrameLayout(conte
             Display.dpInt(context, 16f), Display.dpInt(context, 96f))
 
         // ---- 执行授权（双通道并行）----
-        box.addView(section("执行授权"))
+        box.addView(Kit.section(context, "执行授权"))
         box.addView(TextView(context).apply {
             text = "两种方式任选其一即可运行脚本；两者都开启时按动作能力自动择优，失败会自动切换。"
             textSize = 11f
@@ -99,7 +99,7 @@ class MinePage(context: Context, private val host: PageHost) : FrameLayout(conte
         box.addView(statusLine())
 
         // ---- 悬浮与显示 ----
-        box.addView(section("悬浮与显示"))
+        box.addView(Kit.section(context, "悬浮与显示"))
         val overlayOn = Display.canDrawOverlay(context)
         box.addView(permRow(
             title = "悬浮窗权限",
@@ -108,36 +108,40 @@ class MinePage(context: Context, private val host: PageHost) : FrameLayout(conte
             action = "去开启"
         ) { Display.openOverlaySettings(context) })
 
-        box.addView(Ui.switchRow(context, "悬浮球常驻", AB.store.getBool("float_persistent", true)) { v ->
+        box.addView(Kit.switchRow(context, "悬浮球常驻",
+            init = AB.store.getBool("float_persistent", true)) { v ->
             AB.store.putBool("float_persistent", v)
             if (v) FloatingService.start(context) else FloatManager.hideAll()
         })
-        box.addView(switchRow("深色主题", Theme.isDark()) { v ->
+        box.addView(Kit.switchRow(context, "深色主题", init = Theme.isDark()) { v ->
             Theme.setDark(v)
             host.refreshAll()
         })
-        box.addView(switchRow("悬浮球自动贴边", AB.store.getBool("ball_snap_edge", true)) { v ->
+        box.addView(Kit.switchRow(context, "悬浮球自动贴边",
+            init = AB.store.getBool("ball_snap_edge", true)) { v ->
             AB.store.putBool("ball_snap_edge", v)
         })
-        box.addView(sliderRow("悬浮球大小(dp)",
-            AB.store.getFloat("ball_size_dp", 48f), 36f, 64f) { v ->
+        box.addView(Kit.sliderRow(context, "悬浮球大小",
+            AB.store.getFloat("ball_size_dp", 48f), 36f, 64f, "dp") { v ->
             AB.store.putFloat("ball_size_dp", v)
             FloatManager.hideBall()
             FloatManager.showBall(context)
         })
-        box.addView(sliderRow("闲置透明度",
-            AB.store.getFloat("ball_idle_alpha", 0.72f), 0.3f, 1f) { v ->
-            AB.store.putFloat("ball_idle_alpha", v)
+        box.addView(Kit.sliderRow(context, "闲置透明度",
+            AB.store.getFloat("ball_idle_alpha", 0.72f) * 100f, 30f, 100f, "%") { v ->
+            AB.store.putFloat("ball_idle_alpha", v / 100f)
+            FloatManager.hideBall()
+            FloatManager.showBall(context)
         })
 
         // ---- 手势槽位 ----
-        box.addView(section("悬浮球手势"))
+        box.addView(Kit.section(context, "悬浮球手势"))
         for (slot in listOf(BallSlot.SINGLE, BallSlot.DOUBLE, BallSlot.TRIPLE, BallSlot.LONG)) {
             box.addView(slotRow(slot))
         }
 
         // ---- 悬浮窗皮肤 ----
-        box.addView(section("悬浮窗皮肤"))
+        box.addView(Kit.section(context, "悬浮窗皮肤"))
         val skins = com.autoball.float.FloatPanelView.Skin.values()
         box.addView(TextView(context).apply {
             text = skins.joinToString(" · ") { it.label }
@@ -169,7 +173,7 @@ class MinePage(context: Context, private val host: PageHost) : FrameLayout(conte
         box.addView(skinRow)
 
         // ---- 运行日志 ----
-        box.addView(section("运行日志"))
+        box.addView(Kit.section(context, "运行日志"))
         box.addView(TextView(context).apply {
             text = "只记录动作类型、执行后端、耗时与结果；不记录输入文本、控件文本与分享码原文。"
             textSize = 11f
@@ -198,7 +202,7 @@ class MinePage(context: Context, private val host: PageHost) : FrameLayout(conte
         })
 
         // ---- 设置入口（v3 #p-set / #p-log / #p-float）----
-        box.addView(section("设置"))
+        box.addView(Kit.section(context, "设置"))
         box.addView(infoRow("设置", "›").apply {
             setOnClickListener { host.openSubPage("set") }
         })
@@ -213,10 +217,10 @@ class MinePage(context: Context, private val host: PageHost) : FrameLayout(conte
         })
 
         // ---- 关于 ----
-        box.addView(section("关于"))
+        box.addView(Kit.section(context, "关于"))
         box.addView(infoRow("脚本引擎", JsEngines.engineName() + if (JsEngines.engineName() == "quickjs")
             "（未内置源码时自动降级为纯 Java 引擎）" else ""))
-        box.addView(infoRow("版本", "v1.2.0"))
+        box.addView(infoRow("版本", "v1.3.0"))
         box.addView(infoRow("更新日志", "查看").apply {
             setOnClickListener { ChangeLog.show(context as? Activity ?: return@setOnClickListener) }
         })
@@ -252,7 +256,7 @@ class MinePage(context: Context, private val host: PageHost) : FrameLayout(conte
         })
 
         // ---- 电池优化引导 ----
-        box.addView(section("后台运行"))
+        box.addView(Kit.section(context, "后台运行"))
         box.addView(TextView(context).apply {
             text = "保活只能降低被回收的频率，不能承诺不被系统杀死。建议在系统设置中允许后台运行。"
             textSize = 11f
@@ -411,144 +415,6 @@ class MinePage(context: Context, private val host: PageHost) : FrameLayout(conte
     }
 
     /** 分区标题（v3 .sec：11px 700 --tx3，上下 14/8） */
-    private fun section(text: String): TextView = TextView(context).apply {
-        this.text = text
-        textSize = 11f
-        setTypeface(null, Typeface.BOLD)
-        setTextColor(Theme.textTer())
-        letterSpacing = 0.03f
-        setPadding(Display.dpInt(context, 2f), Display.dpInt(context, 14f),
-            Display.dpInt(context, 2f), Display.dpInt(context, 8f))
-    }
-
-    private fun permRow(title: String, sub: String, on: Boolean, action: String, onClick: () -> Unit): View {
-        val row = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            background = Theme.bubble(context, Theme.card(), 14f)
-            setPadding(Display.dpInt(context, 14f), Display.dpInt(context, 10f),
-                Display.dpInt(context, 12f), Display.dpInt(context, 10f))
-            val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT)
-            lp.setMargins(0, 0, 0, Display.dpInt(context, 8f))
-            layoutParams = lp
-        }
-        val dot = TextView(context).apply {
-            background = Theme.bubbleRound(context,
-                Color.parseColor(if (on) "#35D08A" else "#FF5B6E"))
-            layoutParams = LinearLayout.LayoutParams(Display.dpInt(context, 10f),
-                Display.dpInt(context, 10f))
-        }
-        row.addView(dot)
-        val mid = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
-                setMargins(Display.dpInt(context, 10f), 0, 0, 0)
-            }
-        }
-        mid.addView(TextView(context).apply {
-            text = title; textSize = 14f; setTextColor(Theme.textPri())
-        })
-        mid.addView(TextView(context).apply {
-            text = sub; textSize = 11f; setTextColor(Theme.textSec())
-        })
-        row.addView(mid)
-        row.addView(TextView(context).apply {
-            text = action
-            textSize = 12f
-            setTextColor(Color.WHITE)
-            gravity = Gravity.CENTER
-            background = Theme.bubble(context, Color.parseColor(if (on) "#3A2E6B" else Theme.BLUE), 12f)
-            setPadding(Display.dpInt(context, 14f), Display.dpInt(context, 6f),
-                Display.dpInt(context, 14f), Display.dpInt(context, 6f))
-            setOnClickListener { onClick() }
-        })
-        return row
-    }
-
-    /** 开关行（v3 .row + .sw：行 radius 14 / padding 13x14；开关 42x24，滑块 18 @3） */
-    private fun switchRow(title: String, init: Boolean, onChange: (Boolean) -> Unit): View {
-        var on = init
-        val row = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            background = Theme.rect(Theme.surface(), Theme.ROW_R, context, Theme.line())
-            setPadding(Display.dpInt(context, 14f), Display.dpInt(context, 13f),
-                Display.dpInt(context, 14f), Display.dpInt(context, 13f))
-            val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT)
-            lp.setMargins(0, 0, 0, Display.dpInt(context, Theme.ROW_MB))
-            layoutParams = lp
-        }
-        row.addView(TextView(context).apply {
-            text = title
-            textSize = 13.5f
-            setTypeface(null, Typeface.BOLD)
-            setTextColor(Theme.textPri())
-            layoutParams = LinearLayout.LayoutParams(0,
-                LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-        })
-        val track = android.widget.FrameLayout(context).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                Display.dpInt(context, Theme.SW_W), Display.dpInt(context, Theme.SW_H))
-            background = Theme.rect(if (on) Theme.pri2() else Theme.line2(), 12f, context)
-        }
-        val knob = View(context).apply {
-            background = Theme.oval(Color.WHITE)
-        }
-        track.addView(knob, android.widget.FrameLayout.LayoutParams(
-            Display.dpInt(context, Theme.SW_KNOB), Display.dpInt(context, Theme.SW_KNOB)).apply {
-            leftMargin = if (on) Display.dpInt(context, 21f) else Display.dpInt(context, 3f)
-            topMargin = Display.dpInt(context, 3f)
-        })
-        row.addView(track)
-        row.setOnClickListener {
-            on = !on
-            track.background = Theme.rect(if (on) Theme.pri2() else Theme.line2(), 12f, context)
-            (knob.layoutParams as android.widget.FrameLayout.LayoutParams).leftMargin =
-                if (on) Display.dpInt(context, 21f) else Display.dpInt(context, 3f)
-            knob.requestLayout()
-            onChange(on)
-        }
-        return row
-    }
-
-    private fun sliderRow(title: String, init: Float, minVal: Float, maxVal: Float,
-                          onChange: (Float) -> Unit): View {
-        val row = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            background = Theme.bubble(context, Theme.card(), 14f)
-            setPadding(Display.dpInt(context, 14f), Display.dpInt(context, 8f),
-                Display.dpInt(context, 12f), Display.dpInt(context, 8f))
-            val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT)
-            lp.setMargins(0, 0, 0, Display.dpInt(context, 8f))
-            layoutParams = lp
-        }
-        val label = TextView(context).apply {
-            text = "$title：%.2f".format(init)
-            textSize = 12f
-            setTextColor(Theme.textPri())
-        }
-        row.addView(label)
-        val ratio = ((init - minVal) / (maxVal - minVal) * 100).toInt().coerceIn(0, 100)
-        val bar = android.widget.SeekBar(context)
-        bar.max = 100
-        bar.progress = ratio
-        bar.setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(sb: android.widget.SeekBar?, p: Int, fromUser: Boolean) {
-                val v = minVal + (maxVal - minVal) * p / 100f
-                label.text = "$title：%.2f".format(v)
-                if (fromUser) onChange(v)
-            }
-            override fun onStartTrackingTouch(sb: android.widget.SeekBar?) { }
-            override fun onStopTrackingTouch(sb: android.widget.SeekBar?) { }
-        })
-        row.addView(bar)
-        return row
-    }
-
-    /** 值行（v3 .row：左标题 + 右值） */
     private fun infoRow(k: String, v: String): LinearLayout = LinearLayout(context).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL

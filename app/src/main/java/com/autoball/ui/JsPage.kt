@@ -46,47 +46,10 @@ key(4);
 
     private fun build() {
         val root = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
-        root.addView(statusBar())
+        root.addView(Kit.statusBar(context))
 
-        // .subbar
-        val sub = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(Display.dpInt(context, 18f), Display.dpInt(context, 2f),
-                Display.dpInt(context, 18f), Display.dpInt(context, 10f))
-        }
-        sub.addView(TextView(context).apply {
-            text = "‹"
-            textSize = 20f
-            setTypeface(null, Typeface.BOLD)
-            setTextColor(Theme.textSec())
-            gravity = Gravity.CENTER
-            background = Theme.rect(Theme.surface(), 11f, context, Theme.line())
-            val s = Display.dpInt(context, 34f)
-            layoutParams = LinearLayout.LayoutParams(s, s)
-            setOnClickListener { host.showPage(0) }
-        })
-        sub.addView(TextView(context).apply {
-            text = "JS 脚本"
-            textSize = 20f
-            setTypeface(null, Typeface.BOLD)
-            setTextColor(Theme.textPri())
-            setPadding(Display.dpInt(context, 10f), 0, 0, 0)
-            layoutParams = LinearLayout.LayoutParams(0,
-                LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-        })
-        sub.addView(TextView(context).apply {
-            text = "示例"
-            textSize = 12f
-            setTypeface(null, Typeface.BOLD)
-            setTextColor(Theme.textSec())
-            gravity = Gravity.CENTER
-            background = Theme.rect(Theme.surface(), 10f, context, Theme.line())
-            setPadding(Display.dpInt(context, 12f), Display.dpInt(context, 6f),
-                Display.dpInt(context, 12f), Display.dpInt(context, 6f))
-            setOnClickListener { codeEt.setText(SAMPLE) }
-        })
-        root.addView(sub)
+        val samplePill = Kit.pill(context, "示例") { codeEt.setText(SAMPLE) }
+        root.addView(Kit.subbar(context, "JS 脚本", { host.showPage(0) }, samplePill))
 
         val pad = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
@@ -179,11 +142,11 @@ key(4);
             setPadding(Display.dpInt(context, 18f), Display.dpInt(context, 14f),
                 Display.dpInt(context, 18f), Display.dpInt(context, 14f))
         }
-        btnLine.addView(btn("保存", false) { save() }.apply {
+        btnLine.addView(Kit.button(context, "保存", false) { save() }.apply {
             layoutParams = LinearLayout.LayoutParams(0,
                 Display.dpInt(context, Theme.BTN_H), 1f)
         })
-        btnLine.addView(btn("运行", true) {
+        btnLine.addView(Kit.button(context, "运行", true) {
             save()
             script?.let { host.runScript(it) }
         }.apply {
@@ -194,60 +157,18 @@ key(4);
         })
         root.addView(btnLine)
 
-        // .tip
-        root.addView(TextView(context).apply {
-            text = "可用 API：click(x,y) / swipe(x1,y1,x2,y2,ms) / longPress(x,y,ms) / " +
-                "wait(ms) / key(code) / text(s) / log(s) / screenshot() / findText(s)"
-            textSize = 11.5f
-            setTextColor(Theme.textSec())
-            setLineSpacing(Display.dp(context, 2f), 1.6f)
-            setPadding(Display.dpInt(context, 14f), Display.dpInt(context, 10f),
-                Display.dpInt(context, 14f), Display.dpInt(context, 10f))
-            background = Theme.tipBg(context)
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT).apply {
-                setMargins(Display.dpInt(context, 18f), 0,
-                    Display.dpInt(context, 18f), Display.dpInt(context, 18f))
-            }
+        root.addView(Kit.tip(context,
+            "可用 API：click(x,y) / swipe(x1,y1,x2,y2,ms) / longPress(x,y,ms) / " +
+                "wait(ms) / key(code) / text(s) / log(s) / screenshot() / findText(s)").apply {
+            (layoutParams as LinearLayout.LayoutParams).setMargins(
+                Display.dpInt(context, 18f), 0,
+                Display.dpInt(context, 18f), Display.dpInt(context, 18f))
         })
 
         addView(root, FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
         infoTv.text = "引擎：${JsEngines.engineName()}"
     }
-
-    private fun statusBar(): LinearLayout = LinearLayout(context).apply {
-        orientation = LinearLayout.HORIZONTAL
-        gravity = Gravity.CENTER_VERTICAL
-        setPadding(Display.dpInt(context, 18f), Display.dpInt(context, 8f),
-            Display.dpInt(context, 18f), 0)
-        addView(TextView(context).apply {
-            text = ""
-            textSize = 14f
-            setTypeface(null, Typeface.BOLD)
-            setTextColor(Theme.textPri())
-            layoutParams = LinearLayout.LayoutParams(0,
-                LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-        })
-        addView(TextView(context).apply {
-            text = "🔋"
-            textSize = 12f
-            setTextColor(Theme.textPri())
-        })
-    }
-
-    private fun btn(text: String, primary: Boolean, onClick: () -> Unit): TextView =
-        TextView(context).apply {
-            this.text = text
-            textSize = 14f
-            setTypeface(null, Typeface.BOLD)
-            setTextColor(if (primary) Color.WHITE else Theme.textPri())
-            gravity = Gravity.CENTER
-            background = if (primary) Theme.grad(context, Theme.BTN_R)
-            else Theme.rect(Theme.surface(), Theme.BTN_R, context, Theme.line())
-            setOnClickListener { onClick() }
-        }
 
     fun bind(s: Script) {
         script = s
