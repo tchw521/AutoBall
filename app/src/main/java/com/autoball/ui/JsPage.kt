@@ -28,6 +28,15 @@ import com.autoball.core.util.Display
  */
 class JsPage(context: Context, private val host: PageHost) : FrameLayout(context) {
 
+    companion object {
+        val SAMPLE = """
+// 点击屏幕中央，等 1 秒后返回
+click(50, 50);
+wait(1000);
+key(4);
+""".trimIndent()
+    }
+
     private var script: Script? = null
     private val nameEt = EditText(context)
     private val codeEt = EditText(context)
@@ -259,10 +268,4 @@ class JsPage(context: Context, private val host: PageHost) : FrameLayout(context
         Ui.toast(context, "已保存「${s.name}」")
     }
 
-    private val SAMPLE = """
-// 点击屏幕中央，等 1 秒后返回
-click(50, 50);
-wait(1000);
-key(4);
-""".trimIndent()
 }

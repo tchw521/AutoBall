@@ -11,6 +11,7 @@ import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
+import com.autoball.AB
 import com.autoball.R
 import com.autoball.core.log.CrashGuard
 import com.autoball.core.model.Script
@@ -176,9 +177,10 @@ class MainActivity : Activity(), PageHost {
                 "log" -> LogPage(this, this)
                 "set" -> SetPage(this, this)
                 "js" -> {
-                    val p = JsPage(this, this)
-                    AB.store.all().firstOrNull { it.kind == com.autoball.core.model.ScriptKind.JS }
-                        ?.let { p.bind(it) }
+                    val p = JsPage(this@MainActivity, this@MainActivity)
+                    com.autoball.AB.store.all()
+                        .firstOrNull { sc -> sc.kind == com.autoball.core.model.ScriptKind.JS }
+                        ?.let { sc -> p.bind(sc) }
                     p
                 }
                 else -> error("未知页面：$key")
