@@ -252,7 +252,7 @@ key(4);
     fun bind(s: Script) {
         script = s
         nameEt.setText(s.name)
-        codeEt.setText(s.code ?: SAMPLE)
+        codeEt.setText(s.jsCode.ifBlank { SAMPLE })
     }
 
     private fun save() {
@@ -261,7 +261,7 @@ key(4);
         }
         s.kind = ScriptKind.JS
         s.name = nameEt.text.toString().ifBlank { "JS 脚本" }
-        s.code = codeEt.text.toString()
+        s.jsCode = codeEt.text.toString()
         s.updatedAt = System.currentTimeMillis()
         AB.store.save(s)
         script = s
