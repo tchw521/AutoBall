@@ -19,6 +19,7 @@ import com.autoball.core.model.Script
 import com.autoball.core.model.ScriptKind
 import com.autoball.core.recorder.GestureCompiler
 import com.autoball.core.util.Display
+import com.autoball.core.engine.Morph
 
 /**
  * 编辑页（v3 #p-edit）：顶栏 + 字段区 + 动作步骤列表 + JS 预览。
@@ -105,10 +106,14 @@ class EditPage(context: Context, private val host: PageHost) : FrameLayout(conte
     /** morph 预设选择 + 自定义输入 */
     private fun morphDialog(act: Activity, flow: com.autoball.core.model.Flow) {
         val box = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
-        val custom = com.autoball.AB.store.getString("morph_presets", "")
-            .split("|").filter { it.contains("#") }
-        val options = Morph.BUILTIN.map { it.first } +
-            custom.map { it.substringBefore("#") } + listOf("不变换", "自定义…")
+        val customRaw = com.autoball.AB.store.getString("morph_presets", "")
+        val custom = ArrayList<String>()
+        customRaw.split("|").forEach { if (it.contains("#")) custom.add(it) }
+        val options = ArrayList<String>()
+        Morph.BUILTIN.forEach { (n, _) -> options.add(n) }
+        custom.forEach { options.add(it.substringBefore("#")) }
+        options.add("不变换")
+        options.add("自定义…")
 
         box.addView(Ui.note(act,
             "预设会对坐标做仿射变换；自定义可填 a,b,c,d,e,f（css matrix），" +
@@ -117,15 +122,15 @@ class EditPage(context: Context, private val host: PageHost) : FrameLayout(conte
             val v = when {
                 name == "不变换" -> ""
                 name == "自定义…" -> null
-                Morph.BUILTIN.any { it.first == name } ->
-                    Morph.BUILTIN.first { it.first == name }.second
-                else -> custom.firstOrNull { it.substringBefore("#") == name }
+                Morph.BUILTIN.any { (n, _) -> n == name } ->
+                    Morph.BUILTIN.first { (n, _) -> n == name }.second
+                else -> custom.firstOrNull { c -> c.substringBefore("#") == name }
                     ?.substringAfter("#") ?: ""
             }
             val on = v != null && v == flow.morph
             box.addView(Ui.adRow(act, name,
                 if (v == null) "手动输入" else if (v.isEmpty()) "关闭" else "已选",
-                on, null) {
+                on, "选择该变形预设") {
                 if (v == null) morphInputDialog(act, flow)
                 else { flow.morph = v; save(); syncGlobal() }
             })
