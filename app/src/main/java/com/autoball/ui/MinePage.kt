@@ -197,11 +197,26 @@ class MinePage(context: Context, private val host: PageHost) : FrameLayout(conte
             setOnClickListener { AB.log.clear() }
         })
 
+        // ---- 设置入口（v3 #p-set / #p-log / #p-float）----
+        box.addView(section("设置"))
+        box.addView(infoRow("设置", "›").apply {
+            setOnClickListener { host.openSubPage("set") }
+        })
+        box.addView(infoRow("悬浮设置", "›").apply {
+            setOnClickListener { host.openSubPage("float") }
+        })
+        box.addView(infoRow("运行日志", "›").apply {
+            setOnClickListener { host.openSubPage("log") }
+        })
+        box.addView(infoRow("JS 脚本", "›").apply {
+            setOnClickListener { host.openSubPage("js") }
+        })
+
         // ---- 关于 ----
         box.addView(section("关于"))
         box.addView(infoRow("脚本引擎", JsEngines.engineName() + if (JsEngines.engineName() == "quickjs")
             "（未内置源码时自动降级为纯 Java 引擎）" else ""))
-        box.addView(infoRow("版本", "v0.9.0"))
+        box.addView(infoRow("版本", "v1.0.0"))
         box.addView(infoRow("更新日志", "查看").apply {
             setOnClickListener { ChangeLog.show(context as? Activity ?: return@setOnClickListener) }
         })

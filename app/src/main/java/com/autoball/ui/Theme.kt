@@ -246,6 +246,14 @@ object Theme {
         GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
             intArrayOf(line(), android.graphics.Color.TRANSPARENT))
 
+    /** 关闭区（v3 .closezone）：虚线红框 */
+    fun closeZone(ctx: Context): android.graphics.drawable.GradientDrawable =
+        GradientDrawable().apply {
+            cornerRadius = Display.dp(ctx, 14f)
+            setColor(Color.parseColor("#1AE5484D"))
+            setStroke(Display.dpInt(ctx, 1.5f), Color.parseColor("#80E5484D"))
+        }
+
     fun hairline(ctx: Context): android.view.View = android.view.View(ctx).apply {
         setBackgroundColor(line())
     }

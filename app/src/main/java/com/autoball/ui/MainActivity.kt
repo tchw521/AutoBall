@@ -28,6 +28,8 @@ interface PageHost {
     fun startRecording()
     fun runScript(script: Script)
     fun toggleTheme()
+    /** 打开二级页：float（悬浮设置）/ log（运行日志）/ js（JS 脚本）/ set（设置） */
+    fun openSubPage(key: String)
 }
 
 class MainActivity : Activity(), PageHost {
@@ -154,7 +156,45 @@ class MainActivity : Activity(), PageHost {
 
     override fun toggleTheme() {
         Theme.toggleDark()
+        subPage = null
+        for (i in pages.indices) pages[i] = null
         recreate()
+    }
+
+    @Volatile
+    private var subPage: String? = null
+
+    override fun openSubPage(key: String) {
+        subPage = key
+        showSub(key)
+    }
+
+    private fun showSub(key: String) {
+        val v = runCatching {
+            when (key) {
+                "float" -> FloatSetPage(this, this)
+                "log" -> LogPage(this, this)
+                "set" -> SetPage(this, this)
+                "js" -> {
+                    val p = JsPage(this, this)
+                    AB.store.all().firstOrNull { it.kind == com.autoball.core.model.ScriptKind.JS }
+                        ?.let { p.bind(it) }
+                    p
+                }
+                else -> error("未知页面：$key")
+            }
+        }.getOrElse { err ->
+            CrashGuard.report("构建二级页 $key 失败", err)
+            TextView(this).apply {
+                text = "页面加载失败：${err.message}"
+                textSize = 13f
+                setTextColor(0xFFFF6B7A.toInt())
+                gravity = Gravity.CENTER
+            }
+        }
+        content.removeAllViews()
+        content.addView(v, FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
     }
 
     override fun startRecording() {
@@ -176,6 +216,11 @@ class MainActivity : Activity(), PageHost {
     }
 
     override fun onBackPressed() {
+        if (subPage != null) {
+            subPage = null
+            showPage(4)
+            return
+        }
         if (current != 0) showPage(0) else super.onBackPressed()
     }
 }
