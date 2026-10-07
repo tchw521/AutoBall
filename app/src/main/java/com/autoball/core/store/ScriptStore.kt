@@ -141,14 +141,59 @@ class ScriptStore(private val ctx: Context) {
 
     // ---------- 设置 ----------
 
-    fun getString(key: String, def: String): String = pref.getString(key, def) ?: def
+    /**
+     * 类型安全的取值。
+     *
+     * 背景：配置项在版本演进中改过类型（如 `panel_skin` 从皮肤名字符串
+     * 改为索引整数），旧版本写入的脏值还留在 SharedPreferences 里，
+     * 新版本用 `getInt` 读会直接抛 ClassCastException 崩溃。
+     * 这里统一兜底：类型不符时尝试迁移，无法迁移就清掉脏值返回默认。
+     */
+    fun getString(key: String, def: String): String = try {
+        pref.getString(key, def) ?: def
+    } catch (e: ClassCastException) { drop(key); def }
     fun putString(key: String, v: String) { pref.edit().putString(key, v).apply() }
-    fun getInt(key: String, def: Int): Int = pref.getInt(key, def)
+
+    fun getInt(key: String, def: Int): Int = try {
+        pref.getInt(key, def)
+    } catch (e: ClassCastException) { migrateInt(key, def) }
     fun putInt(key: String, v: Int) { pref.edit().putInt(key, v).apply() }
-    fun getBool(key: String, def: Boolean): Boolean = pref.getBoolean(key, def)
-    fun putBool(key: String, v: Boolean) { pref.edit().putBoolean(key, v).apply() }
-    fun getFloat(key: String, def: Float): Float = pref.getFloat(key, def)
+
+    fun getBool(key: String, def: Boolean): Boolean = try {
+        pref.getBoolean(key, def)
+    } catch (e: ClassCastException) { drop(key); def }
+    fun putBool(key: String, v: Boolean) { pref.edit().putBool(key, v).apply() }
+
+    fun getFloat(key: String, def: Float): Float = try {
+        pref.getFloat(key, def)
+    } catch (e: ClassCastException) { drop(key); def }
     fun putFloat(key: String, v: Float) { pref.edit().putFloat(key, v).apply() }
+
+    private fun drop(key: String) {
+        com.autoball.AB.log.warn("store", "配置项 $key 与当前版本不兼容，已重置")
+        pref.edit().remove(key).apply()
+    }
+
+    /** 旧值是字符串时按已知映射迁移到整数；无法迁移则丢弃 */
+    private fun migrateInt(key: String, def: Int): Int {
+        val raw = try { pref.getString(key, null) } catch (e: ClassCastException) { null }
+        val mapped = when (key) {
+            "panel_skin" -> SKIN_NAMES.indexOf(raw)
+            else -> -1
+        }
+        if (mapped >= 0) {
+            pref.edit().putInt(key, mapped).apply()
+            return mapped
+        }
+        drop(key)
+        return def
+    }
+
+    /** 悬浮窗皮肤名顺序，与 FloatPanelView.Skin 一致 */
+    private val SKIN_NAMES = listOf(
+        "SKIN_2020", "DEFAULT", "SIMPLE",
+        "HORIZONTAL", "HORIZONTAL_SIMPLE", "ULTRA"
+    )
 
     // ---------- 变更通知 ----------
 

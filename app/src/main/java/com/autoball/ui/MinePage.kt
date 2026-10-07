@@ -220,7 +220,7 @@ class MinePage(context: Context, private val host: PageHost) : FrameLayout(conte
         box.addView(Kit.section(context, "关于"))
         box.addView(infoRow("脚本引擎", JsEngines.engineName() + if (JsEngines.engineName() == "quickjs")
             "（未内置源码时自动降级为纯 Java 引擎）" else ""))
-        box.addView(infoRow("版本", "v1.5.0"))
+        box.addView(infoRow("版本", "v1.5.1"))
         box.addView(infoRow("更新日志", "查看").apply {
             setOnClickListener { ChangeLog.show(context as? Activity ?: return@setOnClickListener) }
         })

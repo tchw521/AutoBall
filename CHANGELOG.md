@@ -4,6 +4,34 @@
 
 ---
 
+## v1.5.1 · 启动崩溃修复
+
+两处真机崩溃，均来自上一版引入的改动。
+
+**1. 脚本页启动空指针（`ArrayList.size()` on null）**
+
+`shown` 这个集合字段声明在文件后半部分，而 Kotlin 的属性初始化与 `init`
+块按**声明顺序**执行——`init { build() }` 跑在前，`build()` 又会调用
+`renderList()`，此时 `shown` 还没初始化，读到 null 即崩。
+把该字段移到 `init` 之前声明即可。已顺带排查其余页面，无同类问题。
+
+教训：新增字段时不能只按「逻辑归类」放位置，必须确认它在构造期就会
+被引用——尤其是被 `init` 间接调用的路径。
+
+**2. 悬浮设置页类型转换崩溃（String → Integer）**
+
+`panel_skin` 在旧版本存的是皮肤名字符串，后来改成索引整数。老用户升级后
+旧值还在 SharedPreferences 里，`getInt` 读到 String 直接抛
+ClassCastException——进悬浮设置页必崩。
+
+修复分两层：
+- 所有取值方法（`getInt` / `getString` / `getBool` / `getFloat`）加
+  ClassCastException 兜底，类型不符时不再崩溃；
+- `getInt` 额外尝试迁移：`panel_skin` 若旧值是皮肤名，按名字映射成
+  对应索引并回写，用户原来的皮肤选择不丢失；无法迁移的才清空回默认。
+
+---
+
 ## v1.5.0 · 目标应用 + 列表增量刷新
 
 **目标应用（`Script.targetPkg` 正式接入）**

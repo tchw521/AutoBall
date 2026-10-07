@@ -54,6 +54,15 @@ class ScriptPage(
         return out
     }
 
+    /**
+     * 已渲染卡片：id + 渲染签名。
+     *
+     * 必须声明在 `init` 之前——Kotlin 属性与 init 块按声明顺序执行，
+     * 而 `build()` 会调用 `renderList()`。此前本字段声明在文件后半部分，
+     * 导致构造时读到 null（启动即崩）。
+     */
+    private val shown = ArrayList<Pair<String, String>>()
+
     init { build() }
 
     @SuppressLint("ClickableViewAccessibility")
@@ -382,9 +391,6 @@ class ScriptPage(
             shown.add(sc.id to sig(sc))
         }
     }
-
-    /** 已渲染卡片：id + 渲染签名 */
-    private val shown = ArrayList<Pair<String, String>>()
 
     /** 渲染签名：影响卡片外观的字段都纳入，变了才重建 */
     private fun sig(s: Script): String = buildString {
