@@ -226,6 +226,21 @@ object Theme {
     fun groupTint(i: Int): Int = gTint(i)
     fun groupInk(i: Int): Int = gInk(i)
 
+    /** 虚线框（v3 .step.add / 空态）：细描边 + 低透明底 */
+    fun dashed(ctx: Context, rDp: Float): android.graphics.drawable.GradientDrawable =
+        GradientDrawable().apply {
+            cornerRadius = Display.dp(ctx, rDp)
+            setColor(if (isDark()) Color.parseColor("#0DFFFFFF") else Color.parseColor("#05FFFFFF"))
+            setStroke(Display.dpInt(ctx, 1.2f), line2())
+        }
+
+    /** 提示条（v3 .tip）：左侧 3px 主色竖条，其余圆角 */
+    fun tipBg(ctx: Context): android.graphics.drawable.GradientDrawable =
+        GradientDrawable().apply {
+            cornerRadius = Display.dp(ctx, 10f)
+            setColor(if (isDark()) Color.parseColor("#1A7C3AED") else Color.parseColor("#0F7C3AED"))
+        }
+
     fun hairline(ctx: Context): android.view.View = android.view.View(ctx).apply {
         setBackgroundColor(line())
     }

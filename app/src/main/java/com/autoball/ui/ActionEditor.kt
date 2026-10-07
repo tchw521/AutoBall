@@ -23,6 +23,37 @@ import com.autoball.core.util.Display
  */
 object ActionEditor {
 
+    /** 一行摘要：用于步骤列表与日志 */
+    fun describe(a: Action): String = when (a.type) {
+        com.autoball.core.model.ActionType.CLICK -> "(${a.x.toInt()}, ${a.y.toInt()})"
+        com.autoball.core.model.ActionType.SWIPE,
+        com.autoball.core.model.ActionType.GESTURE_SINGLE ->
+            "(${a.x.toInt()}, ${a.y.toInt()}) → (${a.x2.toInt()}, ${a.y2.toInt()}) ${a.durationMs}ms"
+        com.autoball.core.model.ActionType.GESTURE_MULTI -> "${a.strokes.size} 指手势"
+        com.autoball.core.model.ActionType.INPUT_TEXT -> "输入「${a.text ?: ""}」"
+        com.autoball.core.model.ActionType.OPEN_APP -> a.pkg ?: "未指定应用"
+        com.autoball.core.model.ActionType.OPEN_URL -> a.url ?: "未指定链接"
+        com.autoball.core.model.ActionType.KEY -> "按键 ${a.keyCode}"
+        com.autoball.core.model.ActionType.RUN_JS -> "JS ${a.code?.length ?: 0} 字符"
+        com.autoball.core.model.ActionType.SET_VAR -> "${a.varName} = ${a.varValue}"
+        com.autoball.core.model.ActionType.TOAST -> "提示「${a.text ?: ""}」"
+        com.autoball.core.model.ActionType.CONTROL_FLOW -> a.controlOp.label
+        com.autoball.core.model.ActionType.CLICK_TEXT -> "文字「${a.text ?: ""}」"
+        com.autoball.core.model.ActionType.CLICK_NODE -> "节点 ${a.nodeSpec?.text ?: a.nodeSpec?.id ?: ""}"
+        com.autoball.core.model.ActionType.CLICK_IMAGE -> "图片 ${a.imageRef ?: "未设置"}"
+        com.autoball.core.model.ActionType.CLICK_COLOR -> "颜色 ${a.colorHex ?: "未设置"}"
+        com.autoball.core.model.ActionType.AI_CLICK -> "AI 点击"
+        com.autoball.core.model.ActionType.RECOGNIZE_SCREEN -> "识别屏幕"
+        com.autoball.core.model.ActionType.RUN_SCRIPT -> "子脚本"
+        com.autoball.core.model.ActionType.RUN_ACTIONS -> "${a.subActions.size} 个子动作"
+    }.let { base ->
+        val extra = ArrayList<String>()
+        if (a.repeat > 1) extra.add("重复 ${a.repeat}")
+        if (a.condition != null) extra.add("有条件")
+        if (a.listeners.isNotEmpty()) extra.add("监听 ${a.listeners.size}")
+        if (extra.isEmpty()) base else "$base · ${extra.joinToString(" ")}"
+    }
+
     fun show(activity: Activity, existing: Action?, onSave: (Action) -> Unit) {
         showTypeDialog(activity, existing, onSave)
     }

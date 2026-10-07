@@ -1,7 +1,6 @@
 package com.autoball.ui
 
 import android.app.Activity
-import android.app.AlertDialog
 import android.content.Context
 import android.graphics.Color
 import android.graphics.Typeface
@@ -21,9 +20,16 @@ import com.autoball.core.recorder.GestureCompiler
 import com.autoball.core.util.Display
 
 /**
- * 编辑页：名称 / 循环 / 倍速；动作步骤列表（上移下移 + 单步删除）；实时 JS 预览。
+ * 编辑页（v3 #p-edit）：顶栏 + 字段区 + 动作步骤列表 + JS 预览。
  *
- * 需求 2.6：动作步骤长按可拖动排序——零依赖下用「↑ ↓」按钮实现等价能力，避免自造拖动排序的稳定性风险。
+ * 一比一对齐：
+ * - .topbar：h1 26px/800 + 副标题 12px + 两个 36dp 图标按钮（强调色 / 更多）
+ * - .field：label + input，圆角 13，padding 11×14
+ * - .secrow：分区标题 + .addbtn（右侧渐变胶囊，30dp 高）
+ * - .step：序号 .no（22dp）+ 类型 .ty（13.5px/700）+ 说明 .ds；末尾 .step.add 虚线
+ * - .codebox：等宽预览，圆角 13，行高 1.85
+ * - .btnline：.btn.ghost + .btn.pri，44dp 高 / 圆角 13
+ * - .tip：左侧 3px 主色竖条
  */
 class EditPage(context: Context, private val host: PageHost) : FrameLayout(context) {
 
@@ -33,293 +39,477 @@ class EditPage(context: Context, private val host: PageHost) : FrameLayout(conte
     private val speedEd = EditText(context)
     private val listBox = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
     private val preview = TextView(context)
+    private val subTv = TextView(context)
+    private val codeBox = TextView(context)
 
     private var loop = false
 
-    init {
+    init { build() }
+
+    private fun build() {
         val root = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+        root.addView(topbar())
 
-        root.addView(TextView(context).apply {
-            text = "编辑"
-            textSize = 20f
-            setTypeface(null, Typeface.BOLD)
-            setTextColor(Theme.textPri())
-            setPadding(Display.dpInt(context, 16f), Display.dpInt(context, 18f),
-                Display.dpInt(context, 16f), Display.dpInt(context, 10f))
-        })
+        val pad = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+        pad.setPadding(Display.dpInt(context, 18f), 0,
+            Display.dpInt(context, 18f), Display.dpInt(context, 96f))
 
-        // 名称
-        val nameRow = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL }
-        nameRow.addView(TextView(context).apply {
-            text = "名称"; textSize = 12f; setTextColor(Theme.textSec())
-            layoutParams = LinearLayout.LayoutParams(Display.dpInt(context, 56f),
-                LinearLayout.LayoutParams.WRAP_CONTENT)
-        })
-        nameEd.apply {
+        // ---- 名称（.field）----
+        pad.addView(field("名称", nameEd.apply {
             setTextColor(Theme.textPri()); setHintTextColor(Theme.textSec())
             hint = "脚本名称"
-        }
-        nameRow.addView(nameEd, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-        root.addView(pad(nameRow))
+            background = null
+            setSingleLine(true)
+            textSize = 14f
+            setTypeface(null, Typeface.BOLD)
+        }))
 
-        // 循环 / 倍速
-        val optRow = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL }
+        // ---- 循环 / 倍速（两列）----
+        val two = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
         loopBox.apply {
-            text = "循环：关"; textSize = 12f; setTextColor(Color.WHITE)
-            background = Theme.bubble(context, Color.parseColor("#3A2E6B"), 12f)
-            setPadding(Display.dpInt(context, 14f), Display.dpInt(context, 6f),
-                Display.dpInt(context, 14f), Display.dpInt(context, 6f))
+            text = "循环：关"
+            textSize = 12.5f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(Color.WHITE)
+            gravity = Gravity.CENTER
+            background = Theme.rect(Color.parseColor("#3A2E6B"), 13f, context)
+            setPadding(Display.dpInt(context, 14f), Display.dpInt(context, 11f),
+                Display.dpInt(context, 14f), Display.dpInt(context, 11f))
             setOnClickListener {
                 loop = !loop
                 text = "循环：" + if (loop) "开" else "关"
-                background = Theme.bubble(context,
-                    Color.parseColor(if (loop) Theme.BLUE else "#3A2E6B"), 12f)
+                background = Theme.rect(
+                    if (loop) Theme.pri2() else Color.parseColor("#3A2E6B"), 13f, context)
                 save()
             }
         }
-        optRow.addView(loopBox)
-        speedEd.apply {
-            setText("1.0"); inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
-            setTextColor(Theme.textPri())
-            layoutParams = LinearLayout.LayoutParams(Display.dpInt(context, 64f),
-                LinearLayout.LayoutParams.WRAP_CONTENT)
-        }
-        optRow.addView(speedEd)
-        optRow.addView(TextView(context).apply {
-            text = "倍速"; textSize = 12f; setTextColor(Theme.textSec())
-            setPadding(Display.dpInt(context, 6f), 0, 0, 0)
-        })
-        root.addView(pad(optRow))
+        two.addView(loopBox, LinearLayout.LayoutParams(0,
+            LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
 
-        // 动作列表
-        val listScroll = ScrollView(context)
-        listScroll.addView(listBox, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
-        root.addView(listScroll, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
-
-        // 底部工具条：运行 / 添加 / 录制 / JS
-        val bar = LinearLayout(context).apply {
+        val sp = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER
-            setBackgroundColor(Theme.card())
-            setPadding(Display.dpInt(context, 8f), Display.dpInt(context, 8f),
-                Display.dpInt(context, 8f), Display.dpInt(context, 8f))
+            gravity = Gravity.CENTER_VERTICAL
+            background = Theme.rect(Theme.surface(), 13f, context, Theme.line())
+            setPadding(Display.dpInt(context, 14f), Display.dpInt(context, 11f),
+                Display.dpInt(context, 14f), Display.dpInt(context, 11f))
+            val lp = LinearLayout.LayoutParams(0,
+                LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            lp.marginStart = Display.dpInt(context, 9f)
+            layoutParams = lp
         }
-        bar.addView(toolBtn("运行", Theme.BLUE) { script?.let { ScriptLauncher.launch(context.applicationContext, it) } })
-        bar.addView(toolBtn("添加动作", Theme.PURPLE) { addAction() })
-        bar.addView(toolBtn("录制", "#35D08A") { host.startRecording() })
-        bar.addView(toolBtn("JS 预览", "#FFB020") { togglePreview() })
-        bar.addView(toolBtn("保存", "#22D3EE") { save(); host.refreshAll() })
-        root.addView(bar, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
-
-        preview.apply {
-            textSize = 11f
+        sp.addView(TextView(context).apply {
+            text = "倍速"
+            textSize = 12.5f
             setTextColor(Theme.textSec())
-            setPadding(Display.dpInt(context, 12f), Display.dpInt(context, 8f),
-                Display.dpInt(context, 12f), Display.dpInt(context, 8f))
-            visibility = View.GONE
-            setBackgroundColor(Color.parseColor(if (Theme.isDark()) "#1B1730" else "#F2F3FA"))
+        })
+        speedEd.apply {
+            setText("1.0")
+            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+            setTextColor(Theme.textPri())
+            background = null
+            gravity = Gravity.END
+            textSize = 13f
+            setTypeface(null, Typeface.BOLD)
+            layoutParams = LinearLayout.LayoutParams(0,
+                LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
-        root.addView(preview, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, Display.dpInt(context, 160f)))
+        sp.addView(speedEd)
+        two.addView(sp)
+        pad.addView(two)
 
+        // ---- 动作步骤（.secrow + .addbtn）----
+        val secRow = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT)
+            lp.setMargins(0, Display.dpInt(context, 20f), 0, Display.dpInt(context, 9f))
+            layoutParams = lp
+        }
+        secRow.addView(TextView(context).apply {
+            text = "动作步骤"
+            textSize = 11f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(Theme.textTer())
+            letterSpacing = 0.03f
+        })
+        secRow.addView(TextView(context).apply {
+            text = "＋ 添加动作"
+            textSize = 11.5f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(Color.WHITE)
+            gravity = Gravity.CENTER
+            background = Theme.grad(context, 10f)
+            setPadding(Display.dpInt(context, 12f), 0, Display.dpInt(context, 12f), 0)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, Display.dpInt(context, 30f)).apply {
+                marginStart = Display.dpInt(context, 10f)
+            }
+            // margin-left:auto 的效果：左侧放一个占位
+            setOnClickListener { addAction() }
+        })
+        pad.addView(secRow)
+
+        pad.addView(listBox)
+
+        // ---- JS 预览（.sec + .codebox）----
+        pad.addView(section("JS 预览"))
+        codeBox.apply {
+            textSize = 11.5f
+            setTextColor(Theme.textSec())
+            typeface = android.graphics.Typeface.MONOSPACE
+            setLineSpacing(Display.dp(context, 3f), 1.85f)
+            background = Theme.rect(Theme.surface(), 13f, context, Theme.line())
+            setPadding(Display.dpInt(context, 14f), Display.dpInt(context, 12f),
+                Display.dpInt(context, 14f), Display.dpInt(context, 12f))
+            val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT)
+            lp.setMargins(0, 0, 0, Display.dpInt(context, 9f))
+            layoutParams = lp
+            setHorizontallyScrolling(true)
+        }
+        pad.addView(codeBox)
+
+        // ---- .btnline ----
+        val btnLine = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT)
+            lp.setMargins(0, Display.dpInt(context, 14f), 0, 0)
+            layoutParams = lp
+        }
+        btnLine.addView(button("保存草稿", false) { save(); host.refreshAll() }.apply {
+            layoutParams = LinearLayout.LayoutParams(0,
+                Display.dpInt(context, Theme.BTN_H), 1f)
+        })
+        btnLine.addView(button("保存并运行", true) {
+            save(); host.refreshAll()
+            script?.let { host.runScript(it) }
+        }.apply {
+            layoutParams = LinearLayout.LayoutParams(0,
+                Display.dpInt(context, Theme.BTN_H), 1f).apply {
+                marginStart = Display.dpInt(context, 9f)
+            }
+        })
+        pad.addView(btnLine)
+
+        // ---- .tip ----
+        pad.addView(tip("动作按顺序执行。长按步骤可上下移动；点「＋」从 20 类动作里挑选。"))
+
+        val scroll = ScrollView(context).apply { isVerticalScrollBarEnabled = false }
+        scroll.addView(pad)
+        root.addView(scroll, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
         addView(root, FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
 
-        script = AB.store.all().firstOrNull()
-        bind(script)
+        renderSteps()
     }
 
-    fun bind(s: Script?) {
-        script = s
-        if (s == null) {
-            nameEd.setText("")
-            listBox.removeAllViews()
-            listBox.addView(TextView(context).apply {
-                text = "还没有脚本，先到「制作」新建一个"
-                textSize = 13f; setTextColor(Theme.textSec()); gravity = Gravity.CENTER
-                setPadding(0, Display.dpInt(context, 40f), 0, 0)
-            })
-            return
+    // ---------- 组件 ----------
+
+    private fun topbar(): LinearLayout {
+        val b = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(Display.dpInt(context, 18f), Display.dpInt(context, 6f),
+                Display.dpInt(context, 18f), Display.dpInt(context, 12f))
+            gravity = Gravity.BOTTOM
         }
-        nameEd.setText(s.name)
-        loop = s.flow?.loop ?: false
-        loopBox.text = "循环：" + if (loop) "开" else "关"
-        loopBox.background = Theme.bubble(context,
-            Color.parseColor(if (loop) Theme.BLUE else "#3A2E6B"), 12f)
-        speedEd.setText((s.flow?.speed ?: 1f).toString())
-        rebuildActions()
+        val l = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+        l.addView(TextView(context).apply {
+            text = "编辑"
+            textSize = 26f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(Theme.textPri())
+            includeFontPadding = false
+        })
+        l.addView(subTv.apply {
+            text = "未选择脚本"
+            textSize = 12f
+            setTextColor(Theme.textSec())
+            setPadding(0, Display.dpInt(context, 3f), 0, 0)
+        })
+        b.addView(l, LinearLayout.LayoutParams(0,
+            LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        // 强调色按钮：保存
+        b.addView(iconBtn("✓", Theme.pri()) { save(); host.refreshAll() })
+        b.addView(iconBtn("⋯", 0) { showMore() })
+        return b
     }
 
-    private fun rebuildActions() {
+    private fun iconBtn(glyph: String, color: Int, onClick: () -> Unit): TextView =
+        TextView(context).apply {
+            text = glyph
+            textSize = 17f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(if (color != 0) Color.WHITE else Theme.textSec())
+            gravity = Gravity.CENTER
+            background = if (color != 0) Theme.rect(color, 12f, context)
+            else Theme.rect(Theme.surface(), 12f, context, Theme.line())
+            val s = Display.dpInt(context, 36f)
+            layoutParams = LinearLayout.LayoutParams(s, s).apply {
+                marginStart = Display.dpInt(context, 6f)
+            }
+            setOnClickListener { onClick() }
+        }
+
+    /** .field：label + 内容 */
+    private fun field(label: String, content: View): LinearLayout =
+        LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            background = Theme.rect(Theme.surface(), 13f, context, Theme.line())
+            setPadding(Display.dpInt(context, 14f), Display.dpInt(context, 11f),
+                Display.dpInt(context, 14f), Display.dpInt(context, 11f))
+            val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT)
+            lp.setMargins(0, 0, 0, Display.dpInt(context, 9f))
+            layoutParams = lp
+            addView(TextView(context).apply {
+                text = label
+                textSize = 12.5f
+                setTypeface(null, Typeface.BOLD)
+                setTextColor(Theme.textSec())
+                layoutParams = LinearLayout.LayoutParams(
+                    Display.dpInt(context, 56f),
+                    LinearLayout.LayoutParams.WRAP_CONTENT)
+            })
+            addView(content, LinearLayout.LayoutParams(0,
+                LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        }
+
+    private fun section(text: String): TextView = TextView(context).apply {
+        this.text = text
+        textSize = 11f
+        setTypeface(null, Typeface.BOLD)
+        setTextColor(Theme.textTer())
+        letterSpacing = 0.03f
+        setPadding(Display.dpInt(context, 2f), Display.dpInt(context, 14f),
+            Display.dpInt(context, 2f), Display.dpInt(context, 8f))
+    }
+
+    /** .btn / .btn.pri / .btn.ghost */
+    private fun button(text: String, primary: Boolean, onClick: () -> Unit): TextView =
+        TextView(context).apply {
+            this.text = text
+            textSize = 14f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(if (primary) Color.WHITE else Theme.textPri())
+            gravity = Gravity.CENTER
+            background = if (primary) Theme.grad(context, Theme.BTN_R)
+            else Theme.rect(Theme.surface(), Theme.BTN_R, context, Theme.line())
+            setOnClickListener { onClick() }
+        }
+
+    /** .tip：左侧 3px 主色竖条 */
+    private fun tip(text: String): TextView = TextView(context).apply {
+        this.text = text
+        textSize = 12.5f
+        setTextColor(Theme.textSec())
+        setLineSpacing(Display.dp(context, 2f), 1.7f)
+        setPadding(Display.dpInt(context, 14f), Display.dpInt(context, 11f),
+            Display.dpInt(context, 14f), Display.dpInt(context, 11f))
+        background = Theme.tipBg(context)
+        val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT)
+        lp.setMargins(0, Display.dpInt(context, 12f), 0, Display.dpInt(context, 12f))
+        layoutParams = lp
+    }
+
+    // ---------- 步骤列表 ----------
+
+    private fun renderSteps() {
         listBox.removeAllViews()
-        listBox.setPadding(Display.dpInt(context, 12f), Display.dpInt(context, 6f),
-            Display.dpInt(context, 12f), Display.dpInt(context, 12f))
-        val actions = script?.flow?.actions ?: run {
-            listBox.addView(TextView(context).apply {
-                text = "脚本为空，请先添加一个动作"
-                textSize = 13f; setTextColor(Theme.textSec()); gravity = Gravity.CENTER
-                setPadding(0, Display.dpInt(context, 40f), 0, 0)
-            })
-            return
+        val acts = script?.flow?.actions ?: emptyList<Action>().toMutableList()
+        if (acts.isEmpty()) {
+            listBox.addView(hintBox("还没有动作。点右上「＋ 添加动作」开始，或用「录制」自动生成。"))
+        } else {
+            acts.forEachIndexed { i, a -> listBox.addView(stepRow(i, a)) }
         }
-        actions.forEachIndexed { i, a ->
-            listBox.addView(actionRow(a, i, actions.size))
-        }
-        updatePreview()
+        // .step.add：虚线「添加」
+        listBox.addView(TextView(context).apply {
+            text = "＋ 添加动作"
+            textSize = 13f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(Theme.pri())
+            gravity = Gravity.CENTER
+            background = Theme.dashed(context, 13f)
+            setPadding(Display.dpInt(context, 14f), Display.dpInt(context, 13f),
+                Display.dpInt(context, 14f), Display.dpInt(context, 13f))
+            val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT)
+            lp.setMargins(0, 0, 0, Display.dpInt(context, 9f))
+            layoutParams = lp
+            setOnClickListener { addAction() }
+        })
+        refreshPreview()
     }
 
-    private fun actionRow(a: Action, index: Int, size: Int): View {
+    /** .step：序号 + 类型 + 说明 + 上移/下移/删除 */
+    private fun stepRow(i: Int, a: Action): LinearLayout {
         val row = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            background = Theme.bubble(context, Theme.card(), 14f)
-            setPadding(Display.dpInt(context, 12f), Display.dpInt(context, 8f),
-                Display.dpInt(context, 10f), Display.dpInt(context, 8f))
+            background = Theme.rect(Theme.surface(), 13f, context, Theme.line())
+            setPadding(Display.dpInt(context, 12f), Display.dpInt(context, 11f),
+                Display.dpInt(context, 12f), Display.dpInt(context, 11f))
             val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT)
-            lp.setMargins(0, 0, 0, Display.dpInt(context, 8f))
+            lp.setMargins(0, 0, 0, Display.dpInt(context, 9f))
             layoutParams = lp
         }
+        // .no
         row.addView(TextView(context).apply {
-            text = "${index + 1}"
-            textSize = 11f; setTextColor(Theme.textSec())
+            text = (i + 1).toString()
+            textSize = 10.5f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(Theme.textTer())
+            gravity = Gravity.CENTER
+            background = Theme.rect(Theme.surface2(), 7f, context)
             layoutParams = LinearLayout.LayoutParams(Display.dpInt(context, 22f),
-                LinearLayout.LayoutParams.WRAP_CONTENT)
+                Display.dpInt(context, 22f))
         })
-        val mid = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f) }
-        mid.addView(TextView(context).apply {
+        val ds = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+        ds.addView(TextView(context).apply {
             text = a.type.label
-            textSize = 14f; setTextColor(Theme.textPri())
+            textSize = 13.5f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(Theme.textPri())
         })
-        mid.addView(TextView(context).apply {
-            text = describe(a)
-            textSize = 11f; setTextColor(Theme.textSec())
+        ds.addView(TextView(context).apply {
+            text = ActionEditor.describe(a)
+            textSize = 11.5f
+            setTextColor(Theme.textSec())
+            setSingleLine(true)
+            ellipsize = android.text.TextUtils.TruncateAt.END
         })
-        row.addView(mid)
-
-        row.addView(miniBtn("↑") { move(index, -1) })
-        row.addView(miniBtn("↓") { move(index, 1) })
-        row.addView(miniBtn("✕") {
-            script?.flow?.actions?.removeAt(index)
-            save(); rebuildActions()
+        row.addView(ds, LinearLayout.LayoutParams(0,
+            LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+            marginStart = Display.dpInt(context, 10f)
         })
-        row.setOnLongClickListener {
-            ActionEditor.show(context as? Activity ?: return@setOnLongClickListener true, a) { updated ->
-                script?.flow?.actions?.set(index, updated)
-                save(); rebuildActions()
-            }
-            true
-        }
+        // 上移 / 下移 / 删除
+        row.addView(miniBtn("↑") { move(i, -1) })
+        row.addView(miniBtn("↓") { move(i, 1) })
+        row.addView(miniBtn("✕") { removeAt(i) })
+        row.setOnClickListener { ActionEditor.show(context as? Activity ?: return@setOnClickListener, a) {
+            save(); renderSteps() } }
         return row
     }
 
-    private fun describe(a: Action): String = when (a.type) {
-        com.autoball.core.model.ActionType.CLICK,
-        com.autoball.core.model.ActionType.CLICK_IMAGE,
-        com.autoball.core.model.ActionType.CLICK_TEXT,
-        com.autoball.core.model.ActionType.CLICK_COLOR,
-        com.autoball.core.model.ActionType.CLICK_NODE,
-        com.autoball.core.model.ActionType.AI_CLICK ->
-            "(${a.x.toInt()}, ${a.y.toInt()}) · ${a.durationMs}ms"
-        com.autoball.core.model.ActionType.SWIPE ->
-            "(${a.x.toInt()}, ${a.y.toInt()}) → (${a.x2.toInt()}, ${a.y2.toInt()})"
-        com.autoball.core.model.ActionType.INPUT_TEXT -> a.text ?: ""
-        com.autoball.core.model.ActionType.OPEN_APP -> a.pkg ?: ""
-        com.autoball.core.model.ActionType.OPEN_URL -> a.url ?: ""
-        com.autoball.core.model.ActionType.KEY -> "keyCode ${a.keyCode}"
-        com.autoball.core.model.ActionType.SET_VAR -> "${a.varName} = ${a.varValue}"
-        com.autoball.core.model.ActionType.CONTROL_FLOW -> a.controlOp.label
-        else -> "等待 ${a.waitMs}ms · 重复 ${a.repeat} 次"
+    /** .mini：38dp 圆形按钮 */
+    private fun miniBtn(glyph: String, onClick: () -> Unit): TextView = TextView(context).apply {
+        text = glyph
+        textSize = 13f
+        setTypeface(null, Typeface.BOLD)
+        setTextColor(if (Theme.isDark()) Color.parseColor("#B9B2D6")
+        else Color.parseColor("#5B5570"))
+        gravity = Gravity.CENTER
+        background = Theme.oval(if (Theme.isDark()) Color.parseColor("#2A2340")
+        else Color.parseColor("#FFFFFF"))
+        val s = Display.dpInt(context, 34f)
+        layoutParams = LinearLayout.LayoutParams(s, s).apply {
+            marginStart = Display.dpInt(context, 6f)
+        }
+        setOnClickListener { onClick() }
     }
 
-    private fun move(index: Int, delta: Int) {
-        val list = script?.flow?.actions ?: return
-        val to = index + delta
-        if (to < 0 || to >= list.size) return
-        val item = list.removeAt(index)
-        list.add(to, item)
-        save()
-        rebuildActions()
+    private fun hintBox(text: String): TextView = TextView(context).apply {
+        this.text = text
+        textSize = 12.5f
+        setTextColor(Theme.textSec())
+        setLineSpacing(Display.dp(context, 2f), 1.7f)
+        setPadding(Display.dpInt(context, 14f), Display.dpInt(context, 13f),
+            Display.dpInt(context, 14f), Display.dpInt(context, 13f))
+        background = Theme.dashed(context, 13f)
+        val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT)
+        lp.setMargins(0, 0, 0, Display.dpInt(context, 9f))
+        layoutParams = lp
+    }
+
+    // ---------- 数据操作 ----------
+
+    fun bind(s: Script) {
+        script = s
+        nameEd.setText(s.name)
+        loop = s.flow?.loop == true
+        loopBox.text = "循环：" + if (loop) "开" else "关"
+        loopBox.background = Theme.rect(
+            if (loop) Theme.pri2() else Color.parseColor("#3A2E6B"), 13f, context)
+        val n = s.flow?.actions?.size ?: 0
+        subTv.text = "${if (s.kind == com.autoball.core.model.ScriptKind.JS) "JS 脚本" else "动作流"} · $n 个动作"
+        renderSteps()
+    }
+
+    private fun move(i: Int, delta: Int) {
+        val acts = script?.flow?.actions ?: return
+        val j = i + delta
+        if (j < 0 || j >= acts.size) return
+        val t = acts[i]; acts[i] = acts[j]; acts[j] = t
+        save(); renderSteps()
+    }
+
+    private fun removeAt(i: Int) {
+        val acts = script?.flow?.actions ?: return
+        if (i !in acts.indices) return
+        acts.removeAt(i)
+        save(); renderSteps()
     }
 
     private fun addAction() {
-        val s = script ?: return
         val act = context as? Activity ?: return
         ActionEditor.show(act, null) { a ->
-            s.flow?.actions?.add(a)
-            save()
-            rebuildActions()
+            val s = script
+            if (s == null) {
+                Ui.toast(act, "请先选择或新建脚本")
+                return@show
+            }
+            if (s.flow == null) s.flow = com.autoball.core.model.Flow()
+            s.flow!!.actions.add(a)
+            save(); renderSteps()
         }
-    }
-
-    private fun togglePreview() {
-        preview.visibility = if (preview.visibility == View.VISIBLE) View.GONE else View.VISIBLE
-        updatePreview()
-    }
-
-    private fun updatePreview() {
-        val f = script?.flow ?: return
-        preview.text = GestureCompiler.toJs(f)
     }
 
     private fun save() {
         val s = script ?: return
         s.name = nameEd.text.toString().ifBlank { "未命名脚本" }
         s.flow?.loop = loop
-        s.flow?.speed = speedEd.text.toString().toFloatOrNull() ?: 1f
-        s.flow?.name = s.name
+        val sp = speedEd.text.toString().toFloatOrNull() ?: 1f
+        s.flow?.speed = sp.coerceIn(0.1f, 10f)
         s.updatedAt = System.currentTimeMillis()
         AB.store.save(s)
+        refreshPreview()
+        val n = s.flow?.actions?.size ?: 0
+        subTv.text = "${if (s.kind == com.autoball.core.model.ScriptKind.JS) "JS 脚本" else "动作流"} · $n 个动作"
     }
 
-    // ---------- 小部件 ----------
-
-    private fun pad(v: View): View {
-        val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT)
-        lp.setMargins(Display.dpInt(context, 16f), 0, Display.dpInt(context, 16f),
-            Display.dpInt(context, 8f))
-        v.layoutParams = lp
-        return v
+    private fun refreshPreview() {
+        val s = script
+        codeBox.text = if (s == null) "// 未选择脚本"
+        else runCatching { GestureCompiler.toJs(s.flow ?: com.autoball.core.model.Flow()) }
+            .getOrElse { "// 预览生成失败：${it.message}" }
     }
 
-    private fun toolBtn(text: String, color: String, onClick: () -> Unit): TextView =
-        TextView(context).apply {
-            this.text = text
-            textSize = 12f
-            setTextColor(Color.WHITE)
-            gravity = Gravity.CENTER
-            background = Theme.bubble(context, Color.parseColor(color), 12f)
-            setPadding(Display.dpInt(context, 10f), Display.dpInt(context, 7f),
-                Display.dpInt(context, 10f), Display.dpInt(context, 7f))
-            val lp = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-            lp.setMargins(Display.dpInt(context, 3f), 0, Display.dpInt(context, 3f), 0)
-            layoutParams = lp
-            setOnClickListener { onClick() }
-        }
-
-    private fun miniBtn(text: String, onClick: () -> Unit): TextView =
-        TextView(context).apply {
-            this.text = text
-            textSize = 13f
-            setTextColor(Theme.textSec())
-            gravity = Gravity.CENTER
-            setPadding(Display.dpInt(context, 8f), Display.dpInt(context, 4f),
-                Display.dpInt(context, 8f), Display.dpInt(context, 4f))
-            setOnClickListener { onClick() }
-        }
-
-    private fun confirmDelete(a: Action) {
+    private fun showMore() {
         val act = context as? Activity ?: return
-        AlertDialog.Builder(act).setMessage("删除该动作？")
-            .setPositiveButton("删除") { d, _ ->
-                script?.flow?.actions?.remove(a); save(); rebuildActions(); d.dismiss()
-            }.setNegativeButton("取消", null).show()
+        val box = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
+        box.addView(Ui.sheetOption(act, "▶", Theme.pri2(), "运行脚本", "立即执行一次") {
+            script?.let { host.runScript(it) }
+        })
+        box.addView(Ui.sheetOption(act, "●", Theme.ok(), "从此录制", "在当前脚本后追加录制的动作") {
+            host.startRecording()
+        })
+        box.addView(Ui.sheetOption(act, "🔗", Theme.pri(), "生成分享码", "把脚本打包成一串码") {
+            val s = script ?: return@sheetOption
+            val code = com.autoball.core.store.ShareCode.encode(s)
+            ShareImportDialog.showCopy(act, s.name, code)
+        })
+        box.addView(Ui.sheetOption(act, "✕", Theme.danger(), "删除脚本", "不可恢复") {
+            val s = script ?: return@sheetOption
+            AB.store.delete(setOf(s.id))
+            script = null
+            host.refreshAll()
+        })
+        Ui.sheet(act, "更多操作").body(box).show()
     }
 }

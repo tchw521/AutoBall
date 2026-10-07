@@ -3,6 +3,9 @@ package com.autoball.ui
 import android.app.Activity
 import android.app.AlertDialog
 import android.view.Gravity
+import android.widget.TextView
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.widget.LinearLayout
 import com.autoball.AB
 import com.autoball.core.model.Script
@@ -46,4 +49,40 @@ object ShareImportDialog {
             }
             .setNegativeButton("取消", null).show()
     }
+    /** 展示生成的分享码（可直接复制） */
+    fun showCopy(activity: Activity, name: String, code: String) {
+        val tv = TextView(activity).apply {
+            text = code
+            textSize = 11f
+            setTextColor(Theme.textSec())
+            typeface = android.graphics.Typeface.MONOSPACE
+            setPadding(Display.dpInt(activity, 14f), Display.dpInt(activity, 12f),
+                Display.dpInt(activity, 14f), Display.dpInt(activity, 12f))
+            background = Theme.rect(Theme.surface2(), 10f, activity, Theme.line())
+            setHorizontallyScrolling(true)
+        }
+        val box = LinearLayout(activity).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(Display.dpInt(activity, 20f), Display.dpInt(activity, 12f),
+                Display.dpInt(activity, 20f), 0)
+            addView(TextView(activity).apply {
+                text = "「$name」的分享码"
+                textSize = 13f
+                setTypeface(null, android.graphics.Typeface.BOLD)
+                setTextColor(Theme.textPri())
+                setPadding(0, 0, 0, Display.dpInt(activity, 10f))
+            })
+            addView(tv)
+        }
+        AlertDialog.Builder(activity).setTitle("分享码").setView(box)
+            .setPositiveButton("复制") { d, _ ->
+                val cm = activity.getSystemService(android.content.Context.CLIPBOARD_SERVICE)
+                        as? ClipboardManager
+                cm?.setPrimaryClip(ClipData.newPlainText("autoball", code))
+                Ui.toast(activity, "已复制分享码")
+                d.dismiss()
+            }
+            .setNegativeButton("关闭", null).show()
+    }
+
 }
