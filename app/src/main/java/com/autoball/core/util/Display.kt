@@ -80,6 +80,55 @@ object Display {
         return false
     }
 
+    /**
+     * 已安装的可启动应用列表（供「目标应用」选择）。
+     *
+     * 只取带 LAUNCHER 入口的应用，并按包名去重——同一应用常有多个入口 Activity，
+     * 不去重会出现重复项。结果按名称排序，主线程调用可接受（数量在百级）。
+     */
+    fun launchableApps(ctx: Context): List<Pair<String, String>> {
+        val pm = ctx.packageManager
+        val intent = android.content.Intent(android.content.Intent.ACTION_MAIN).apply {
+            addCategory(android.content.Intent.CATEGORY_LAUNCHER)
+        }
+        val seen = HashSet<String>()
+        val out = ArrayList<Pair<String, String>>()
+        val list = if (Build.VERSION.SDK_INT >= 33) {
+            pm.queryIntentActivities(intent,
+                android.content.pm.PackageManager.ResolveInfoFlags.of(0))
+        } else {
+            @Suppress("DEPRECATION")
+            pm.queryIntentActivities(intent, 0)
+        }
+        for (ri in list) {
+            val pkg = ri.activityInfo?.packageName ?: continue
+            if (!seen.add(pkg)) continue
+            val label = runCatching { ri.loadLabel(pm).toString() }.getOrDefault(pkg)
+            out.add(pkg to label)
+        }
+        out.sortBy { it.second }
+        return out
+    }
+
+    /** 应用名（取不到就回退包名） */
+    fun appLabel(ctx: Context, pkg: String): String = runCatching {
+        val pm = ctx.packageManager
+        pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString()
+    }.getOrDefault(pkg)
+
+    /** 启动指定包名的应用；失败返回 false */
+    fun launchApp(ctx: Context, pkg: String): Boolean {
+        return try {
+            val launch = ctx.packageManager.getLaunchIntentForPackage(pkg) ?: return false
+            launch.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK or
+                android.content.Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
+            ctx.startActivity(launch)
+            true
+        } catch (e: Exception) {
+            false
+        }
+    }
+
     @SuppressLint("NewApi")
     fun openOverlaySettings(ctx: Context) {
         try {

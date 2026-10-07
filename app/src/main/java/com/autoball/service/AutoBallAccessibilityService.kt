@@ -63,6 +63,19 @@ class AutoBallAccessibilityService : AccessibilityService() {
         @Volatile
         var lastForegroundPkg: String? = null
 
+        /**
+         * 当前前台包名。
+         *
+         * 优先用窗口事件记录的值；为空时用当前活跃窗口的根节点兜底
+         * （部分 ROM 在冷启动时不上报 WINDOW_STATE_CHANGED）。
+         */
+        fun foregroundPkg(): String? {
+            lastForegroundPkg?.let { return it }
+            return runCatching {
+                instance?.rootInActiveWindow?.packageName?.toString()
+            }.getOrNull()
+        }
+
         /** 引导用户前往无障碍设置页 */
         fun openAccessibilitySettings(context: android.content.Context) {
             try {

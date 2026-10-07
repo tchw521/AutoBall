@@ -337,14 +337,66 @@ class ScriptPage(
         return row
     }
 
+    /**
+     * 列表渲染：增量刷新。
+     *
+     * 原实现每次都 `removeAllViews()` 全量重建，勾选一项、输入一个搜索字
+     * 都要重建全部卡片（每张卡片含十余个子 View），脚本多了会明显卡顿。
+     * 改为按 id 与「渲染签名」比对：
+     * - 顺序与签名都没变 → 直接复用，不动；
+     * - 只有个别卡片签名变了（如运行次数、多选勾选）→ 只重建那几张；
+     * - 数量或顺序变化 → 回退全量重建。
+     */
     private fun renderList() {
-        listBox.removeAllViews()
         val list = filtered()
         if (list.isEmpty()) {
+            listBox.removeAllViews()
+            shown.clear()
             listBox.addView(Ui.hint(context, "这个分组还没有脚本。点右上「＋」新建，或从分享码导入。"))
             return
         }
-        list.forEach { s -> listBox.addView(card(s)) }
+        // 首个孩子可能是空态提示
+        if (listBox.childCount == 1 && listBox.getChildAt(0) !is LinearLayout) {
+            listBox.removeAllViews()
+            shown.clear()
+        }
+
+        val sameShape = shown.size == list.size &&
+            shown.indices.all { shown[it].first == list[it].id }
+        if (sameShape) {
+            // 只重建签名变化的卡片，其余原样保留（保持滚动位置与点击态）
+            for (i in list.indices) {
+                val ns = sig(list[i])
+                if (ns != shown[i].second) {
+                    listBox.removeViewAt(i)
+                    listBox.addView(card(list[i]), i)
+                    shown[i] = list[i].id to ns
+                }
+            }
+            return
+        }
+        listBox.removeAllViews()
+        shown.clear()
+        list.forEach { sc ->
+            listBox.addView(card(sc))
+            shown.add(sc.id to sig(sc))
+        }
+    }
+
+    /** 已渲染卡片：id + 渲染签名 */
+    private val shown = ArrayList<Pair<String, String>>()
+
+    /** 渲染签名：影响卡片外观的字段都纳入，变了才重建 */
+    private fun sig(s: Script): String = buildString {
+        append(s.name).append('|')
+        append(s.kind.name).append('|')
+        append(s.runCount).append('|')
+        append(s.enabled).append('|')
+        append(s.slot.name).append('|')
+        append(s.isDefault).append('|')
+        append(multiMode).append('|')
+        append(sel.contains(s.id)).append('|')
+        append(s.targetPkg ?: "")
     }
 
     @SuppressLint("ClickableViewAccessibility")
@@ -732,7 +784,7 @@ class ScriptPage(
             }.show()
     }
 
-    fun refresh() { renderGroups(); renderChips(); renderList() }
+    fun refresh() { shown.clear(); renderGroups(); renderChips(); renderList() }
 
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(event: MotionEvent): Boolean = true

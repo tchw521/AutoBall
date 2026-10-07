@@ -42,6 +42,13 @@ class EditPage(context: Context, private val host: PageHost) : FrameLayout(conte
     private val codeBox = TextView(context)
 
     private var loop = false
+    private var targetRef: TextView? = null
+
+    private fun syncTarget(tv: TextView) {
+        val pkg = script?.targetPkg
+        tv.text = if (pkg.isNullOrBlank()) "不限 · 保持当前界面"
+        else Display.appLabel(context, pkg)
+    }
 
     private val handler = android.os.Handler(android.os.Looper.getMainLooper())
     private var longPressTask: Runnable? = null
@@ -65,6 +72,38 @@ class EditPage(context: Context, private val host: PageHost) : FrameLayout(conte
             textSize = 14f
             setTypeface(null, Typeface.BOLD)
         }))
+
+        // ---- 目标应用 ----
+        val targetTv = TextView(context).apply {
+            textSize = 12.5f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(Theme.textSec())
+            gravity = Gravity.END
+            layoutParams = LinearLayout.LayoutParams(0,
+                LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        val targetRow = Kit.field(context, "目标应用",
+            LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                addView(targetTv)
+                addView(TextView(context).apply {
+                    text = "›"
+                    textSize = 15f
+                    setTypeface(null, Typeface.BOLD)
+                    setTextColor(Theme.textTer())
+                })
+            })
+        targetRow.setOnClickListener {
+            val act = context as? Activity ?: return@setOnClickListener
+            val sc = script ?: return@setOnClickListener
+            TargetAppDialog.show(act, sc) {
+                save()
+                syncTarget(targetTv)
+            }
+        }
+        targetRef = targetTv
+        col.addView(targetRow)
 
         // ---- 循环 / 倍速 ----
         val two = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
@@ -284,6 +323,7 @@ class EditPage(context: Context, private val host: PageHost) : FrameLayout(conte
         syncLoop()
         speedEd.setText((s.flow?.speed ?: 1f).toString())
         updateSub()
+        targetRef?.let { syncTarget(it) }
         renderSteps()
     }
 
