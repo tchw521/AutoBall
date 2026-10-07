@@ -19,8 +19,8 @@ android {
         applicationId = "com.autoball"
         minSdk = 24
         targetSdk = 34
-        versionCode = 12
-        versionName = "0.8.0"
+        versionCode = 13
+        versionName = "0.9.0"
 
         buildConfigField("boolean", "USE_RHINO", useRhino.toString())
         buildConfigField("String", "BUILD_ENGINE", "\"${if (useRhino) "rhino" else "quickjs"}\"")

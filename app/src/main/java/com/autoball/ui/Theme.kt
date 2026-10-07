@@ -241,6 +241,11 @@ object Theme {
             setColor(if (isDark()) Color.parseColor("#1A7C3AED") else Color.parseColor("#0F7C3AED"))
         }
 
+    /** 上边细线（用于 .adsec 分隔） */
+    fun hairlineTop(ctx: Context): android.graphics.drawable.GradientDrawable =
+        GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
+            intArrayOf(line(), android.graphics.Color.TRANSPARENT))
+
     fun hairline(ctx: Context): android.view.View = android.view.View(ctx).apply {
         setBackgroundColor(line())
     }

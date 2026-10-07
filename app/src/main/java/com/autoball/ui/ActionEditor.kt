@@ -2,50 +2,59 @@ package com.autoball.ui
 
 import android.app.Activity
 import android.app.AlertDialog
+import android.app.Dialog
 import android.graphics.Color
+import android.graphics.Typeface
 import android.text.InputType
 import android.view.Gravity
+import android.view.View
 import android.view.ViewGroup
-import android.widget.ArrayAdapter
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
-import android.widget.Spinner
 import android.widget.TextView
-import com.autoball.AB
-import com.autoball.core.model.*
+import com.autoball.core.model.Action
+import com.autoball.core.model.ActionType
+import com.autoball.core.model.ControlOp
 import com.autoball.core.util.Display
 
 /**
- * 添加/编辑动作：20 类下拉 → 动态表单（需求 2.3，弹窗三级 240dp）。
+ * 添加 / 编辑动作（v3 #adDlg：206dp 宽的紧凑弹窗）。
  *
- * 表单随类型动态变化，公共项为运行等待 / 重复次数 / 运行条件（选填）。
+ * 结构对齐设计稿：
+ * - 类型行（.adrow）：点选后在 .gpop 下拉里挑 20 类动作
+ * - 位置行：弹出全屏选点 / 区域选择
+ * - .adsec 分组分隔
+ * - 开关行（是否启用 / 失败后停止…）
+ * - 输入行（.adrow.wide.inp）
+ * - 底部 .gf：取消 / 确定
+ *
+ * 弹窗内所有下拉都走 Ui.popMenu（层级 100，压在弹窗之上）。
  */
 object ActionEditor {
 
     /** 一行摘要：用于步骤列表与日志 */
     fun describe(a: Action): String = when (a.type) {
-        com.autoball.core.model.ActionType.CLICK -> "(${a.x.toInt()}, ${a.y.toInt()})"
-        com.autoball.core.model.ActionType.SWIPE,
-        com.autoball.core.model.ActionType.GESTURE_SINGLE ->
+        ActionType.CLICK -> "(${a.x.toInt()}, ${a.y.toInt()})"
+        ActionType.SWIPE, ActionType.GESTURE_SINGLE ->
             "(${a.x.toInt()}, ${a.y.toInt()}) → (${a.x2.toInt()}, ${a.y2.toInt()}) ${a.durationMs}ms"
-        com.autoball.core.model.ActionType.GESTURE_MULTI -> "${a.strokes.size} 指手势"
-        com.autoball.core.model.ActionType.INPUT_TEXT -> "输入「${a.text ?: ""}」"
-        com.autoball.core.model.ActionType.OPEN_APP -> a.pkg ?: "未指定应用"
-        com.autoball.core.model.ActionType.OPEN_URL -> a.url ?: "未指定链接"
-        com.autoball.core.model.ActionType.KEY -> "按键 ${a.keyCode}"
-        com.autoball.core.model.ActionType.RUN_JS -> "JS ${a.code?.length ?: 0} 字符"
-        com.autoball.core.model.ActionType.SET_VAR -> "${a.varName} = ${a.varValue}"
-        com.autoball.core.model.ActionType.TOAST -> "提示「${a.text ?: ""}」"
-        com.autoball.core.model.ActionType.CONTROL_FLOW -> a.controlOp.label
-        com.autoball.core.model.ActionType.CLICK_TEXT -> "文字「${a.text ?: ""}」"
-        com.autoball.core.model.ActionType.CLICK_NODE -> "节点 ${a.nodeSpec?.text ?: a.nodeSpec?.id ?: ""}"
-        com.autoball.core.model.ActionType.CLICK_IMAGE -> "图片 ${a.imageRef ?: "未设置"}"
-        com.autoball.core.model.ActionType.CLICK_COLOR -> "颜色 ${a.colorHex ?: "未设置"}"
-        com.autoball.core.model.ActionType.AI_CLICK -> "AI 点击"
-        com.autoball.core.model.ActionType.RECOGNIZE_SCREEN -> "识别屏幕"
-        com.autoball.core.model.ActionType.RUN_SCRIPT -> "子脚本"
-        com.autoball.core.model.ActionType.RUN_ACTIONS -> "${a.subActions.size} 个子动作"
+        ActionType.GESTURE_MULTI -> "${a.strokes.size} 指手势"
+        ActionType.INPUT_TEXT -> "输入「${a.text ?: ""}」"
+        ActionType.OPEN_APP -> a.pkg ?: "未指定应用"
+        ActionType.OPEN_URL -> a.url ?: "未指定链接"
+        ActionType.KEY -> "按键 ${a.keyCode}"
+        ActionType.RUN_JS -> "JS ${a.code?.length ?: 0} 字符"
+        ActionType.SET_VAR -> "${a.varName} = ${a.varValue}"
+        ActionType.TOAST -> "提示「${a.text ?: ""}」"
+        ActionType.CONTROL_FLOW -> a.controlOp.label
+        ActionType.CLICK_TEXT -> "文字「${a.text ?: ""}」"
+        ActionType.CLICK_NODE -> "节点 ${a.nodeSpec?.text ?: a.nodeSpec?.id ?: ""}"
+        ActionType.CLICK_IMAGE -> "图片 ${a.imageRef ?: "未设置"}"
+        ActionType.CLICK_COLOR -> "颜色 ${a.colorHex ?: "未设置"}"
+        ActionType.AI_CLICK -> "AI 点击"
+        ActionType.RECOGNIZE_SCREEN -> "识别屏幕"
+        ActionType.RUN_SCRIPT -> "子脚本"
+        ActionType.RUN_ACTIONS -> "${a.subActions.size} 个子动作"
     }.let { base ->
         val extra = ArrayList<String>()
         if (a.repeat > 1) extra.add("重复 ${a.repeat}")
@@ -55,376 +64,202 @@ object ActionEditor {
     }
 
     fun show(activity: Activity, existing: Action?, onSave: (Action) -> Unit) {
-        showTypeDialog(activity, existing, onSave)
+        val a = existing ?: Action().apply {
+            id = Action.newId()
+            type = ActionType.CLICK
+            x = 50f; y = 50f
+        }
+        showForm(activity, a, onSave)
     }
 
-    /** 动作宫格（v3：3 列宫格选类型，比长列表好点） */
-    private fun showTypeDialog(activity: Activity, existing: Action?, onSave: (Action) -> Unit) {
+    // =====================================================================
+    // 紧凑表单弹窗
+    // =====================================================================
+
+    private fun showForm(activity: Activity, a: Action, onSave: (Action) -> Unit) {
         val ctx = activity
-        val names = ActionType.values()
-        val grid = android.widget.GridLayout(ctx).apply {
-            columnCount = 3
+        val box = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
+        val rows = ArrayList<() -> Unit>()     // 每次刷新重绘所有行
+        var dialog: Dialog? = null
+
+        fun rebuild() {
+            box.removeAllViews()
+            rows.forEach { it() }
         }
-        for (i in names.indices) {
-            val cell = TextView(ctx).apply {
-                text = names[i].label
-                textSize = 12.5f
-                setTypeface(null, android.graphics.Typeface.BOLD)
-                setTextColor(Theme.textPri())
-                gravity = Gravity.CENTER
-                background = Theme.bubble(ctx, Theme.surface2(), 12f)
-                setPadding(Display.dpInt(ctx, 4f), Display.dpInt(ctx, 12f),
-                    Display.dpInt(ctx, 4f), Display.dpInt(ctx, 12f))
-                setOnClickListener {
-                    val a = existing ?: Action().apply { id = Action.newId() }
-                    a.type = names[i]
-                    showFormDialog(activity, a, onSave)
+
+        // ---- 类型 ----
+        rows.add {
+            box.addView(Ui.adRow(ctx, "动作类型", a.type.label, true, {
+                Ui.popMenu(ctx, box, ActionType.labels().toList(),
+                    ActionType.values().indexOf(a.type)) { i ->
+                    a.type = ActionType.values()[i]
+                    rebuild()
                 }
-            }
-            val lp = android.widget.GridLayout.LayoutParams().apply {
-                width = 0
-                columnSpec = android.widget.GridLayout.spec(i % 3, 1f)
-                setMargins(Display.dpInt(ctx, 4f), Display.dpInt(ctx, 4f),
-                    Display.dpInt(ctx, 4f), Display.dpInt(ctx, 4f))
-            }
-            grid.addView(cell, lp)
-        }
-        Ui.dialog(ctx, if (existing == null) "选择动作类型" else "修改动作类型")
-            .body(grid)
-            .negative("取消")
-            .show()
-    }
-
-    private fun showFormDialog(activity: Activity, a: Action, onSave: (Action) -> Unit) {
-        val ctx = activity
-        // 先声明再赋值：拾取坐标时需要把本弹窗临时隐藏，让出屏幕给目标应用
-        var dialog: AlertDialog? = null
-        val box = LinearLayout(ctx).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(Display.dpInt(ctx, 12f), Display.dpInt(ctx, 4f),
-                Display.dpInt(ctx, 12f), Display.dpInt(ctx, 4f))
+            }) { Ui.toast(ctx, "共 ${ActionType.values().size} 类动作，按需挑选") })
         }
 
-        box.addView(title(ctx, a.type.label))
-
+        // ---- 按类型分组的字段 ----
         val groups = a.type.fieldGroups
-        var xEd: EditText? = null
-        var yEd: EditText? = null
-        var x2Ed: EditText? = null
-        var y2Ed: EditText? = null
-        var durEd: EditText? = null
-        var textEd: EditText? = null
-        var pkgEd: EditText? = null
-        var urlEd: EditText? = null
-        var varNameEd: EditText? = null
-        var codeEd: EditText? = null
-        var keySpinner: Spinner? = null
-        var scriptSpinner: Spinner? = null
-        var controlSpinner: Spinner? = null
+        if (groups.isNotEmpty()) box.addView(Ui.adSec(ctx))
 
-        if (groups.contains(FieldGroup.POINT)) {
-            box.addView(label(ctx, "点击位置"))
-            val row = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL }
-            xEd = numEdit(ctx, a.x.toInt().toString(), "X")
-            yEd = numEdit(ctx, a.y.toInt().toString(), "Y")
-            row.addView(xEd, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-            row.addView(yEd, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-            box.addView(row)
-            box.addView(pickButton(ctx, { dialog }, "拾取坐标") { px, py ->
-                xEd?.setText(px.toInt().toString())
-                yEd?.setText(py.toInt().toString())
-            })
-            box.addView(help(ctx, "点击位置"))
-        }
-
-        if (groups.contains(FieldGroup.POINT_END)) {
-            box.addView(label(ctx, "结束位置"))
-            val row = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL }
-            x2Ed = numEdit(ctx, a.x2.toInt().toString(), "X2")
-            y2Ed = numEdit(ctx, a.y2.toInt().toString(), "Y2")
-            row.addView(x2Ed, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-            row.addView(y2Ed, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-            box.addView(row)
-            val pickRow = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL }
-            val endBtn = pickButton(ctx, { dialog }, "拾取结束点") { px, py ->
-                x2Ed?.setText(px.toInt().toString())
-                y2Ed?.setText(py.toInt().toString())
+        if (groups.contains(com.autoball.core.model.FieldGroup.POINT)) {
+            rows.add {
+                box.addView(Ui.adRow(ctx, "位置", "(${a.x.toInt()}%, ${a.y.toInt()}%)", true) {
+                    dialog?.let { d ->
+                        CoordPicker.pick(ctx, activity, d) { px, py ->
+                            a.x = px; a.y = py
+                            rebuild()
+                        }
+                    }
+                } { Ui.toast(ctx, "百分比坐标，换机型不会点偏") })
             }
-            endBtn.layoutParams = LinearLayout.LayoutParams(0,
-                LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
-                setMargins(0, Display.dpInt(ctx, 6f), 0, 0)
+        }
+        if (groups.contains(com.autoball.core.model.FieldGroup.POINT_END)) {
+            rows.add {
+                box.addView(Ui.adRow(ctx, "结束位置",
+                    "(${a.x2.toInt()}%, ${a.y2.toInt()}%)", a.x2 != 0f || a.y2 != 0f) {
+                    dialog?.let { d ->
+                        RegionPicker.pick(ctx, activity, d) { l, t, r, b ->
+                            a.x = l; a.y = t; a.x2 = l + r; a.y2 = t + b
+                            rebuild()
+                        }
+                    }
+                } { Ui.toast(ctx, "框选起点与终点，一次填满两个坐标") })
             }
-            pickRow.addView(endBtn)
-            pickRow.addView(regionButton(ctx, { dialog }, "框选区域") { l, t, r, b ->
-                xEd?.setText(l.toInt().toString())
-                yEd?.setText(t.toInt().toString())
-                x2Ed?.setText(r.toInt().toString())
-                y2Ed?.setText(b.toInt().toString())
-            })
-            box.addView(pickRow)
         }
-
-        if (groups.contains(FieldGroup.PRESS_DURATION)) {
-            durEd = numEdit(ctx, a.durationMs.toString(), "按下时间(ms)")
-            box.addView(label(ctx, "按下时间"))
-            box.addView(durEd)
-            box.addView(help(ctx, "按下时间"))
+        if (groups.contains(com.autoball.core.model.FieldGroup.PRESS_DURATION)) {
+            val row = Ui.adNumber(ctx, a.durationMs.toString(), "ms", "按下时长")
+            rows.add { box.addView(row) }
         }
-
-        if (groups.contains(FieldGroup.DURATION)) {
-            durEd = numEdit(ctx, a.durationMs.toString(), "滑动/手势时长(ms)")
-            box.addView(label(ctx, "时长"))
-            box.addView(durEd)
-            box.addView(help(ctx, "滑动时长"))
+        if (groups.contains(com.autoball.core.model.FieldGroup.DURATION)) {
+            val row = Ui.adNumber(ctx, a.durationMs.toString(), "ms", "滑动时长")
+            rows.add { box.addView(row) }
         }
-
-        if (groups.contains(FieldGroup.TEXT)) {
-            textEd = EditText(ctx).apply {
-                setText(a.text ?: "")
-                hint = "文本内容"
-                setTextColor(Theme.textPri())
-                setHintTextColor(Theme.textSec())
-                inputType = InputType.TYPE_CLASS_TEXT
+        if (groups.contains(com.autoball.core.model.FieldGroup.TEXT)) {
+            val et = Ui.adText(ctx, a.text ?: "", "要输入或匹配的内容")
+            rows.add { box.addView(et) }
+        }
+        if (groups.contains(com.autoball.core.model.FieldGroup.PACKAGE)) {
+            val et = Ui.adText(ctx, a.pkg ?: "", "包名，如 com.tencent.mm")
+            rows.add { box.addView(et) }
+        }
+        if (groups.contains(com.autoball.core.model.FieldGroup.URL)) {
+            val et = Ui.adText(ctx, a.url ?: "", "https://…")
+            rows.add { box.addView(et) }
+        }
+        if (groups.contains(com.autoball.core.model.FieldGroup.KEYCODE)) {
+            val row = Ui.adNumber(ctx, a.keyCode.toString(), "code", "按键码")
+            rows.add { box.addView(row) }
+        }
+        if (groups.contains(com.autoball.core.model.FieldGroup.CODE)) {
+            val et = Ui.adText(ctx, a.code ?: "", "JS 代码")
+            rows.add { box.addView(et) }
+        }
+        if (groups.contains(com.autoball.core.model.FieldGroup.VAR_NAME)) {
+            val et = Ui.adText(ctx, a.varName ?: "", "变量名")
+            rows.add { box.addView(et) }
+        }
+        if (groups.contains(com.autoball.core.model.FieldGroup.CONTROL)) {
+            rows.add {
+                box.addView(Ui.adRow(ctx, "控制", a.controlOp.label, true) {
+                    Ui.popMenu(ctx, box, ControlOp.values().map { it.label },
+                        ControlOp.values().indexOf(a.controlOp)) { i ->
+                        a.controlOp = ControlOp.values()[i]
+                        rebuild()
+                    }
+                })
             }
-            box.addView(label(ctx, if (a.type == ActionType.SET_VAR) "变量值" else "文本内容"))
-            box.addView(textEd)
-        }
-
-        if (groups.contains(FieldGroup.VAR_NAME)) {
-            varNameEd = EditText(ctx).apply {
-                setText(a.varName ?: "")
-                hint = "变量名"
-                setTextColor(Theme.textPri())
-                setHintTextColor(Theme.textSec())
-            }
-            box.addView(label(ctx, "变量名"))
-            box.addView(varNameEd)
-        }
-
-        if (groups.contains(FieldGroup.PACKAGE)) {
-            pkgEd = EditText(ctx).apply {
-                setText(a.pkg ?: "")
-                hint = "包名，如 com.android.settings"
-                setTextColor(Theme.textPri())
-                setHintTextColor(Theme.textSec())
-            }
-            box.addView(label(ctx, "目标应用"))
-            box.addView(pkgEd)
-            box.addView(help(ctx, "目标应用"))
-        }
-
-        if (groups.contains(FieldGroup.URL)) {
-            urlEd = EditText(ctx).apply {
-                setText(a.url ?: "")
-                hint = "https://"
-                setTextColor(Theme.textPri())
-                setHintTextColor(Theme.textSec())
-            }
-            box.addView(label(ctx, "链接地址"))
-            box.addView(urlEd)
-        }
-
-        if (groups.contains(FieldGroup.KEYCODE)) {
-            val keys = arrayOf("返回", "主页", "最近任务", "通知栏", "电源")
-            val codes = intArrayOf(
-                android.view.KeyEvent.KEYCODE_BACK,
-                android.view.KeyEvent.KEYCODE_HOME,
-                android.view.KeyEvent.KEYCODE_APP_SWITCH,
-                android.view.KeyEvent.KEYCODE_NOTIFICATION,
-                android.view.KeyEvent.KEYCODE_POWER)
-            keySpinner = Spinner(ctx).apply {
-                adapter = ArrayAdapter(ctx, android.R.layout.simple_spinner_dropdown_item, keys)
-                val idx = codes.indexOf(a.keyCode)
-                setSelection(if (idx >= 0) idx else 0)
-            }
-            box.addView(label(ctx, "按键"))
-            box.addView(keySpinner)
-            box.addView(help(ctx, "按键"))
-        }
-
-        if (groups.contains(FieldGroup.SCRIPT_REF)) {
-            val scripts = AB.store.all()
-            val names = scripts.map { it.name }.toTypedArray()
-            scriptSpinner = Spinner(ctx).apply {
-                adapter = ArrayAdapter(ctx, android.R.layout.simple_spinner_dropdown_item,
-                    if (names.isEmpty()) arrayOf("没有可用脚本") else names)
-            }
-            box.addView(label(ctx, "目标脚本"))
-            box.addView(scriptSpinner)
-        }
-
-        if (groups.contains(FieldGroup.CONTROL)) {
-            val ops = ControlOp.values().map { it.label }.toTypedArray()
-            controlSpinner = Spinner(ctx).apply {
-                adapter = ArrayAdapter(ctx, android.R.layout.simple_spinner_dropdown_item, ops)
-                setSelection(ControlOp.values().indexOf(a.controlOp))
-            }
-            box.addView(label(ctx, "控制方式"))
-            box.addView(controlSpinner)
-        }
-
-        if (groups.contains(FieldGroup.CODE)) {
-            codeEd = EditText(ctx).apply {
-                setText(a.code ?: "")
-                hint = "JS 代码"
-                setTextColor(Theme.textPri())
-                setHintTextColor(Theme.textSec())
-                setSingleLine(false)
-                minLines = 4
-                gravity = Gravity.TOP
-            }
-            box.addView(label(ctx, "JS 代码"))
-            box.addView(codeEd)
-        }
-
-        if (groups.contains(FieldGroup.SUB_ACTIONS)) {
-            box.addView(help(ctx, "子动作"))
         }
 
         // ---- 公共项 ----
-        box.addView(divider(ctx))
-        val waitEd = numEdit(ctx, a.waitMs.toString(), "运行等待(ms)")
-        val repeatEd = numEdit(ctx, a.repeat.toString(), "重复次数")
-        val condEd = EditText(ctx).apply {
-            setText(a.condition ?: "")
-            hint = "运行条件（选填）"
-            setTextColor(Theme.textPri())
-            setHintTextColor(Theme.textSec())
-        }
-        box.addView(label(ctx, "运行等待"))
-        box.addView(waitEd)
-        box.addView(help(ctx, "运行等待"))
-        box.addView(label(ctx, "重复次数"))
-        box.addView(repeatEd)
-        box.addView(help(ctx, "重复次数"))
-        box.addView(label(ctx, "运行条件"))
-        box.addView(condEd)
-        box.addView(help(ctx, "运行条件"))
+        box.addView(Ui.adSec(ctx))
+        val waitRow = Ui.adNumber(ctx, a.waitMs.toString(), "ms", "运行后等待")
+        rows.add { box.addView(waitRow) }
+        val repRow = Ui.adNumber(ctx, a.repeat.toString(), "次", "重复次数")
+        rows.add { box.addView(repRow) }
 
-        // 监听动作：七个触发阶段（v3 listenDlg）
-        val listenRow = Ui.row(ctx, "监听动作",
-            if (a.listeners.isEmpty()) "未设置" else "已设置 ${a.listeners.size} 项",
-            "在指定时机（如条件失败后、运行结束后）自动执行一个附加动作") {
-            ListenerDialog.show(ctx, a) { }
+        rows.add {
+            box.addView(Ui.adRow(ctx, "运行条件", a.condition ?: "未设置", a.condition != null) {
+                ConditionDialog.show(ctx, a) { rebuild() }
+            } { Ui.toast(ctx, "条件成立才执行本动作") })
         }
-        box.addView(listenRow)
+        rows.add {
+            box.addView(Ui.adRow(ctx, "监听动作",
+                if (a.listeners.isEmpty()) "未设置" else "已设置 ${a.listeners.size} 项",
+                a.listeners.isNotEmpty()) {
+                ListenerDialog.show(ctx, a) { rebuild() }
+            } { Ui.toast(ctx, "在指定时机自动执行附加动作") })
+        }
 
-        dialog = Ui.dialog(ctx, a.type.label)
+        // ---- 备注 ----
+        box.addView(Ui.adSec(ctx))
+        val noteEt = Ui.adText(ctx, a.comment ?: "", "备注（选填）")
+        rows.add { box.addView(noteEt) }
+
+        // ---- 说明 ----
+        box.addView(TextView(ctx).apply {
+            text = "坐标均为百分比，换机型与转屏都不会点偏。"
+            textSize = 10.5f
+            setTextColor(Theme.textTer())
+            setPadding(Display.dpInt(ctx, 8f), Display.dpInt(ctx, 6f),
+                Display.dpInt(ctx, 8f), 0)
+        })
+
+        rebuild()
+
+        dialog = Ui.dialog(ctx, "添加动作")
             .body(box)
-            .positive("保存") {
-                xEd?.let { a.x = it.text.toString().toFloatOrNull() ?: a.x }
-                yEd?.let { a.y = it.text.toString().toFloatOrNull() ?: a.y }
-                x2Ed?.let { a.x2 = it.text.toString().toFloatOrNull() ?: a.x2 }
-                y2Ed?.let { a.y2 = it.text.toString().toFloatOrNull() ?: a.y2 }
-                durEd?.let { a.durationMs = it.text.toString().toLongOrNull() ?: a.durationMs }
-                textEd?.let { a.text = it.text.toString() }
-                pkgEd?.let { a.pkg = it.text.toString() }
-                urlEd?.let { a.url = it.text.toString() }
-                varNameEd?.let { a.varName = it.text.toString() }
-                codeEd?.let { a.code = it.text.toString() }
-                keySpinner?.let {
-                    a.keyCode = when (it.selectedItemPosition) {
-                        0 -> android.view.KeyEvent.KEYCODE_BACK
-                        1 -> android.view.KeyEvent.KEYCODE_HOME
-                        2 -> android.view.KeyEvent.KEYCODE_APP_SWITCH
-                        3 -> android.view.KeyEvent.KEYCODE_NOTIFICATION
-                        else -> android.view.KeyEvent.KEYCODE_POWER
-                    }
-                }
-                scriptSpinner?.let {
-                    val scripts = AB.store.all()
-                    if (scripts.isNotEmpty()) a.scriptId = scripts[it.selectedItemPosition].id
-                }
-                controlSpinner?.let { a.controlOp = ControlOp.values()[it.selectedItemPosition] }
-                a.waitMs = waitEd.text.toString().toLongOrNull() ?: a.waitMs
-                a.repeat = repeatEd.text.toString().toIntOrNull() ?: a.repeat
-                val c = condEd.text.toString().trim()
-                a.condition = if (c.isEmpty()) null else c
-                if (a.type == ActionType.SET_VAR && a.varValue == null) a.varValue = a.text
+            .width(Theme.DIALOG_W)
+            .maxHeight(0.6f)
+            .negative("取消")
+            .positive("确定") {
+                collect(box, a)
                 onSave(a)
                 true
             }
-            .negative("取消")
             .show()
     }
 
-    /** 框选区域：一次填满起点与终点（对齐 v3 P-64） */
-    private fun regionButton(ctx: Activity, hostProvider: () -> android.app.Dialog?, text: String,
-                             onPicked: (Float, Float, Float, Float) -> Unit): TextView =
-        TextView(ctx).apply {
-            this.text = text
-            textSize = 12f
-            setTextColor(Color.WHITE)
-            gravity = Gravity.CENTER
-            background = Theme.bubble(ctx, Theme.ok(), 10f)
-            setPadding(Display.dpInt(ctx, 12f), Display.dpInt(ctx, 6f),
-                Display.dpInt(ctx, 12f), Display.dpInt(ctx, 6f))
-            layoutParams = LinearLayout.LayoutParams(0,
-                LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
-                setMargins(Display.dpInt(ctx, 6f), Display.dpInt(ctx, 6f), 0, 0)
-            }
-            setOnClickListener {
-                RegionPicker.pick(ctx, ctx, hostProvider()) { l, t, r, b -> onPicked(l, t, r, b) }
-            }
+    /** 从动态生成的表单里按出现顺序回填字段 */
+    private fun collect(box: LinearLayout, a: Action) {
+        val numbers = ArrayList<String>()
+        val texts = ArrayList<String>()
+        fun walk(v: View) {
+            if (v is LinearLayout && v.tag is EditText) numbers.add(Ui.adNumberValue(v))
+            if (v is EditText && v.tag == null) texts.add(v.text.toString())
+            if (v is ViewGroup) for (i in 0 until v.childCount) walk(v.getChildAt(i))
         }
-
-    // ---------- 小部件 ----------
-
-    private fun sizeDialog(activity: Activity, d: AlertDialog, widthDp: Float) {
-        val w = activity.window?.decorView?.width ?: 0
-        val target = Display.dpInt(activity, widthDp)
-        val finalW = if (w > 0) kotlin.math.min(target, (w * 0.74f).toInt()) else target
-        d.window?.setLayout(finalW, ViewGroup.LayoutParams.WRAP_CONTENT)
-    }
-
-    private fun title(ctx: Activity, text: String): TextView = TextView(ctx).apply {
-        this.text = text
-        textSize = 16f
-        setTextColor(Theme.textPri())
-        setPadding(0, 0, 0, Display.dpInt(ctx, 8f))
-    }
-
-    private fun label(ctx: Activity, text: String): TextView = TextView(ctx).apply {
-        this.text = text
-        textSize = 12f
-        setTextColor(Theme.textSec())
-        setPadding(0, Display.dpInt(ctx, 8f), 0, Display.dpInt(ctx, 2f))
-    }
-
-    private fun help(ctx: Activity, field: String): TextView =
-        CoordPicker.helpView(ctx, CoordPicker.helpText(field))
-
-    private fun divider(ctx: Activity): TextView = TextView(ctx).apply {
-        setBackgroundColor(Color.parseColor("#22FFFFFF"))
-        layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1).apply {
-            setMargins(0, Display.dpInt(ctx, 12f), 0, Display.dpInt(ctx, 4f))
+        walk(box)
+        var ni = 0
+        var ti = 0
+        val groups = a.type.fieldGroups
+        if (groups.contains(com.autoball.core.model.FieldGroup.PRESS_DURATION) ||
+            groups.contains(com.autoball.core.model.FieldGroup.DURATION)) {
+            a.durationMs = numbers.getOrNull(ni++)?.toLongOrNull() ?: a.durationMs
         }
-    }
-
-    private fun numEdit(ctx: Activity, value: String, hint: String): EditText = EditText(ctx).apply {
-        setText(value)
-        this.hint = hint
-        inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_SIGNED
-        setTextColor(Theme.textPri())
-        setHintTextColor(Theme.textSec())
-    }
-
-    /** hostProvider 用延迟取值：调用时弹窗尚未 create，直接传引用会拿到 null */
-    private fun pickButton(ctx: Activity, hostProvider: () -> android.app.Dialog?, text: String,
-                           onPicked: (Float, Float) -> Unit): TextView =
-        TextView(ctx).apply {
-            this.text = text
-            textSize = 12f
-            setTextColor(Color.WHITE)
-            gravity = Gravity.CENTER
-            background = Theme.bubble(ctx, Color.parseColor(Theme.PURPLE), 10f)
-            setPadding(Display.dpInt(ctx, 12f), Display.dpInt(ctx, 6f),
-                Display.dpInt(ctx, 12f), Display.dpInt(ctx, 6f))
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT).apply {
-                setMargins(0, Display.dpInt(ctx, 6f), 0, 0)
-            }
-            setOnClickListener { CoordPicker.pick(ctx, ctx, hostProvider(), onPicked) }
+        if (groups.contains(com.autoball.core.model.FieldGroup.TEXT)) {
+            a.text = texts.getOrNull(ti++)?.ifBlank { null }
         }
+        if (groups.contains(com.autoball.core.model.FieldGroup.PACKAGE)) {
+            a.pkg = texts.getOrNull(ti++)?.ifBlank { null }
+        }
+        if (groups.contains(com.autoball.core.model.FieldGroup.URL)) {
+            a.url = texts.getOrNull(ti++)?.ifBlank { null }
+        }
+        if (groups.contains(com.autoball.core.model.FieldGroup.KEYCODE)) {
+            a.keyCode = numbers.getOrNull(ni++)?.toIntOrNull() ?: a.keyCode
+        }
+        if (groups.contains(com.autoball.core.model.FieldGroup.CODE)) {
+            a.code = texts.getOrNull(ti++)?.ifBlank { null }
+        }
+        if (groups.contains(com.autoball.core.model.FieldGroup.VAR_NAME)) {
+            a.varName = texts.getOrNull(ti++)?.ifBlank { null }
+            a.varValue = texts.getOrNull(ti++)
+        }
+        // 公共项
+        a.waitMs = numbers.getOrNull(ni++)?.toLongOrNull() ?: a.waitMs
+        a.repeat = (numbers.getOrNull(ni++)?.toIntOrNull() ?: a.repeat).coerceAtLeast(1)
+        // 备注是最后一个文本
+        a.comment = texts.lastOrNull()?.ifBlank { null }
+    }
 }

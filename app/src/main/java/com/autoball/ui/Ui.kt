@@ -305,6 +305,190 @@ object Ui {
 
     }
 
+    // =====================================================================
+    // 紧凑弹窗行（v3 .adlg：206dp 宽；.adrow 高 23dp，行内 gap 5）
+    //
+    // 用于「添加动作 / 运行条件 / 重复 / 监听」这类字段密集的小弹窗，
+    // 与通用弹窗（302dp、行高宽松）区分开。
+    // =====================================================================
+
+    /** .adrow：标签 + 值 + 问号。行高 23dp、圆角 6、左右 padding 5 */
+    fun adRow(ctx: Context, label: String, value: String, set: Boolean,
+              onValue: () -> Unit, onHelp: (() -> Unit)? = null): LinearLayout {
+        val row = LinearLayout(ctx).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(Display.dpInt(ctx, 5f), 0, Display.dpInt(ctx, 5f), 0)
+            val lp = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                Display.dpInt(ctx, 23f))
+            lp.setMargins(0, Display.dpInt(ctx, 1f), 0, Display.dpInt(ctx, 1f))
+            layoutParams = lp
+            setOnClickListener { onValue() }
+        }
+        row.addView(TextView(ctx).apply {
+            text = label
+            textSize = 11.5f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(Theme.textSec())
+            layoutParams = LinearLayout.LayoutParams(0,
+                LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        })
+        // .adi / .adi.set
+        row.addView(TextView(ctx).apply {
+            text = value
+            textSize = 11.5f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(if (set) Theme.pri2() else Theme.textTer())
+            setSingleLine(true)
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            maxWidth = Display.dpInt(ctx, 96f)
+            setPadding(Display.dpInt(ctx, 7f), Display.dpInt(ctx, 2f),
+                Display.dpInt(ctx, 7f), Display.dpInt(ctx, 2f))
+            background = Theme.rect(
+                if (set) Theme.surface2() else android.graphics.Color.TRANSPARENT,
+                6f, ctx)
+        })
+        // .adq：17dp 圆形问号
+        if (onHelp != null) {
+            row.addView(TextView(ctx).apply {
+                text = "?"
+                textSize = 9.5f
+                setTypeface(null, Typeface.BOLD)
+                setTextColor(Theme.textTer())
+                gravity = Gravity.CENTER
+                background = Theme.rect(Theme.surface2(), 9f, ctx)
+                val sz = Display.dpInt(ctx, 17f)
+                layoutParams = LinearLayout.LayoutParams(sz, sz).apply {
+                    marginStart = Display.dpInt(ctx, 4f)
+                }
+                setOnClickListener { onHelp.invoke() }
+            })
+        }
+        return row
+    }
+
+    /** .adsec：4dp 高的分组分隔（顶部细线） */
+    fun adSec(ctx: Context): android.view.View = android.view.View(ctx).apply {
+        layoutParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            Display.dpInt(ctx, 4f)).apply {
+            setMargins(0, Display.dpInt(ctx, 3f), 0, Display.dpInt(ctx, 3f))
+        }
+        background = Theme.hairlineTop(ctx)
+    }
+
+    /** 紧凑弹窗内的数字输入框 */
+    fun adNumber(ctx: Context, value: String, unit: String,
+                 hint: String = ""): LinearLayout {
+        val row = LinearLayout(ctx).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(Display.dpInt(ctx, 5f), Display.dpInt(ctx, 3f),
+                Display.dpInt(ctx, 5f), Display.dpInt(ctx, 3f))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT)
+        }
+        row.addView(TextView(ctx).apply {
+            text = hint
+            textSize = 11.5f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(Theme.textSec())
+            layoutParams = LinearLayout.LayoutParams(0,
+                LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        })
+        val et = EditText(ctx).apply {
+            setText(value)
+            textSize = 11.5f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(Theme.textPri())
+            gravity = Gravity.CENTER
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER
+            background = Theme.rect(Theme.surface2(), 6f, ctx)
+            setPadding(Display.dpInt(ctx, 8f), Display.dpInt(ctx, 3f),
+                Display.dpInt(ctx, 8f), Display.dpInt(ctx, 3f))
+            layoutParams = LinearLayout.LayoutParams(
+                Display.dpInt(ctx, 56f), Display.dpInt(ctx, 26f))
+        }
+        row.addView(et)
+        row.addView(TextView(ctx).apply {
+            text = unit
+            textSize = 10.5f
+            setTextColor(Theme.textTer())
+            setPadding(Display.dpInt(ctx, 4f), 0, 0, 0)
+        })
+        row.tag = et
+        return row
+    }
+
+    /** 取回 adNumber 的输入值 */
+    fun adNumberValue(row: LinearLayout): String =
+        ((row.tag as? EditText)?.text?.toString() ?: "").trim()
+
+    /** 紧凑弹窗内的文本输入框（整行） */
+    fun adText(ctx: Context, value: String, hint: String): EditText =
+        EditText(ctx).apply {
+            setText(value)
+            this.hint = hint
+            textSize = 11.5f
+            setTextColor(Theme.textPri())
+            setHintTextColor(Theme.textTer())
+            background = Theme.rect(Theme.surface2(), 6f, ctx)
+            setPadding(Display.dpInt(ctx, 8f), Display.dpInt(ctx, 5f),
+                Display.dpInt(ctx, 8f), Display.dpInt(ctx, 5f))
+            val lp = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT)
+            lp.setMargins(Display.dpInt(ctx, 5f), Display.dpInt(ctx, 2f),
+                Display.dpInt(ctx, 5f), Display.dpInt(ctx, 2f))
+            layoutParams = lp
+        }
+
+    // =====================================================================
+    // 弹窗内下拉菜单（v3 .gpop，层级 100：压在弹窗之上、气泡之下）
+    // =====================================================================
+
+    /** 在锚点处弹出选项菜单；selectedIndex 为 -1 表示无选中 */
+    fun popMenu(ctx: Context, anchor: View, items: List<String>,
+                selectedIndex: Int, onPick: (Int) -> Unit): PopupWindow {
+        val box = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            background = Theme.dialogBg()
+            (background as GradientDrawable).cornerRadius = Display.dp(ctx, 10f)
+            setPadding(Display.dpInt(ctx, 4f), Display.dpInt(ctx, 4f),
+                Display.dpInt(ctx, 4f), Display.dpInt(ctx, 4f))
+        }
+        items.forEachIndexed { i, t ->
+            box.addView(TextView(ctx).apply {
+                text = (if (i == selectedIndex) "✓ " else "　") + t
+                textSize = 12f
+                setTypeface(null, Typeface.BOLD)
+                setTextColor(if (i == selectedIndex) Theme.pri2() else Theme.textPri())
+                setPadding(Display.dpInt(ctx, 10f), Display.dpInt(ctx, 8f),
+                    Display.dpInt(ctx, 10f), Display.dpInt(ctx, 8f))
+                background = Theme.rect(
+                    if (i == selectedIndex) Theme.surface2()
+                    else android.graphics.Color.TRANSPARENT, 7f, ctx)
+                val lp = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT)
+                lp.setMargins(0, Display.dpInt(ctx, 1f), 0, Display.dpInt(ctx, 1f))
+                layoutParams = lp
+                setOnClickListener { onPick(i) }
+            })
+        }
+        val pw = PopupWindow(box, ViewGroup.LayoutParams.WRAP_CONTENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT, true).apply {
+            isOutsideTouchable = true
+            isFocusable = true
+            elevation = Display.dp(ctx, 8f)
+            setBackgroundDrawable(ColorDrawable(android.graphics.Color.TRANSPARENT))
+        }
+        pw.showAsDropDown(anchor, 0, Display.dpInt(ctx, 4f))
+        return pw
+    }
+
     fun dialog(ctx: Context, title: String): DialogBuilder = DialogBuilder(ctx, title)
 
     /** 通用按钮（v3 gbtn / gbtn.pri） */
