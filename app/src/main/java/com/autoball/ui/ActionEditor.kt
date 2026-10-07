@@ -63,6 +63,9 @@ object ActionEditor {
         if (extra.isEmpty()) base else "$base · ${extra.joinToString(" ")}"
     }
 
+    @Volatile
+    private var gridDlg: android.app.Dialog? = null
+
     fun show(activity: Activity, existing: Action?, onSave: (Action) -> Unit) {
         val a = existing ?: Action().apply {
             id = Action.newId()
@@ -81,6 +84,7 @@ object ActionEditor {
         val box = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
         val rows = ArrayList<() -> Unit>()     // 每次刷新重绘所有行
         var dialog: Dialog? = null
+        gridDlg = null
 
         fun rebuild() {
             box.removeAllViews()
@@ -91,11 +95,28 @@ object ActionEditor {
         rows.add {
             box.addView(Ui.adRow(ctx, "动作类型", a.type.label, true,
                 "共 ${ActionType.values().size} 类动作，按需挑选") {
-                Ui.popMenu(ctx, box, ActionType.labels().toList(),
-                    ActionType.values().indexOf(a.type)) { i ->
+                val act = ctx as? Activity ?: return@adRow
+                val items = ActionType.values().map { it.label to "" }
+                val grid = Ui.actionGrid(act, items) { i ->
                     a.type = ActionType.values()[i]
+                    gridDlg?.dismiss()
                     rebuild()
                 }
+                val box2 = LinearLayout(act).apply {
+                    orientation = LinearLayout.VERTICAL
+                    setPadding(Display.dpInt(act, 14f), Display.dpInt(act, 6f),
+                        Display.dpInt(act, 14f), 0)
+                    addView(grid)
+                    addView(TextView(act).apply {
+                        text = "坐标均为百分比，换机型与转屏都不会点偏。"
+                        textSize = 10.5f
+                        setTextColor(Theme.textTer())
+                        setPadding(0, Display.dpInt(act, 6f), 0, Display.dpInt(act, 6f))
+                    })
+                }
+                gridDlg = Ui.dialog(act, "选择动作类型").body(box2)
+                    .width(Theme.DIALOG_W + 60f).maxHeight(0.7f)
+                    .negative("取消").show()
             })
         }
 

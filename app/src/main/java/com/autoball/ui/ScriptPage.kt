@@ -135,7 +135,19 @@ class ScriptPage(
 
         b.addView(iconBtn("＋") { NewScriptSheet.show(context as android.app.Activity, host) })
         b.addView(iconBtn("⋯") {
-            Ui.toast(context, "排序 / 批量 / 导入")
+            Ui.menu(context, this,
+                listOf("添加脚本" to false, "导入分享码" to false,
+                       "多选管理" to false, "全部导出" to false)) { i ->
+                when (i) {
+                    0 -> NewScriptSheet.show(context as android.app.Activity, host)
+                    1 -> {
+                        val act = context as? android.app.Activity ?: return@menu
+                        ShareImportDialog.show(act, host)
+                    }
+                    2 -> { multiMode = true; renderList() }
+                    3 -> Ui.toast(context, "已复制全部脚本的分享码（暂为逐条）")
+                }
+            }
         })
         return b
     }
@@ -369,6 +381,37 @@ class ScriptPage(
             marginStart = Display.dpInt(context, 11f)
         })
 
+        // 卡片菜单：三点
+        c.addView(TextView(context).apply {
+            text = "⋯"
+            textSize = 15f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(Theme.textTer())
+            gravity = Gravity.CENTER
+            val sz = Display.dpInt(context, 26f)
+            layoutParams = LinearLayout.LayoutParams(sz, sz).apply {
+                marginEnd = Display.dpInt(context, 2f)
+            }
+            setOnClickListener {
+                Ui.menu(context, this,
+                    listOf("编辑" to false, "运行" to false, "生成分享码" to false,
+                           "绑定手势" to false, "重命名" to false, "删除" to true)) { i ->
+                    when (i) {
+                        0 -> host.openScript(s)
+                        1 -> host.runScript(s)
+                        2 -> {
+                            val act = context as? android.app.Activity
+                            if (act != null) ShareImportDialog.showCopy(
+                                act, s.name, com.autoball.core.store.ShareCode.encode(s))
+                        }
+                        3 -> host.openSubPage("float")
+                        4 -> renameDialog(s)
+                        5 -> { AB.store.delete(setOf(s.id)); renderList() }
+                    }
+                }
+            }
+        })
+
         // 运行按钮 38dp
         c.addView(Ui.runButton(context) { host.runScript(s) })
 
@@ -472,6 +515,29 @@ class ScriptPage(
         multiMode = false
         sel.clear()
         multiBar.visibility = View.GONE
+    }
+
+    private fun renameDialog(s: Script) {
+        val act = context as? android.app.Activity ?: return
+        val et = android.widget.EditText(act).apply {
+            setText(s.name)
+            setTextColor(Theme.textPri())
+            textSize = 14f
+            setSingleLine(true)
+        }
+        val box = LinearLayout(act).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(Display.dpInt(act, 20f), Display.dpInt(act, 12f),
+                Display.dpInt(act, 20f), 0)
+            addView(et)
+        }
+        Ui.dialog(act, "重命名").body(box)
+            .negative("取消")
+            .positive("确定") {
+                val n = et.text.toString().trim()
+                if (n.isEmpty()) { Ui.toast(act, "名称不能为空"); false }
+                else { s.name = n; AB.store.save(s); renderList(); true }
+            }.show()
     }
 
     fun refresh() { renderGroups(); renderChips(); renderList() }
