@@ -7,7 +7,20 @@ import java.util.concurrent.CopyOnWriteArrayList
  *
  * 合规要求：不记录输入文本、控件文本与分享码原文，只记录动作类型、后端、耗时与结果。
  */
-class RunLog(private val capacity: Int = 500) {
+/**
+ * 运行日志环形缓冲。
+ *
+ * 容量从设置项「日志保留条数」读取（默认 200，与设计稿一致），
+ * 超出后丢弃最早的条目。用读时取值而不是构造时固定，
+ * 这样用户在设置页改了条数不必重启进程。
+ */
+class RunLog(private val defaultCapacity: Int = 200) {
+
+    private val capacity: Int
+        get() = runCatching {
+            com.autoball.AB.store.getString("logKeep", "200 条")
+                .filter { it.isDigit() }.toInt()
+        }.getOrDefault(defaultCapacity).coerceIn(50, 5000)
 
     enum class Level { INFO, OK, WARN, ERROR }
 

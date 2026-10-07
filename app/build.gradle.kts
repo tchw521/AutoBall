@@ -19,7 +19,7 @@ android {
         applicationId = "com.autoball"
         minSdk = 24
         targetSdk = 34
-        versionCode = 21
+        versionCode = 22
         versionName = "1.6.0"
 
         buildConfigField("boolean", "USE_RHINO", useRhino.toString())

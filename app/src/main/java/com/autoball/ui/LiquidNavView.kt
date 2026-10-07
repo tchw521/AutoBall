@@ -180,6 +180,10 @@ class LiquidNavView(
         gel.color = if (dark) BODY_D else BODY_L
         canvas.drawRoundRect(0f, top, w, h, r, r, gel)
 
+        // 降低毛玻璃：跳过环境反射与镜面折射（两次 RadialGradient + 一次
+        // LinearGradient 绘制），改用纯半透明，观感接近但开销大幅下降。
+        if (!Perf.lowBlur()) {
+
         // 左侧大面积环境反射（静置高光，不移动）
         canvas.save()
         canvas.clipRect(0f, top, w, h)
@@ -217,6 +221,7 @@ class LiquidNavView(
         canvas.drawLine(Display.dp(context, 14f), top + Display.dp(context, 2f),
             w - Display.dp(context, 14f), top + Display.dp(context, 2f), spec)
         spec.shader = null
+        }
 
         // FAB 液体融合光晕（v3 .fabslot::before：68dp 圆，rgba(125,211,252,.48) → 透明）
         halo.shader = android.graphics.RadialGradient(
@@ -229,8 +234,14 @@ class LiquidNavView(
         super.onDraw(canvas)
     }
 
-    /** 极缓呼吸：9s 一轮，仅轻微改变圆角，形成"液体表面张力"的观感 */
+    /**
+     * 极缓呼吸：9s 一轮，仅轻微改变圆角，形成"液体表面张力"的观感。
+     *
+     * 流畅模式（[Perf.perf]）下**直接不启动**——导航栏是常驻视图，
+     * 每帧 invalidate 是主要掉帧来源，关掉后观感损失很小。
+     */
     private fun startMorph() {
+        if (Perf.perf()) { morphT = 0f; invalidate(); return }
         post(object : Runnable {
             override fun run() {
                 morphT += 1f / (9f * 30f)      // 9 秒一轮，约 30fps

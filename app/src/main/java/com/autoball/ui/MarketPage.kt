@@ -54,7 +54,8 @@ class MarketPage(context: Context, private val host: PageHost) : FrameLayout(con
     )
 
     private var segIdx = 0
-    private val SEGS = arrayOf("全部", "示例脚本", "扩展模块", "我的分享")
+    /** 与设计稿一致：推荐 / 最新 / 热门 / 我的收藏 */
+    private val SEGS = arrayOf("推荐", "最新", "热门", "我的收藏")
     private val box = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
     private lateinit var segRow: LinearLayout
 
@@ -110,10 +111,10 @@ class MarketPage(context: Context, private val host: PageHost) : FrameLayout(con
     private fun renderList() {
         box.removeAllViews()
         when (segIdx) {
-            0 -> { renderSamples(); renderModules() }
-            1 -> renderSamples()
-            2 -> renderModules()
-            3 -> renderMine()
+            0 -> renderFeatured()     // 推荐：内置示例 + 官方模块
+            1 -> renderLatest()        // 最新：我的脚本按更新时间倒序
+            2 -> renderHot()           // 热门：按运行次数倒序
+            3 -> renderMine()          // 我的收藏：生成分享码
         }
         if (box.childCount == 0) {
             box.addView(Kit.hintBox(context, "这里还没有内容。"))
@@ -130,6 +131,36 @@ class MarketPage(context: Context, private val host: PageHost) : FrameLayout(con
             setTextColor(Theme.textTer())
             setPadding(0, Display.dpInt(context, 10f), 0, 0)
         })
+    }
+
+    /** 推荐：内置示例在前，官方模块在后 */
+    private fun renderFeatured() { renderSamples(); renderModules() }
+
+    /** 最新：本地脚本按更新时间倒序（新建/导入的排最前） */
+    private fun renderLatest() {
+        mineSorted { it.updatedAt }
+    }
+
+    /** 热门：按运行次数倒序 */
+    private fun renderHot() {
+        mineSorted { it.runCount.toLong() }
+    }
+
+    /**
+     * 按给定键倒序渲染本地脚本。
+     *
+     * 设计稿的「最新/热门」针对社区分享；本工具不联网没有远端内容，
+     * 这里退化为对本地脚本排序——语义一致（最新 = 最近改动，
+     * 热门 = 跑得最多），且不需要假造远端数据。
+     */
+    private fun mineSorted(key: (Script) -> Long) {
+        val list = AB.store.all().sortedByDescending(key)
+        if (list.isEmpty()) {
+            box.addView(Kit.hintBox(context,
+                "还没有脚本。点右上「＋」新建，或录一个试试。"))
+            return
+        }
+        list.forEach { s -> mineCard(s) }
     }
 
     private fun renderSamples() {
@@ -170,24 +201,32 @@ class MarketPage(context: Context, private val host: PageHost) : FrameLayout(con
     }
 
     private fun renderMine() {
-        AB.store.all().forEach { s ->
-            box.addView(card(
-                author = "我",
-                title = s.name,
-                desc = "共 ${s.flow?.actions?.size ?: 0} 个动作 · 已运行 ${s.runCount} 次",
-                tag = if (s.isDefault) "默认" else null,
-                onImport = {
-                    val act = context as? Activity
-                    if (act != null) {
-                        runCatching {
-                            ShareImportDialog.showCopy(act, s.name,
-                                com.autoball.core.store.ShareCode.encode(s))
-                        }
-                    }
-                },
-                onPreview = { host.openScript(s) }
-            ))
+        val list = AB.store.all()
+        if (list.isEmpty()) {
+            box.addView(Kit.hintBox(context,
+                "还没有可分享的脚本。先新建一个，再去「我的」页授权。"))
+            return
         }
+        list.forEach { s -> mineCard(s) }
+    }
+
+    private fun mineCard(s: Script) {
+        box.addView(card(
+            author = "我",
+            title = s.name,
+            desc = "共 ${s.flow?.actions?.size ?: 0} 个动作 · 已运行 ${s.runCount} 次",
+            tag = if (s.isDefault) "默认" else null,
+            onImport = {
+                val act = context as? Activity
+                if (act != null) {
+                    runCatching {
+                        ShareImportDialog.showCopy(act, s.name,
+                            com.autoball.core.store.ShareCode.encode(s))
+                    }
+                }
+            },
+            onPreview = { host.openScript(s) }
+        ))
     }
 
     /**

@@ -33,6 +33,8 @@ interface PageHost {
     fun toggleTheme()
     /** 打开二级页：float（悬浮设置）/ log（运行日志）/ js（JS 脚本）/ set（设置） */
     fun openSubPage(key: String)
+    /** 重建整个界面（切换性能模式等影响全局绘制的设置时用） */
+    fun recreateUi()
 }
 
 class MainActivity : Activity(), PageHost {
@@ -45,8 +47,10 @@ class MainActivity : Activity(), PageHost {
     override fun onCreate(savedInstanceState: Bundle?) {
         setTheme(if (Theme.isDark()) R.style.Theme_AutoBall else R.style.Theme_AutoBall_Light)
         super.onCreate(savedInstanceState)
-        // Android 12+：窗口级背景模糊，为液态导航提供真实折射来源；低版本自动降级
-        if (Build.VERSION.SDK_INT >= 31) {
+        Perf.init(this)
+        // Android 12+：窗口级背景模糊，为液态导航提供真实折射来源；
+        // 低版本或开启「降低毛玻璃」时不启用——实时模糊在低端机上开销很高
+        if (Build.VERSION.SDK_INT >= 31 && !Perf.lowBlur()) {
             runCatching { window.setBackgroundBlurRadius(32) }
         }
         buildUi()
@@ -90,7 +94,7 @@ class MainActivity : Activity(), PageHost {
         root.addView(navWrap)
 
         // 底部版本条（v3 .verbar）：点一下看更新日志
-        root.addView(Ui.versionBar(this, "v1.6.0", "查看更新日志") {
+        root.addView(Ui.versionBar(this, "v1.7.0", "查看更新日志") {
             ChangeLog.show(this)
         })
 
@@ -149,6 +153,13 @@ class MainActivity : Activity(), PageHost {
         val idx = current
         content.removeAllViews()
         showPage(idx)
+    }
+
+    override fun recreateUi() {
+        for (i in pages.indices) pages[i] = null
+        content.removeAllViews()
+        buildUi()
+        showPage(current)
     }
 
     override fun openScriptAt(script: Script, actionId: String?) {
