@@ -16,6 +16,7 @@ import android.widget.TextView
 import com.autoball.AB
 import com.autoball.core.model.Script
 import com.autoball.core.recorder.RecordController
+import com.autoball.core.recorder.RecChrome
 import com.autoball.core.recorder.RecordOverlay
 import com.autoball.core.store.ShareCode
 import com.autoball.core.util.Display
@@ -51,6 +52,7 @@ class CreatePage(context: Context, private val host: PageHost) : FrameLayout(con
                     if (state == RecordController.State.RECORDING) {
                         FloatManager.setRecording(true)
                         RecordOverlay.show(activity, c)
+                        RecChrome.show(activity, c, c.name)
                         // 录的是别的应用上的操作：开始录制后让出屏幕回到桌面，
                         // 用户再打开目标应用，否则采集层只能采到本应用自己的界面
                         Handler(Looper.getMainLooper()).postDelayed({
@@ -64,6 +66,7 @@ class CreatePage(context: Context, private val host: PageHost) : FrameLayout(con
                     } else if (state == RecordController.State.IDLE) {
                         FloatManager.setRecording(false)
                         RecordOverlay.hide()
+                    RecChrome.hide()
                     }
                 }
                 override fun onActionAdded(action: com.autoball.core.model.Action, count: Int) {
@@ -71,6 +74,7 @@ class CreatePage(context: Context, private val host: PageHost) : FrameLayout(con
                 }
                 override fun onInterrupted(reason: String, count: Int, estimatedMs: Long) {
                     RecordOverlay.hide()
+                    RecChrome.hide()
                     showEndDialog(activity, reason, count, estimatedMs)
                 }
             }
@@ -93,6 +97,7 @@ class CreatePage(context: Context, private val host: PageHost) : FrameLayout(con
                         s.flow = flow
                         AB.store.save(s)
                         RecordOverlay.hide()
+                    RecChrome.hide()
                         FloatManager.setRecording(false)
                         AB.log.info("record", "已保存为脚本「${s.name}」")
                     }
@@ -101,11 +106,13 @@ class CreatePage(context: Context, private val host: PageHost) : FrameLayout(con
                 .setNeutralButton("继续录制") { d, _ ->
                     c?.resume()
                     RecordOverlay.show(activity, c!!)
+                    RecChrome.show(activity, c, c.name)
                     d.dismiss()
                 }
                 .setNegativeButton("放弃") { d, _ ->
                     c?.discard()
                     RecordOverlay.hide()
+                    RecChrome.hide()
                     FloatManager.setRecording(false)
                     d.dismiss()
                 }

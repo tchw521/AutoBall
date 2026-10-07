@@ -304,8 +304,8 @@ class FloatSetPage(context: Context, private val host: PageHost) : FrameLayout(c
     // ---------- 悬浮窗 ----------
 
     private val SKINS = listOf(
-        "经典" to "紧凑三键", "迷你" to "仅运行停止", "横向" to "扁条布局",
-        "环形" to "圆形排布", "玻璃" to "毛玻璃质感", "极简" to "单键"
+        "皮肤2020" to "3×3 九宫格", "默认控制窗" to "纵向七键", "简版控制窗" to "纵向三键",
+        "横向控制窗" to "横向五键", "横向简版" to "横向三键", "超简易" to "单键"
     )
 
     private fun renderWin() {
@@ -378,7 +378,7 @@ class FloatSetPage(context: Context, private val host: PageHost) : FrameLayout(c
                 gravity = Gravity.CENTER
                 setPadding(0, 0, 0, Display.dpInt(context, 8f))
             }
-            val n = when (idx) { 1 -> 2; 5 -> 1; else -> 3 }
+            val n = when (idx) { 0 -> 9; 1 -> 7; 2 -> 3; 3 -> 5; 4 -> 3; else -> 1 }
             repeat(n) {
                 bar.addView(android.view.View(context).apply {
                     background = Theme.oval(Theme.pri2())

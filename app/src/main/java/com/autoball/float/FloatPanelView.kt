@@ -10,18 +10,27 @@ import android.widget.TextView
 import com.autoball.core.util.Display
 
 /**
- * 悬浮窗（点击器形态）：与悬浮球并存的第二种形态。
- * 6 套皮肤共用同一组动作语义，只是布局密度不同；录制时由 FloatManager 自动隐藏。
+ * 悬浮窗（UI 设计方案 v3 · 六套皮肤）。
+ *
+ * 六套皮肤共用同一组动作语义，区别只在布局密度与按钮形态：
+ * - SKIN_2020：3×3 九宫格（旧版点击器形态）
+ * - DEFAULT：纵向七键（默认控制窗）
+ * - SIMPLE：纵向三键（简版）
+ * - HORIZONTAL：横向五键
+ * - HORIZONTAL_SIMPLE：横向三键
+ * - ULTRA：单键（超简易）
+ *
+ * 每张卡底部固定一条操作条：停止 / 录制 / 收起。
  */
 class FloatPanelView(context: Context, private val listener: Listener) : LinearLayout(context) {
 
-    enum class Skin(val label: String) {
-        SKIN_2020("皮肤2020"),
-        DEFAULT("默认控制窗"),
-        SIMPLE("简版控制窗"),
-        HORIZONTAL("横向控制窗"),
-        HORIZONTAL_SIMPLE("横向简版"),
-        ULTRA("超简易")
+    enum class Skin(val label: String, val desc: String) {
+        SKIN_2020("皮肤2020", "3×3 九宫格，经典点击器布局"),
+        DEFAULT("默认控制窗", "纵向七键，功能最全"),
+        SIMPLE("简版控制窗", "纵向三键，占位最小"),
+        HORIZONTAL("横向控制窗", "横向五键，贴边更省空间"),
+        HORIZONTAL_SIMPLE("横向简版", "横向三键，最扁"),
+        ULTRA("超简易", "仅一个运行键")
     }
 
     interface Listener {
@@ -31,9 +40,9 @@ class FloatPanelView(context: Context, private val listener: Listener) : LinearL
         fun onRecord()
     }
 
-    enum class SlotAction(val label: String) {
-        SLOT_A("脚本A"), SLOT_B("脚本B"), SLOT_C("脚本C"),
-        BACK("返回"), HOME("主页"), RECENTS("最近"), SHOT("截图")
+    enum class SlotAction(val label: String, val glyph: String) {
+        SLOT_A("脚本A", "A"), SLOT_B("脚本B", "B"), SLOT_C("脚本C", "C"),
+        BACK("返回", "‹"), HOME("主页", "○"), RECENTS("最近", "▤"), SHOT("截图", "◻")
     }
 
     private var skin: Skin = Skin.DEFAULT
@@ -72,6 +81,7 @@ class FloatPanelView(context: Context, private val listener: Listener) : LinearL
         val bar = LinearLayout(context).apply {
             orientation = HORIZONTAL
             gravity = Gravity.CENTER
+            setPadding(0, Display.dpInt(context, 5f), 0, 0)
         }
         bar.addView(smallButton("停止", Color.parseColor("#FF5B6E")) { listener.onStop() })
         bar.addView(smallButton("录制", Color.parseColor("#7C3AED")) { listener.onRecord() })
@@ -79,82 +89,132 @@ class FloatPanelView(context: Context, private val listener: Listener) : LinearL
         addView(bar)
     }
 
-    private fun buildVertical(actions: List<SlotAction>) {
-        val col = LinearLayout(context).apply { orientation = VERTICAL }
-        actions.forEach { col.addView(actButton(it)) }
-        addView(col)
+    fun currentSkin(): Skin = skin
+
+    // ---------- 布局 ----------
+
+    private fun buildVertical(items: List<SlotAction>) {
+        items.forEach { addView(key(it)) }
     }
 
-    private fun buildHorizontal(actions: List<SlotAction>) {
-        val row = LinearLayout(context).apply { orientation = HORIZONTAL }
-        actions.forEach { row.addView(actButton(it)) }
+    private fun buildHorizontal(items: List<SlotAction>) {
+        val row = LinearLayout(context).apply {
+            orientation = HORIZONTAL
+            gravity = Gravity.CENTER
+        }
+        items.forEachIndexed { i, a ->
+            row.addView(key(a), LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                if (i > 0) marginStart = Display.dpInt(context, 4f)
+            })
+        }
         addView(row)
     }
 
-    private fun buildGrid(columns: Int, actions: List<SlotAction>) {
-        var row: LinearLayout? = null
-        actions.forEachIndexed { i, a ->
-            if (i % columns == 0) {
-                row = LinearLayout(context).apply { orientation = HORIZONTAL }
-                addView(row)
+    private fun buildGrid(cols: Int, items: List<SlotAction>) {
+        items.chunked(cols).forEachIndexed { ri, rowItems ->
+            val row = LinearLayout(context).apply {
+                orientation = HORIZONTAL
+                gravity = Gravity.CENTER
             }
-            row?.addView(actButton(a))
+            rowItems.forEachIndexed { ci, a ->
+                row.addView(key(a), LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                    if (ci > 0) marginStart = Display.dpInt(context, 4f)
+                })
+            }
+            addView(row, LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                if (ri > 0) topMargin = Display.dpInt(context, 4f)
+            })
         }
     }
 
-    private fun actButton(a: SlotAction): TextView {
-        val size = Display.dpInt(context, buttonDp)
-        return TextView(context).apply {
-            text = a.label
-            textSize = 11f
-            setTextColor(Color.WHITE)
-            gravity = Gravity.CENTER
-            val gd = GradientDrawable().apply {
-                shape = GradientDrawable.RECTANGLE
-                cornerRadius = Display.dp(context, 8f)
-                setColor(Color.parseColor("#3A2E6B"))
-            }
-            background = gd
-            layoutParams = LayoutParams(size, size).apply {
-                setMargins(Display.dpInt(context, 3f), Display.dpInt(context, 3f),
-                    Display.dpInt(context, 3f), Display.dpInt(context, 3f))
-            }
-            setOnClickListener { listener.onRunSlot(a) }
+    // ---------- 按键 ----------
+
+    /** 主按键：圆形渐变，带内高光与投影 */
+    private fun key(a: SlotAction): TextView = TextView(context).apply {
+        text = a.glyph
+        textSize = (buttonDp * 0.36f)
+        setTypeface(null, android.graphics.Typeface.BOLD)
+        setTextColor(Color.WHITE)
+        gravity = Gravity.CENTER
+        val s = Display.dpInt(context, buttonDp)
+        layoutParams = LinearLayout.LayoutParams(s, s).apply {
+            bottomMargin = Display.dpInt(context, 4f)
         }
+        background = GradientDrawable(
+            GradientDrawable.Orientation.TL_BR,
+            intArrayOf(colorOf(a), shade(colorOf(a), -0.28f))).apply {
+            shape = GradientDrawable.OVAL
+            setStroke(Display.dpInt(context, 1f), Color.parseColor("#33FFFFFF"))
+        }
+        elevation = Display.dp(context, 4f)
+        setOnClickListener { listener.onRunSlot(a) }
+        contentDescription = a.label
     }
 
-    private fun smallButton(text: String, color: Int, onClick: () -> Unit): TextView {
-        return TextView(context).apply {
+    /** 底部操作条的小按钮 */
+    private fun smallButton(text: String, color: Int, onClick: () -> Unit): TextView =
+        TextView(context).apply {
             this.text = text
-            textSize = 11f
+            textSize = 10.5f
+            setTypeface(null, android.graphics.Typeface.BOLD)
             setTextColor(Color.WHITE)
             gravity = Gravity.CENTER
             background = GradientDrawable().apply {
-                shape = GradientDrawable.RECTANGLE
-                cornerRadius = Display.dp(context, 10f)
                 setColor(color)
+                cornerRadius = Display.dp(context, 8f)
             }
-            setPadding(Display.dpInt(context, 10f), Display.dpInt(context, 5f),
-                Display.dpInt(context, 10f), Display.dpInt(context, 5f))
-            layoutParams = LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT).apply {
-                setMargins(Display.dpInt(context, 3f), Display.dpInt(context, 3f),
-                    Display.dpInt(context, 3f), 0)
+            setPadding(Display.dpInt(context, 9f), Display.dpInt(context, 4f),
+                Display.dpInt(context, 9f), Display.dpInt(context, 4f))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                marginStart = Display.dpInt(context, 3f)
+                marginEnd = Display.dpInt(context, 3f)
             }
             setOnClickListener { onClick() }
         }
+
+    private fun colorOf(a: SlotAction): Int = when (a) {
+        SlotAction.SLOT_A -> Color.parseColor("#7C3AED")
+        SlotAction.SLOT_B -> Color.parseColor("#2F6BFF")
+        SlotAction.SLOT_C -> Color.parseColor("#12B76A")
+        SlotAction.BACK -> Color.parseColor("#F79009")
+        SlotAction.HOME -> Color.parseColor("#0EA5E9")
+        SlotAction.RECENTS -> Color.parseColor("#6B7280")
+        SlotAction.SHOT -> Color.parseColor("#EC4899")
+    }
+
+    /** 压暗（amount 为负）或提亮 */
+    private fun shade(color: Int, amount: Float): Int {
+        val r = (Color.red(color) * (1f + amount)).coerceIn(0f, 255f).toInt()
+        val g = (Color.green(color) * (1f + amount)).coerceIn(0f, 255f).toInt()
+        val b = (Color.blue(color) * (1f + amount)).coerceIn(0f, 255f).toInt()
+        return Color.rgb(r, g, b)
     }
 
     private fun setBackgroundCompat() {
-        background = GradientDrawable().apply {
-            shape = GradientDrawable.RECTANGLE
+        background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
+            intArrayOf(Color.parseColor("#F21E1836"), Color.parseColor("#F2141022"))).apply {
             cornerRadius = Display.dp(context, 16f)
-            setColor(Color.parseColor("#CC1B1730"))
-            setStroke(Display.dpInt(context, 1f), Color.parseColor("#33FFFFFF"))
+            setStroke(Display.dpInt(context, 1f), Color.parseColor("#26FFFFFF"))
         }
+        elevation = Display.dp(context, 10f)
     }
 
-    @Suppress("UNUSED_PARAMETER")
-    fun setButtonSize(dp: Float) { apply(skin, dp) }
-
-    fun currentSkin(): Skin = skin
+    /** 运行时高亮：整块描边改主色 */
+    fun setRunning(running: Boolean) {
+        val bg = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
+            intArrayOf(Color.parseColor("#F21E1836"), Color.parseColor("#F2141022"))).apply {
+            cornerRadius = Display.dp(context, 16f)
+            setStroke(Display.dpInt(context, 1.6f),
+                if (running) Color.parseColor("#C87C3AED") else Color.parseColor("#26FFFFFF"))
+        }
+        background = bg
+    }
 }

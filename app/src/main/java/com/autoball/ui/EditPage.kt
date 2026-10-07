@@ -393,7 +393,79 @@ class EditPage(context: Context, private val host: PageHost) : FrameLayout(conte
         row.addView(miniBtn("✕") { removeAt(i) })
         row.setOnClickListener { ActionEditor.show(context as? Activity ?: return@setOnClickListener, a) {
             save(); renderSteps() } }
+        attachDragSort(row, i)
         return row
+    }
+
+    /**
+     * 拖动排序（需求 2.6）：长按 320ms 抬起行，跟随手指纵向移动，
+     * 松手时按落点算出目标位置并插入。零依赖下不引入 ItemTouchHelper。
+     */
+    @android.annotation.SuppressLint("ClickableViewAccessibility")
+    private fun attachDragSort(row: LinearLayout, index: Int) {
+        var startY = 0f
+        var moved = false
+        var dragging = false
+        row.setOnTouchListener { v, e ->
+            when (e.actionMasked) {
+                android.view.MotionEvent.ACTION_DOWN -> {
+                    startY = e.rawY
+                    moved = false
+                    dragging = false
+                    handler.postDelayed({
+                        if (!moved) {
+                            dragging = true
+                            dragIndex = index
+                            dragView = v
+                            v.animate().scaleX(1.03f).scaleY(1.03f)
+                                .translationZ(Display.dp(context, 6f)).setDuration(140).start()
+                            v.background = Theme.rect(Theme.surface2(), 13f, context, Theme.pri())
+                            android.widget.Toast.makeText(context, "拖动到目标位置后松手", 0).show()
+                        }
+                    }, 320)
+                    false
+                }
+                android.view.MotionEvent.ACTION_MOVE -> {
+                    val dy = e.rawY - startY
+                    if (kotlin.math.abs(dy) > Display.dp(context, 6f)) moved = true
+                    if (dragging) v.translationY = dy
+                    false
+                }
+                android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> {
+                    handler.removeCallbacksAndMessages(null)
+                    if (dragging) {
+                        val rowH = (v.height.takeIf { it > 0 } ?: Display.dpInt(context, 56f))
+                            .toFloat()
+                        val delta = (e.rawY - startY) / rowH
+                        val target = (index + kotlin.math.round(delta))
+                            .coerceIn(0, (script?.flow?.actions?.size ?: 1) - 1)
+                        v.animate().scaleX(1f).scaleY(1f).translationY(0f)
+                            .translationZ(0f).setDuration(140).start()
+                        v.background = Theme.rect(Theme.surface(), 13f, context, Theme.line())
+                        dragging = false
+                        dragIndex = -1
+                        dragView = null
+                        if (target != index) moveTo(index, target)
+                    }
+                    false
+                }
+                else -> false
+            }
+        }
+    }
+
+    private val handler = android.os.Handler(android.os.Looper.getMainLooper())
+    private var dragIndex = -1
+    private var dragView: android.view.View? = null
+
+    /** 把 from 位置的动作移到 to，其余顺移 */
+    private fun moveTo(from: Int, to: Int) {
+        val acts = script?.flow?.actions ?: return
+        if (from !in acts.indices || to !in acts.indices) return
+        val a = acts.removeAt(from)
+        acts.add(to, a)
+        save()
+        renderSteps()
     }
 
     /** .mini：38dp 圆形按钮 */
