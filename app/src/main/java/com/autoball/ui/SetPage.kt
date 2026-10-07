@@ -124,7 +124,7 @@ class SetPage(context: Context, private val host: PageHost) : FrameLayout(contex
             "≡", Theme.warn(), listOf("100 条", "200 条", "500 条", "1000 条")))
         g4.addView(Kit.valueRow(context, "脚本引擎",
             JsEngines.engineName() + "（当前编译所选）",
-            "⚙", Theme.pri2()))
+            "⚙", Theme.pri2()) { })
         wrap.addView(Kit.settingCard(context, g4))
 
         wrap.addView(Kit.tip(context,
