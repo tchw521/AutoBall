@@ -66,7 +66,16 @@ object ActionEditor {
     @Volatile
     private var gridDlg: android.app.Dialog? = null
 
-    fun show(activity: Activity, existing: Action?, onSave: (Action) -> Unit) {
+    /** 当前编辑动作所属的脚本流程（用于脚本级监听钩子）；可为 null */
+    @Volatile
+    private var flowRef: com.autoball.core.model.Flow? = null
+
+    fun show(activity: Activity, existing: Action?, onSave: (Action) -> Unit) =
+        show(activity, existing, null, onSave)
+
+    fun show(activity: Activity, existing: Action?, flow: com.autoball.core.model.Flow?,
+             onSave: (Action) -> Unit) {
+        flowRef = flow
         val a = existing ?: Action().apply {
             id = Action.newId()
             type = ActionType.CLICK
@@ -210,11 +219,22 @@ object ActionEditor {
             })
         }
         rows.add {
-            box.addView(Ui.adRow(ctx, "监听动作",
-                if (a.listeners.isEmpty()) "未设置" else "已设置 ${a.listeners.size} 项",
-                a.listeners.isNotEmpty(), "在指定时机自动执行附加动作") {
-                ListenerDialog.show(ctx, a) { rebuild() }
-            })
+            // 脚本级 9 钩子（v3 listen）：由调用方注入 flow 后可用
+            val fl = flowRef
+            if (fl != null) {
+                val (stages, n) = fl.hookSummary()
+                box.addView(Ui.adRow(ctx, "监听动作",
+                    if (stages == 0) "未设置" else "已设置 $stages 项 · $n 个动作",
+                    stages > 0, "在 9 个时机自动执行附加动作（截图、日志、兜底）") {
+                    ListenerDialog.show(ctx, fl) { rebuild() }
+                })
+            } else {
+                box.addView(Ui.adRow(ctx, "监听动作",
+                    if (a.listeners.isEmpty()) "未设置" else "已设置 ${a.listeners.size} 项",
+                    a.listeners.isNotEmpty(), "本动作的前后钩子") {
+                    LegacyListenerDialog.show(ctx, a) { rebuild() }
+                })
+            }
         }
 
         // ---- 备注 ----

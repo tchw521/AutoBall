@@ -32,6 +32,15 @@ enum class ActionType(
     SET_VAR("设置变量", emptySet()),
     RUN_JS("运行JS代码", emptySet());
 
+    /**
+     * 是否带屏幕坐标。
+     *
+     * 只有带坐标的动作才需要做矩阵变形——对「等待」「按键」这类动作
+     * 做抖动没有意义，反而会打乱时序。
+     */
+    val hasCoord: Boolean
+        get() = fieldGroups.contains(FieldGroup.POINT)
+
     /** 该类型表单需要展示哪些字段组（驱动 UI 动态表单） */
     val fieldGroups: Set<FieldGroup>
         get() = when (this) {

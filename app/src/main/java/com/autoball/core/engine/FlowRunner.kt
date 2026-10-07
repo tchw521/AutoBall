@@ -26,7 +26,11 @@ class FlowRunner(
     /** 坐标缩放（多分辨率适配）：由调用方按录制签名计算后传入 */
     private val scale: CoordMapper.Scale = CoordMapper.Scale.NONE,
     /** 进度回调（动作序号从 0 开始）：用于悬浮窗显示当前步骤名 */
-    private val onProgress: ((index: Int, total: Int, action: com.autoball.core.model.Action) -> Unit)? = null
+    private val onProgress: ((index: Int, total: Int, action: com.autoball.core.model.Action) -> Unit)? = null,
+    /** 手势矩阵变形参数（v3 morph）；null 表示不做变换 */
+    private val morph: Morph.Params? = null,
+    /** 屏幕中心（变换原点），由调用方按当前屏幕注入 */
+    private val center: Pair<Float, Float> = 0f to 0f
 ) {
 
     class Outcome(
@@ -40,11 +44,25 @@ class FlowRunner(
         var executed = 0
         var failed = 0
         val speed = if (flow.speed > 0f) flow.speed else 1f
+        val hooks = flow.hooks
+
+        /** 执行某个时机的全部监听动作（v3 9 钩子） */
+        fun fire(stage: String) {
+            val list = hooks[stage] ?: return
+            for (ha in list) {
+                if (control.canceled) return
+                if (!ha.enabled) continue
+                runCatching { execOne(ha) }
+                    .onFailure { log.warn(ctx.runId, "监听动作[$stage]异常：${it.message}") }
+            }
+        }
 
         val total = flow.actions.count { it.enabled }
         var round = 0
         var shown = 0
         while (true) {
+            fire("lt")            // 列表开头
+            if (control.canceled) return Outcome(false, executed, failed, "已停止")
             for (a in flow.actions) {
                 if (control.canceled) {
                     return Outcome(false, executed, failed, "已停止")
@@ -56,6 +74,9 @@ class FlowRunner(
                 control.checkStep()
                 control.checkPause()
                 if (!a.enabled) continue
+
+                fire("br")        // 每个动作运行前
+                if (control.canceled) return Outcome(false, executed, failed, "已停止")
 
                 if (!Condition.eval(a.condition, ctx.vars)) {
                     ctx.log("跳过 ${a.type.label}（条件不满足）")
@@ -69,7 +90,12 @@ class FlowRunner(
                 val reps = a.repeat.coerceAtLeast(1)
                 var okAll = true
                 for (r in 0 until reps) {
-                    val ok = execOne(a)
+                    var ok = execOne(a)
+                    // 失败自动重试一次（v3 retry）
+                    if (!ok && flow.retryOnce && r == reps - 1) {
+                        log.warn(ctx.runId, "动作失败，自动重试一次：${a.type.label}")
+                        if (control.sleep(200)) ok = execOne(a)
+                    }
                     executed++
                     if (!ok) { failed++; okAll = false }
                     if (r < reps - 1) {
@@ -79,6 +105,15 @@ class FlowRunner(
                     }
                 }
                 onProgress?.invoke(-1, total, a)
+                fire("ba")        // 每个动作运行后
+                if (!okAll && a.type != ActionType.RUN_JS) {
+                    // 「有动作失败立即暂停」：防止后续动作在错误界面上乱点
+                    if (flow.failStop) {
+                        log.error(ctx.runId, "动作失败且已开启失败暂停，中止脚本：${a.type.label}")
+                        fire("er")
+                        return Outcome(false, executed, failed, "动作失败，已按设置暂停")
+                    }
+                }
                 if (!okAll && a.type != ActionType.RUN_JS) {
                     // 单个动作失败不中止整体，交由上层策略决定是否继续
                     log.warn(ctx.runId, "动作失败：${a.type.label}")
@@ -86,8 +121,15 @@ class FlowRunner(
                 if (!control.sleep((a.waitMs / speed).toLong())) {
                     return Outcome(false, executed, failed, "已停止")
                 }
+                // 动作间默认等待（v3 全局设置）
+                if (flow.defaultWaitMs > 0 &&
+                    !control.sleep((flow.defaultWaitMs / speed).toLong())) {
+                    return Outcome(false, executed, failed, "已停止")
+                }
+                fire("ae")        // 每个动作运行结束后
             }
 
+            fire("le")            // 列表结尾
             if (!flow.loop) break
             round++
             if (flow.loopCount > 0 && round >= flow.loopCount) break
@@ -100,6 +142,27 @@ class FlowRunner(
 
     /** 单步执行：供调试使用 */
     fun runSingle(action: Action): Boolean = execOne(action)
+
+    /**
+     * 对坐标类动作施加矩阵变形。
+     *
+     * 只处理有坐标的类型（点击/长按/滑动…），其余原样返回——
+     * 对「等待」「返回键」这类动作做抖动没有意义。
+     */
+    private fun morphAction(a: Action): Action {
+        val p = morph ?: return a
+        if (!a.type.hasCoord) return a
+        val (cx, cy) = center
+        val (nx, ny) = Morph.point(p, a.x, a.y, cx, cy)
+        val out = a.copy()
+        out.x = nx; out.y = ny
+        if (a.x2 != 0f || a.y2 != 0f) {
+            val (nx2, ny2) = Morph.point(p, a.x2, a.y2, cx, cy)
+            out.x2 = nx2; out.y2 = ny2
+        }
+        if (a.durationMs > 0) out.durationMs = Morph.duration(p, a.durationMs)
+        return out
+    }
 
     private fun execOne(a: Action): Boolean {
         return when (a.type) {
@@ -137,7 +200,7 @@ class FlowRunner(
                 if (fn == null) { log.warn(ctx.runId, "无法运行子脚本"); false } else fn(sid)
             }
             else -> {
-                val target = CoordMapper.applyTo(a, scale)
+                val target = CoordMapper.applyTo(morphAction(a), scale)
                 val r = router.execute(target, ctx)
                 log.add(ctx.runId,
                     if (r.ok) RunLog.Level.OK else RunLog.Level.ERROR,

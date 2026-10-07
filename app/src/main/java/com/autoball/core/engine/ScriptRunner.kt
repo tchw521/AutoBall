@@ -74,6 +74,15 @@ object ScriptRunner {
             if (scale.reason != null) AB.log.warn(ctx.runId, scale.reason!!)
             else if (scale.active) AB.log.info(ctx.runId, "已按屏幕尺寸缩放坐标 %.2f×%.2f".format(scale.sx, scale.sy))
 
+            // 手势矩阵变形：解析一次，整轮复用
+            val morph = runCatching { Morph.parse(flow.morph) }.getOrNull()
+            if (morph == null && flow.morph.isNotBlank()) {
+                AB.log.warn(ctx.runId, "morph 配置无法解析，本次不做变形：${flow.morph}")
+            }
+            val p = runCatching { Display.screenSize(com.autoball.App.get()) }
+                .getOrNull() ?: android.graphics.Point(1080, 1920)
+            val center = (p.x / 2f) to (p.y / 2f)
+
             val runner = FlowRunner(
                 router = router,
                 control = control,
@@ -81,6 +90,8 @@ object ScriptRunner {
                 log = AB.log,
                 jsEval = jsEval,
                 scale = scale,
+                morph = morph,
+                center = center,
                 onProgress = { i, total, a ->
                     if (AB.store.getBool("panel_step", false)) {
                         com.autoball.float.FloatManager.setStep(
@@ -92,9 +103,12 @@ object ScriptRunner {
                     if (sub == null) { AB.log.warn(ctx.runId, "子脚本不存在: $sid"); false }
                     else runNested(sub, router, control, ctx, timeoutMs)
                 })
+            fireHooks(ctx, runId, flow, control, router, "sb")   // 脚本开始前
             val outcome = runner.run(flow)
             flowOk = outcome.ok
             outcome.message?.let { AB.log.info(ctx.runId, it) }
+            // ok / er 由最终成败决定
+            fireHooks(ctx, runId, flow, control, router, if (flowOk) "ok" else "er")
         }
 
         // JS 主体
@@ -114,10 +128,37 @@ object ScriptRunner {
             engine.close()
         }
 
+        script.flow?.let { fireHooks(ctx, runId, it, control, router, "se") }  // 脚本结束后
+
         val ok = flowOk && jsOk && !control.canceled
         if (control.canceled) AB.log.warn(ctx.runId, "已被用户停止")
         lastResult = lastResult ?: if (ok) "运行完成" else "运行未完成"
         return ok
+    }
+
+    /**
+     * 执行脚本级监听钩子（v3 的 sb / ok / er / se 四个首尾时机）。
+     *
+     * 复用 FlowRunner 的单步执行能力，保证钩子动作与主流程走同一套
+     * 后端路由与日志记录，不会出现「钩子能点、主流程点不了」的差异。
+     */
+    private fun fireHooks(
+        ctx: com.autoball.core.backend.ExecContext,
+        runId: String,
+        flow: com.autoball.core.model.Flow,
+        control: com.autoball.core.RunControl,
+        router: com.autoball.core.backend.BackendRouter,
+        stage: String
+    ) {
+        val list = flow.hooks[stage] ?: return
+        if (list.isEmpty()) return
+        val runner = FlowRunner(router, control, ctx, AB.log)
+        for (a in list) {
+            if (control.canceled) return
+            if (!a.enabled) continue
+            runCatching { runner.runSingle(a) }
+                .onFailure { AB.log.warn(runId, "监听动作[$stage]异常：${it.message}") }
+        }
     }
 
     private fun runNested(

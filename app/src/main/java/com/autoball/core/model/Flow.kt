@@ -60,6 +60,44 @@ class Flow {
     var loopCount: Int = 0          // 0 = 无限（受全局超时约束）
     var speed: Float = 1f           // 倍速
 
+    /**
+     * 全局监听钩子（v3 listen）：9 个时机，每个时机可挂**多个**动作。
+     *
+     * key 取值见 [ListenerDialog.Stage.name]：
+     * sb / lt / br / ba / ae / ok / er / le / se。
+     * 用于「开始前截图留证」「每轮开头复位」「失败后上报」等场景。
+     *
+     * 与 `Action.listeners`（动作级、单动作、7 阶段）不冲突：
+     * 前者是脚本生命周期钩子，后者是单个动作的前后钩子。
+     */
+    var hooks: MutableMap<String, MutableList<Action>> = LinkedHashMap()
+
+    /** 是否「有动作失败立即暂停」 */
+    var failStop: Boolean = true
+    /** 失败自动重试一次 */
+    var retryOnce: Boolean = false
+    /** 动作间默认等待（毫秒），0 表示不额外等待 */
+    var defaultWaitMs: Long = 0L
+    /** 等待单位：ms / s / min（仅用于编辑页显示，存储统一为毫秒） */
+    var waitUnit: String = "ms"
+
+    /**
+     * 手势矩阵变形（v3 morph）：让注入更接近真人。
+     *
+     * 格式为空串表示不做变换；否则为 css matrix(a,b,c,d,e,f) 六个数值，
+     * 其中 e/f 允许写成 `±6` 表示在该区间内随机抖动。
+     * 另支持 `· 时长±20%` 后缀，表示同时随机化手势时长。
+     */
+    var morph: String = ""
+
+    /** 已挂载监听动作的时机数与动作总数，用于编辑页摘要 */
+    fun hookSummary(): Pair<Int, Int> {
+        var stages = 0
+        var n = 0
+        hooks.forEach { (_, v) -> if (v.isNotEmpty()) { stages++; n += v.size } }
+        return stages to n
+    }
+
     /** 静态能力需求：用于运行前告知用户"当前只有一种授权时哪些动作会降级" */
     fun requiredCaps(): Set<Cap> {
         val s = HashSet<Cap>()
@@ -91,6 +129,21 @@ class Flow {
         put("loop", loop)
         put("loopCount", loopCount)
         put("speed", speed.toDouble())
+        if (hooks.isNotEmpty()) {
+            val ho = JSONObject()
+            hooks.forEach { (k, v) ->
+                if (v.isEmpty()) return@forEach
+                val arr = JSONArray()
+                v.forEach { arr.put(it.toJson()) }
+                ho.put(k, arr)
+            }
+            if (ho.length() > 0) put("hooks", ho)
+        }
+        put("failStop", failStop)
+        put("retryOnce", retryOnce)
+        put("defaultWaitMs", defaultWaitMs)
+        put("waitUnit", waitUnit)
+        if (morph.isNotEmpty()) put("morph", morph)
     }
 
     companion object {
@@ -113,6 +166,25 @@ class Flow {
             f.loop = o.optBoolean("loop", false)
             f.loopCount = o.optInt("loopCount", 0)
             f.speed = o.optDouble("speed", 1.0).toFloat()
+            val ho = o.optJSONObject("hooks")
+            if (ho != null) {
+                val keys = ho.keys()
+                while (keys.hasNext()) {
+                    val k = keys.next()
+                    val arr = ho.optJSONArray(k) ?: continue
+                    val list = ArrayList<Action>()
+                    for (i in 0 until arr.length()) {
+                        val ao = arr.optJSONObject(i) ?: continue
+                        list.add(Action.fromJson(ao))
+                    }
+                    f.hooks[k] = list
+                }
+            }
+            f.failStop = o.optBoolean("failStop", true)
+            f.retryOnce = o.optBoolean("retryOnce", false)
+            f.defaultWaitMs = o.optLong("defaultWaitMs", 0L)
+            f.waitUnit = o.optStringOrNull("waitUnit") ?: "ms"
+            f.morph = o.optStringOrNull("morph") ?: ""
             return f
         }
     }

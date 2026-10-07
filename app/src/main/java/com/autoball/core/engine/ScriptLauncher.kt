@@ -23,6 +23,7 @@ object ScriptLauncher {
             return
         }
         val (runId, control) = pair
+        lastScriptId = script.id
         val ctx = coordinator.context(runId, control, HashMap())
         FloatManager.setRunning(true)
 
@@ -72,6 +73,11 @@ object ScriptLauncher {
         }
         AB.log.warn("launch", "$pkg 可能未进入前台，按当前界面继续")
     }
+
+    /** 最近一次运行的脚本 id：供运行日志「跳转到失败步骤」使用 */
+    @Volatile
+    var lastScriptId: String? = null
+        private set
 
     fun stop() {
         coordinator.stop()

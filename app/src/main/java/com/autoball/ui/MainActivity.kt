@@ -24,6 +24,8 @@ interface PageHost {
     fun context(): Context
     fun showPage(index: Int)
     fun openScript(script: Script)
+    /** 打开脚本并定位到指定动作（运行日志跳转失败步骤） */
+    fun openScriptAt(script: Script, actionId: String?)
     fun openCreate()
     fun refreshAll()
     fun startRecording()
@@ -88,7 +90,7 @@ class MainActivity : Activity(), PageHost {
         root.addView(navWrap)
 
         // 底部版本条（v3 .verbar）：点一下看更新日志
-        root.addView(Ui.versionBar(this, "v1.5.1", "查看更新日志") {
+        root.addView(Ui.versionBar(this, "v1.6.0", "查看更新日志") {
             ChangeLog.show(this)
         })
 
@@ -147,6 +149,14 @@ class MainActivity : Activity(), PageHost {
         val idx = current
         content.removeAllViews()
         showPage(idx)
+    }
+
+    override fun openScriptAt(script: Script, actionId: String?) {
+        showPage(1)
+        (pages[1] as? EditPage)?.let {
+            it.bind(script)
+            if (actionId != null) it.focusStep(actionId)
+        }
     }
 
     override fun runScript(script: Script) {

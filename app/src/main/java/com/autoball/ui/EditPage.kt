@@ -43,6 +43,155 @@ class EditPage(context: Context, private val host: PageHost) : FrameLayout(conte
 
     private var loop = false
     private var targetRef: TextView? = null
+    private var globalTv: TextView? = null
+
+    /** 脚本全局设置（v3 gdlg：等待 / 重复 / 失败策略 / morph / 监听钩子） */
+    private fun globalSettings() {
+        val act = context as? Activity ?: return
+        val flow = script?.flow ?: return
+        val box = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
+
+        // 默认等待
+        box.addView(Ui.adRow(act, "默认等待",
+            "${flow.defaultWaitMs}${if (flow.waitUnit == "s") " 秒" else if (flow.waitUnit == "min") " 分" else " 毫秒"}",
+            flow.defaultWaitMs > 0, "每个动作之间额外等待的时间") {
+            Ui.popMenu(act, box, listOf("0 毫秒", "200 毫秒", "500 毫秒", "1 秒", "3 秒"),
+                WAITS.indexOf(flow.defaultWaitMs).coerceAtLeast(0)) { k ->
+                flow.defaultWaitMs = WAITS[k]
+                save(); syncGlobal()
+            }
+        })
+        // 重复次数
+        box.addView(Ui.adRow(act, "重复次数",
+            if (flow.loopCount == 0) "1 次" else "${flow.loopCount} 次",
+            false, "填 0 代表无限循环，配合循环开关使用") {
+            Ui.popMenu(act, box, listOf("1 次", "3 次", "5 次", "10 次", "无限"),
+                if (flow.loopCount == 0) 4
+                else listOf(1L, 3L, 5L, 10L).indexOf(flow.loopCount.toLong()).coerceAtLeast(0)) { k ->
+                flow.loopCount = if (k == 4) 0 else listOf(1, 3, 5, 10)[k]
+                save(); syncGlobal()
+            }
+        })
+        box.addView(Ui.adSec(act))
+        box.addView(Ui.switchRow(act, "有动作失败立即暂停", flow.failStop) {
+            flow.failStop = it; save(); syncGlobal()
+        })
+        box.addView(Ui.switchRow(act, "失败自动重试一次", flow.retryOnce) {
+            flow.retryOnce = it; save(); syncGlobal()
+        })
+        box.addView(Ui.adSec(act))
+        // morph
+        box.addView(Ui.adRow(act, "手势矩阵变形",
+            if (flow.morph.isBlank()) "未设置" else flow.morph,
+            flow.morph.isNotBlank(),
+            "让坐标带上随机抖动，更接近真人。留空表示不变换") {
+            morphDialog(act, flow)
+        })
+        // 监听钩子
+        val (stages, n) = flow.hookSummary()
+        box.addView(Ui.adRow(act, "全局监听动作",
+            if (stages == 0) "未设置" else "已设置 $stages 项 · $n 个动作",
+            stages > 0, "9 个时机可挂多个动作，用于截图、日志、兜底") {
+            ListenerDialog.show(act, flow) { save(); syncGlobal() }
+        })
+
+        Ui.dialog(act, "脚本全局设置").body(box)
+            .width(Theme.DIALOG_W + 30f).maxHeight(0.76f)
+            .negative("关闭").show()
+    }
+
+    private val WAITS = longArrayOf(0L, 200L, 500L, 1000L, 3000L)
+
+    /** morph 预设选择 + 自定义输入 */
+    private fun morphDialog(act: Activity, flow: com.autoball.core.model.Flow) {
+        val box = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
+        val custom = com.autoball.AB.store.getString("morph_presets", "")
+            .split("|").filter { it.contains("#") }
+        val options = Morph.BUILTIN.map { it.first } +
+            custom.map { it.substringBefore("#") } + listOf("不变换", "自定义…")
+
+        box.addView(Ui.note(act,
+            "预设会对坐标做仿射变换；自定义可填 a,b,c,d,e,f（css matrix），" +
+                "e/f 写 ±N 表示随机抖动，另可加「· 时长±20%」。"))
+        options.forEach { name ->
+            val v = when {
+                name == "不变换" -> ""
+                name == "自定义…" -> null
+                Morph.BUILTIN.any { it.first == name } ->
+                    Morph.BUILTIN.first { it.first == name }.second
+                else -> custom.firstOrNull { it.substringBefore("#") == name }
+                    ?.substringAfter("#") ?: ""
+            }
+            val on = v != null && v == flow.morph
+            box.addView(Ui.adRow(act, name,
+                if (v == null) "手动输入" else if (v.isEmpty()) "关闭" else "已选",
+                on, null) {
+                if (v == null) morphInputDialog(act, flow)
+                else { flow.morph = v; save(); syncGlobal() }
+            })
+        }
+        Ui.dialog(act, "手势矩阵变形").body(box)
+            .width(Theme.DIALOG_W + 30f).maxHeight(0.76f)
+            .negative("关闭").show()
+    }
+
+    private fun morphInputDialog(act: Activity, flow: com.autoball.core.model.Flow) {
+        val et = android.widget.EditText(act).apply {
+            setText(flow.morph)
+            hint = "如 1,0,0,1,±6,±6"
+            setHintTextColor(Theme.textTer())
+            setTextColor(Theme.textPri())
+            textSize = 12.5f
+            setSingleLine(true)
+        }
+        val nameEt = android.widget.EditText(act).apply {
+            hint = "预设名（保存后可复用）"
+            setHintTextColor(Theme.textTer())
+            setTextColor(Theme.textPri())
+            textSize = 12.5f
+            setSingleLine(true)
+        }
+        val box = LinearLayout(act).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(Display.dpInt(act, 14f), Display.dpInt(act, 8f),
+                Display.dpInt(act, 14f), 0)
+            addView(et); addView(nameEt)
+        }
+        Ui.dialog(act, "自定义变形").body(box)
+            .negative("取消")
+            .positive("确定") {
+                val v = et.text.toString().trim()
+                if (v.isNotEmpty() && !Morph.valid(v)) {
+                    Ui.toast(act, "格式不正确，应为 a,b,c,d,e,f")
+                    false
+                } else {
+                    flow.morph = v
+                    val nm = nameEt.text.toString().trim()
+                    if (nm.isNotEmpty() && v.isNotEmpty()) {
+                        val old = com.autoball.AB.store.getString("morph_presets", "")
+                        com.autoball.AB.store.putString("morph_presets",
+                            (old.split("|").filter { it.isNotBlank() && it.substringBefore("#") != nm }
+                                    + listOf("$nm#$v")).joinToString("|"))
+                    }
+                    save(); syncGlobal()
+                    true
+                }
+            }.show()
+    }
+
+    private fun syncGlobal() {
+        val f = script?.flow
+        globalTv?.text = if (f == null) "" else buildString {
+            append("等待 ${f.defaultWaitMs}ms")
+            if (f.loopCount > 0) append(" · 重复 ${f.loopCount} 次")
+            else if (f.loop) append(" · 无限循环")
+            if (f.failStop) append(" · 失败暂停")
+            if (f.retryOnce) append(" · 失败重试")
+            if (f.morph.isNotBlank()) append(" · 已变形")
+            val (st, n) = f.hookSummary()
+            if (st > 0) append(" · 监听 $st 项")
+        }
+    }
 
     private fun syncTarget(tv: TextView) {
         val pkg = script?.targetPkg
@@ -154,6 +303,16 @@ class EditPage(context: Context, private val host: PageHost) : FrameLayout(conte
         two.addView(sp)
         col.addView(two)
 
+        // ---- 脚本全局设置（v3 GS）----
+        col.addView(Kit.secRow(context, "脚本设置", "全局设置") { globalSettings() })
+        globalTv = TextView(context).apply {
+            textSize = 11.5f
+            setTextColor(Theme.textSec())
+            setPadding(Display.dpInt(context, 2f), 0, Display.dpInt(context, 2f),
+                Display.dpInt(context, 6f))
+        }
+        col.addView(globalTv)
+
         // ---- 动作步骤 ----
         col.addView(Kit.secRow(context, "动作步骤", "＋ 添加动作") { addAction() })
         col.addView(listBox)
@@ -204,6 +363,35 @@ class EditPage(context: Context, private val host: PageHost) : FrameLayout(conte
 
     // ---------- 步骤列表 ----------
 
+    /**
+     * 定位并高亮某个动作（运行日志点失败步骤时调用）。
+     * 高亮 1.6 秒后自动恢复，避免一直挂着醒目底色。
+     */
+    fun focusStep(actionId: String) {
+        val acts = script?.flow?.actions ?: return
+        val idx = acts.indexOfFirst { it.id == actionId }
+        if (idx < 0) {
+            Ui.toast(context, "该动作已不在脚本中")
+            return
+        }
+        renderSteps()
+        val row = listBox.getChildAt(idx) as? LinearLayout ?: return
+        row.background = Theme.rect(Theme.surface2(), 13f, context, Theme.danger())
+        post { (parent as? android.widget.ScrollView)?.let { sv ->
+            sv.smoothScrollTo(0, row.top)
+        } ?: run {
+            // 外层可能是 ScrollView 的父级，逐级向上找
+            var v: android.view.ViewParent? = parent
+            while (v != null) {
+                if (v is android.widget.ScrollView) { v.smoothScrollTo(0, row.top); break }
+                v = v.parent
+            }
+        } }
+        postDelayed({
+            row.background = Theme.rect(Theme.surface(), 13f, context, Theme.line())
+        }, 1600)
+    }
+
     private fun renderSteps() {
         listBox.removeAllViews()
         val acts = script?.flow?.actions ?: emptyList<Action>().toMutableList()
@@ -252,7 +440,7 @@ class EditPage(context: Context, private val host: PageHost) : FrameLayout(conte
         row.addView(Kit.miniBtn(context, "✕") { removeAt(i) })
         row.setOnClickListener {
             val act = context as? Activity ?: return@setOnClickListener
-            ActionEditor.show(act, a) { save(); renderSteps() }
+            ActionEditor.show(act, a, script?.flow) { save(); renderSteps() }
         }
         attachDragSort(row, i)
         return row
@@ -324,6 +512,7 @@ class EditPage(context: Context, private val host: PageHost) : FrameLayout(conte
         speedEd.setText((s.flow?.speed ?: 1f).toString())
         updateSub()
         targetRef?.let { syncTarget(it) }
+        syncGlobal()
         renderSteps()
     }
 

@@ -140,17 +140,38 @@ class LogPage(context: Context, private val host: PageHost) : FrameLayout(contex
                     LinearLayout.LayoutParams.MATCH_PARENT, 1)
             })
             items.forEach { e ->
-                steps.addView(TextView(context).apply {
+                val line = TextView(context).apply {
                     text = e.line()
                     textSize = 11.5f
                     setTextColor(if (e.level == RunLog.Level.ERROR) Theme.danger()
                     else Theme.textSec())
                     setPadding(0, Display.dpInt(context, 5f), 0, Display.dpInt(context, 5f))
-                })
+                }
+                // 调试闭环：失败步骤可点击，跳到编辑页并高亮定位
+                if (e.level == RunLog.Level.ERROR && e.actionId != null) {
+                    line.setTextColor(Theme.danger())
+                    line.setTypeface(null, Typeface.BOLD)
+                    line.setOnClickListener { jumpToStep(e.actionId) }
+                }
+                steps.addView(line)
             }
             c.addView(steps)
         }
         return c
+    }
+
+    /** 跳转到编辑页并高亮定位失败步骤（v3 日志调试闭环） */
+    private fun jumpToStep(actionId: String?) {
+        val sid = com.autoball.core.engine.ScriptLauncher.lastScriptId
+        val sc = if (sid != null) AB.store.get(sid)
+        else AB.store.all().firstOrNull {
+            it.flow?.actions?.any { a -> a.id == actionId } == true
+        }
+        if (sc == null) {
+            Ui.toast(context, "找不到对应的脚本")
+            return
+        }
+        host.openScriptAt(sc, actionId)
     }
 
     fun refresh() { render() }
