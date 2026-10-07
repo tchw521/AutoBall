@@ -162,7 +162,7 @@ class ScriptStore(private val ctx: Context) {
     fun getBool(key: String, def: Boolean): Boolean = try {
         pref.getBoolean(key, def)
     } catch (e: ClassCastException) { drop(key); def }
-    fun putBool(key: String, v: Boolean) { pref.edit().putBool(key, v).apply() }
+    fun putBool(key: String, v: Boolean) { pref.edit().putBoolean(key, v).apply() }
 
     fun getFloat(key: String, def: Float): Float = try {
         pref.getFloat(key, def)
