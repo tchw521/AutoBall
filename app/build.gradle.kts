@@ -20,7 +20,7 @@ android {
         minSdk = 24
         targetSdk = 34
         versionCode = 22
-        versionName = "1.6.0"
+        versionName = "1.7.0"
 
         buildConfigField("boolean", "USE_RHINO", useRhino.toString())
         buildConfigField("String", "BUILD_ENGINE", "\"${if (useRhino) "rhino" else "quickjs"}\"")
