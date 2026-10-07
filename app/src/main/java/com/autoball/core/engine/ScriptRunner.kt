@@ -103,12 +103,12 @@ object ScriptRunner {
                     if (sub == null) { AB.log.warn(ctx.runId, "子脚本不存在: $sid"); false }
                     else runNested(sub, router, control, ctx, timeoutMs)
                 })
-            fireHooks(ctx, runId, flow, control, router, "sb")   // 脚本开始前
+            fireHooks(ctx, flow, control, router, "sb")   // 脚本开始前
             val outcome = runner.run(flow)
             flowOk = outcome.ok
             outcome.message?.let { AB.log.info(ctx.runId, it) }
             // ok / er 由最终成败决定
-            fireHooks(ctx, runId, flow, control, router, if (flowOk) "ok" else "er")
+            fireHooks(ctx, flow, control, router, if (flowOk) "ok" else "er")
         }
 
         // JS 主体
@@ -128,7 +128,7 @@ object ScriptRunner {
             engine.close()
         }
 
-        script.flow?.let { fireHooks(ctx, runId, it, control, router, "se") }  // 脚本结束后
+        script.flow?.let { fireHooks(ctx, it, control, router, "se") }  // 脚本结束后
 
         val ok = flowOk && jsOk && !control.canceled
         if (control.canceled) AB.log.warn(ctx.runId, "已被用户停止")
@@ -144,7 +144,6 @@ object ScriptRunner {
      */
     private fun fireHooks(
         ctx: com.autoball.core.backend.ExecContext,
-        runId: String,
         flow: com.autoball.core.model.Flow,
         control: com.autoball.core.RunControl,
         router: com.autoball.core.backend.BackendRouter,
@@ -157,7 +156,7 @@ object ScriptRunner {
             if (control.canceled) return
             if (!a.enabled) continue
             runCatching { runner.runSingle(a) }
-                .onFailure { AB.log.warn(runId, "监听动作[$stage]异常：${it.message}") }
+                .onFailure { AB.log.warn(ctx.runId, "监听动作[$stage]异常：${it.message}") }
         }
     }
 

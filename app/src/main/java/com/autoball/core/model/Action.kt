@@ -32,43 +32,6 @@ data class NodeSpec(
     var index: Int = 0,
     var clickableOnly: Boolean = true
 ) {
-    /** 浅拷贝：供 morph 等场景在不改动原对象的前提下派生一份 */
-    fun copy(): Action {
-        val c = Action()
-        c.id = id
-        c.type = type
-        c.enabled = enabled
-        c.comment = comment
-        c.repeat = repeat
-        c.repeatIntervalMs = repeatIntervalMs
-        c.waitMs = waitMs
-        c.preDelayMs = preDelayMs
-        c.condition = condition
-        c.x = x; c.y = y; c.x2 = x2; c.y2 = y2
-        c.durationMs = durationMs
-        c.text = text
-        c.code = code
-        c.keyCode = keyCode
-        c.pkg = pkg
-        c.url = url
-        c.varName = varName
-        c.varValue = varValue
-        c.scriptId = scriptId
-        c.controlOp = controlOp
-        c.gotoId = gotoId
-        c.nodeSpec = nodeSpec
-        c.colorHex = colorHex
-        c.colorTolerance = colorTolerance
-        c.imageRef = imageRef
-        c.matchThreshold = matchThreshold
-        c.path = ArrayList(path)
-        c.strokes = ArrayList(strokes)
-        c.subActions = ArrayList(subActions)
-        c.listeners = LinkedHashMap(listeners)
-        c.timeoutMs = timeoutMs
-        return c
-    }
-
     fun toJson(): JSONObject = JSONObject().apply {
         text?.let { put("text", it) }
         id?.let { put("id", it) }
@@ -106,6 +69,44 @@ class Action {
     var type: ActionType = ActionType.CLICK
     var comment: String? = null
     var enabled: Boolean = true
+
+    /** 浅拷贝：供 morph 等场景在不改动原对象的前提下派生一份 */
+    fun copy(): Action {
+        val c = Action()
+        c.id = id
+        c.type = type
+        c.enabled = enabled
+        c.comment = comment
+        c.repeat = repeat
+        c.repeatIntervalMs = repeatIntervalMs
+        c.waitMs = waitMs
+        c.preDelayMs = preDelayMs
+        c.condition = condition
+        c.x = x; c.y = y; c.x2 = x2; c.y2 = y2
+        c.durationMs = durationMs
+        c.text = text
+        c.code = code
+        c.keyCode = keyCode
+        c.pkg = pkg
+        c.url = url
+        c.varName = varName
+        c.varValue = varValue
+        c.scriptId = scriptId
+        c.controlOp = controlOp
+        c.gotoId = gotoId
+        c.nodeSpec = nodeSpec
+        c.colorHex = colorHex
+        c.colorTolerance = colorTolerance
+        c.imageRef = imageRef
+        c.matchThreshold = matchThreshold
+        c.path = ArrayList(path)
+        c.strokes = ArrayList(strokes)
+        c.subActions = ArrayList(subActions)
+        c.listeners = LinkedHashMap(listeners)
+        c.timeoutMs = timeoutMs
+        return c
+    }
+
 
     // ---- 公共项（需求 2.3）----
     var waitMs: Long = 300          // 运行等待：本动作执行后等待
