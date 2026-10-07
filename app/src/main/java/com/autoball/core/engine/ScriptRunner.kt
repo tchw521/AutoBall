@@ -81,6 +81,12 @@ object ScriptRunner {
                 log = AB.log,
                 jsEval = jsEval,
                 scale = scale,
+                onProgress = { i, total, a ->
+                    if (AB.store.getBool("panel_step", false)) {
+                        com.autoball.float.FloatManager.setStep(
+                            if (i < 0) null else "${i + 1}/$total ${a.type.label}")
+                    }
+                },
                 runScript = { sid ->
                     val sub = AB.store.get(sid)
                     if (sub == null) { AB.log.warn(ctx.runId, "子脚本不存在: $sid"); false }
@@ -131,7 +137,7 @@ object ScriptRunner {
                 FlowRunner(router, control, ctx, AB.log, { code, c ->
                     val engine = JsEngines.create()
                     try { engine.run(code, host, timeoutMs).ok } finally { engine.close() }
-                }, null).run(script.flow!!).ok
+                }).run(script.flow!!).ok
             }
             else -> false
         }

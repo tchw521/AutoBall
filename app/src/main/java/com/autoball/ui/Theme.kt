@@ -26,8 +26,29 @@ object Theme {
 
     const val KEY_DARK = "theme_dark"
 
-    fun isDark(): Boolean = AB.store.getBool(KEY_DARK, true)
-    fun setDark(v: Boolean) { AB.store.putBool(KEY_DARK, v) }
+    /**
+     * 深浅主题。
+     *
+     * 性能：`isDark()` 在渲染路径上被高频调用（一次 render 数百次），
+     * 而 SharedPreferences 读取涉及跨进程/磁盘。这里做内存缓存，
+     * 只在 `setDark()` 时失效，保证同进程内读取一致。
+     */
+    @Volatile
+    private var darkCache: Boolean? = null
+
+    fun isDark(): Boolean {
+        val v = darkCache
+        if (v != null) return v
+        val r = AB.store.getBool(KEY_DARK, true)
+        darkCache = r
+        return r
+    }
+
+    fun setDark(v: Boolean) {
+        AB.store.putBool(KEY_DARK, v)
+        darkCache = v
+    }
+
     fun toggleDark() { setDark(!isDark()) }
 
     // ---------- 层级栈（R1/R5）----------
@@ -151,20 +172,54 @@ object Theme {
     const val FAB_GLOW = "#7DD3FC"
 
     // ---------- 取色 ----------
-    fun bg0(): Int = c(if (isDark()) D_BG0 else L_BG0)
-    fun bg1(): Int = c(if (isDark()) D_BG1 else L_BG1)
-    fun surface(): Int = c(if (isDark()) D_SURFACE else L_SURFACE)
-    fun surface2(): Int = c(if (isDark()) D_SURFACE2 else L_SURFACE2)
-    fun line(): Int = c(if (isDark()) D_LINE else L_LINE)
-    fun line2(): Int = c(if (isDark()) D_LINE2 else L_LINE2)
-    fun textPri(): Int = c(if (isDark()) D_TX else L_TX)
-    fun textSec(): Int = c(if (isDark()) D_TX2 else L_TX2)
-    fun textTer(): Int = c(if (isDark()) D_TX3 else L_TX3)
-    fun pri(): Int = c(PRI)
-    fun pri2(): Int = c(PRI2)
-    fun ok(): Int = c(OK)
-    fun warn(): Int = c(WARN)
-    fun danger(): Int = c(DANGER)
+    //
+    // 性能：Color.parseColor 是逐字符解析，一次 render() 会调用数百次取色，
+    // 全走 parseColor 会明显拖慢列表滚动与页面重建。这里把所有色值在类加载时
+    // 预解析成 Int 常量，运行期只做「深色/浅色」二选一，不再解析字符串。
+    private val C_D_BG0 = Color.parseColor(D_BG0)
+    private val C_D_BG1 = Color.parseColor(D_BG1)
+    private val C_D_SURFACE = Color.parseColor(D_SURFACE)
+    private val C_D_SURFACE2 = Color.parseColor(D_SURFACE2)
+    private val C_D_LINE = Color.parseColor(D_LINE)
+    private val C_D_LINE2 = Color.parseColor(D_LINE2)
+    private val C_D_TX = Color.parseColor(D_TX)
+    private val C_D_TX2 = Color.parseColor(D_TX2)
+    private val C_D_TX3 = Color.parseColor(D_TX3)
+
+    private val C_L_BG0 = Color.parseColor(L_BG0)
+    private val C_L_BG1 = Color.parseColor(L_BG1)
+    private val C_L_SURFACE = Color.parseColor(L_SURFACE)
+    private val C_L_SURFACE2 = Color.parseColor(L_SURFACE2)
+    private val C_L_LINE = Color.parseColor(L_LINE)
+    private val C_L_LINE2 = Color.parseColor(L_LINE2)
+    private val C_L_TX = Color.parseColor(L_TX)
+    private val C_L_TX2 = Color.parseColor(L_TX2)
+    private val C_L_TX3 = Color.parseColor(L_TX3)
+
+    private val C_PRI = Color.parseColor(PRI)
+    private val C_PRI2 = Color.parseColor(PRI2)
+    private val C_OK = Color.parseColor(OK)
+    private val C_WARN = Color.parseColor(WARN)
+    private val C_DANGER = Color.parseColor(DANGER)
+    private val C_FAB_STROKE = Color.parseColor(FAB_STROKE)
+    private val C_FAB_GLOW = Color.parseColor(FAB_GLOW)
+
+    fun bg0(): Int = if (isDark()) C_D_BG0 else C_L_BG0
+    fun bg1(): Int = if (isDark()) C_D_BG1 else C_L_BG1
+    fun surface(): Int = if (isDark()) C_D_SURFACE else C_L_SURFACE
+    fun surface2(): Int = if (isDark()) C_D_SURFACE2 else C_L_SURFACE2
+    fun line(): Int = if (isDark()) C_D_LINE else C_L_LINE
+    fun line2(): Int = if (isDark()) C_D_LINE2 else C_L_LINE2
+    fun textPri(): Int = if (isDark()) C_D_TX else C_L_TX
+    fun textSec(): Int = if (isDark()) C_D_TX2 else C_L_TX2
+    fun textTer(): Int = if (isDark()) C_D_TX3 else C_L_TX3
+    fun pri(): Int = C_PRI
+    fun pri2(): Int = C_PRI2
+    fun ok(): Int = C_OK
+    fun warn(): Int = C_WARN
+    fun danger(): Int = C_DANGER
+    fun fabStroke(): Int = C_FAB_STROKE
+    fun fabGlow(): Int = C_FAB_GLOW
 
     /** 兼容旧调用 */
     fun card(): Int = surface()
@@ -173,8 +228,9 @@ object Theme {
 
     private fun c(hex: String): Int = Color.parseColor(hex)
 
-    /** 主色渐变 135°（--grad） */
-    fun gradStops(): IntArray = intArrayOf(c(PRI2), c(PRI))
+    /** 主色渐变 135°（--grad）。预建常量数组，避免每次 new + parseColor */
+    private val GRAD_STOPS = intArrayOf(C_PRI2, C_PRI)
+    fun gradStops(): IntArray = GRAD_STOPS
     fun orientation(): GradientDrawable.Orientation = GradientDrawable.Orientation.TL_BR
 
     // ---------- Shape ----------

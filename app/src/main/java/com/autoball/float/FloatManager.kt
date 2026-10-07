@@ -121,6 +121,11 @@ object FloatManager {
         }
     }
 
+    /** 运行时更新悬浮窗上的步骤名；传 null 表示清空 */
+    fun setStep(text: String?) {
+        handler.post { panel?.setStep(text) }
+    }
+
     fun hidePanel() {
         handler.post {
             val v = panel ?: return@post

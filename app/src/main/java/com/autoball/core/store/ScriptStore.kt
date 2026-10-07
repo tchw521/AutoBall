@@ -18,16 +18,39 @@ class ScriptStore(private val ctx: Context) {
     private val lock = Any()
 
     // ---------- 脚本 ----------
+    //
+    // 性能：`all()` 原实现每次都读文件 + 解析 JSON，而页面 render 与各个
+    // 手势绑定查询会在循环里反复调用它（一次 render 可达数十次），
+    // I/O 与解析开销被成倍放大。这里加一层内存缓存，写操作后立即重建，
+    // 读路径不再碰磁盘。缓存与 `writeAll` 在同一把锁下，保证一致。
 
+    @Volatile
+    private var cache: MutableList<Script>? = null
+
+    /** 读缓存副本；调用方可自由修改，不影响缓存 */
     fun all(): MutableList<Script> = synchronized(lock) {
+        val c = cache
+        if (c != null) {
+            val out = ArrayList<Script>(c.size)
+            for (s in c) out.add(s)
+            return@synchronized out
+        }
+        val list = loadFromDisk()
+        cache = list
+        val out = ArrayList<Script>(list.size)
+        for (s in list) out.add(s)
+        out
+    }
+
+    private fun loadFromDisk(): MutableList<Script> {
         val root = read(scriptFile)
-        val arr = root.optJSONArray("scripts") ?: return@synchronized ArrayList<Script>()
+        val arr = root.optJSONArray("scripts") ?: return ArrayList()
         val out = ArrayList<Script>()
         for (i in 0 until arr.length()) {
             val o = arr.optJSONObject(i) ?: continue
             out.add(Script.fromJson(o))
         }
-        out
+        return out
     }
 
     fun get(id: String): Script? = all().firstOrNull { it.id == id }
@@ -55,12 +78,25 @@ class ScriptStore(private val ctx: Context) {
         val arr = JSONArray()
         list.forEach { arr.put(it.toJson()) }
         write(scriptFile, JSONObject().put("version", 1).put("scripts", arr))
+        cache = ArrayList(list)
         notifyChange()
     }
 
+    /** 外部直接改动了文件（如导入）后调用，强制下次读取重新解析 */
+    fun invalidate() { synchronized(lock) { cache = null } }
+
     // ---------- 分组 ----------
 
+    @Volatile
+    private var groupCache: MutableList<Group>? = null
+
     fun groups(): MutableList<Group> = synchronized(lock) {
+        val c = groupCache
+        if (c != null) {
+            val out = ArrayList<Group>(c.size)
+            for (g in c) out.add(g)
+            return@synchronized out
+        }
         val root = read(groupFile)
         val arr = root.optJSONArray("groups")
         val out = ArrayList<Group>()
@@ -73,26 +109,35 @@ class ScriptStore(private val ctx: Context) {
         if (out.isEmpty()) {
             out.add(Group().apply { id = "default"; name = "默认分组"; kind = "custom" })
         }
-        out
+        groupCache = out
+        val copy = ArrayList<Group>(out.size)
+        for (g in out) copy.add(g)
+        copy
     }
 
     fun saveGroup(g: Group) = synchronized(lock) {
         val list = groups()
         val idx = list.indexOfFirst { it.id == g.id }
         if (idx >= 0) list[idx] = g else list.add(g)
+        writeGroups(list)
+    }
+
+    private fun writeGroups(list: List<Group>) {
         val arr = JSONArray()
         list.forEach { arr.put(it.toJson()) }
         write(groupFile, JSONObject().put("groups", arr))
+        groupCache = ArrayList(list)
     }
 
     fun deleteGroup(id: String) = synchronized(lock) {
         if (id == "default") return@synchronized
         val list = groups().filterNot { it.id == id }.toMutableList()
-        val arr = JSONArray()
-        list.forEach { arr.put(it.toJson()) }
-        write(groupFile, JSONObject().put("groups", arr))
+        writeGroups(list)
+        // 组内脚本回落到默认分组，避免脚本「消失」
         move(all().filter { it.groupId == id }.map { it.id }, "default")
     }
+
+    fun getGroup(id: String): Group? = groups().firstOrNull { it.id == id }
 
     // ---------- 设置 ----------
 

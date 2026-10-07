@@ -34,6 +34,32 @@ class LiquidNavView(
 ) : FrameLayout(context) {
 
     companion object {
+        // ---- onDraw 热路径色值预解析 ----
+        // onDraw 每帧执行，逐帧 parseColor 会明显掉帧；这里在类加载时解析一次。
+        private val GL_D_TOP = Color.parseColor("#3DFFFFFF")
+        private val GL_D_MID = Color.parseColor("#14FFFFFF")
+        private val GL_D_BOT = Color.parseColor("#0AFFFFFF")
+        private val GL_L_TOP = Color.parseColor("#F2FFFFFF")
+        private val GL_L_MID = Color.parseColor("#BFFFFFFF")
+        private val GL_L_BOT = Color.parseColor("#A3FFFFFF")
+
+        private val BODY_D = Color.parseColor("#B31E173A")
+        private val BODY_L = Color.parseColor("#8CFFFFFF")
+
+        private val SHEEN_D = Color.parseColor("#26FFFFFF")
+        private val SHEEN_L = Color.parseColor("#8FFFFFFF")
+        private val BLUE_D = Color.parseColor("#1F2F6BFF")
+        private val BLUE_L = Color.parseColor("#33FFFFFF")
+
+        private val RIM_T_D = Color.parseColor("#5CFFFFFF")
+        private val RIM_T_L = Color.parseColor("#FFFFFFFF")
+        private val RIM_B_D = Color.parseColor("#14FFFFFF")
+        private val RIM_B_L = Color.parseColor("#14000000")
+
+        private val SPEC_D = Color.parseColor("#3DFFFFFF")
+        private val SPEC_L = Color.parseColor("#B3FFFFFF")
+
+        private val HALO = Color.parseColor("#7A7DD3FC")
         val TABS = arrayOf("脚本", "编辑", "制作", "市场", "我的")
 
         /** 凝胶本体高度 */
@@ -143,15 +169,15 @@ class LiquidNavView(
         // 玻璃基底：竖向三段，上缘更亮（模拟环境光在弧面顶部的聚集）
         gel.shader = LinearGradient(0f, top, 0f, h,
             intArrayOf(
-                Color.parseColor(if (dark) "#3DFFFFFF" else "#F2FFFFFF"),
-                Color.parseColor(if (dark) "#14FFFFFF" else "#BFFFFFFF"),
-                Color.parseColor(if (dark) "#0AFFFFFF" else "#A3FFFFFF")),
+                if (dark) GL_D_TOP else GL_L_TOP,
+                if (dark) GL_D_MID else GL_L_MID,
+                if (dark) GL_D_BOT else GL_L_BOT),
             floatArrayOf(0f, 0.42f, 1f), Shader.TileMode.CLAMP)
         canvas.drawRoundRect(0f, top, w, h, r, r, gel)
         gel.shader = null
 
         // 玻璃本体色（含不透明度，模拟磨砂玻璃后的底色）
-        gel.color = Color.parseColor(if (dark) "#B31E173A" else "#8CFFFFFF")
+        gel.color = if (dark) BODY_D else BODY_L
         canvas.drawRoundRect(0f, top, w, h, r, r, gel)
 
         // 左侧大面积环境反射（静置高光，不移动）
@@ -159,14 +185,14 @@ class LiquidNavView(
         canvas.clipRect(0f, top, w, h)
         sheen.shader = android.graphics.RadialGradient(
             w * 0.18f, top - h * 0.18f, h * 1.35f,
-            Color.parseColor(if (dark) "#26FFFFFF" else "#8FFFFFFF"),
+            if (dark) SHEEN_D else SHEEN_L,
             Color.TRANSPARENT, Shader.TileMode.CLAMP)
         canvas.drawRoundRect(0f, top, w, h, r, r, sheen)
         sheen.shader = null
         // 右下蓝调环境光
         sheen.shader = android.graphics.RadialGradient(
             w * 1.02f, h * 1.12f, h * 0.95f,
-            Color.parseColor(if (dark) "#1F2F6BFF" else "#33FFFFFF"),
+            if (dark) BLUE_D else BLUE_L,
             Color.TRANSPARENT, Shader.TileMode.CLAMP)
         canvas.drawRoundRect(0f, top, w, h, r, r, sheen)
         sheen.shader = null
@@ -174,10 +200,10 @@ class LiquidNavView(
 
         // 玻璃边缘：上缘 1px 亮线（折射），下缘极淡（厚度）
         rim.strokeWidth = Display.dp(context, 1f)
-        rim.color = Color.parseColor(if (dark) "#5CFFFFFF" else "#FFFFFFFF")
+        rim.color = if (dark) RIM_T_D else RIM_T_L
         canvas.drawLine(Display.dp(context, 18f), top + Display.dp(context, 1f),
             w - Display.dp(context, 18f), top + Display.dp(context, 1f), rim)
-        rim.color = Color.parseColor(if (dark) "#14FFFFFF" else "#14000000")
+        rim.color = if (dark) RIM_B_D else RIM_B_L
         canvas.drawLine(Display.dp(context, 18f), h - Display.dp(context, 1f),
             w - Display.dp(context, 18f), h - Display.dp(context, 1f), rim)
 
@@ -185,7 +211,7 @@ class LiquidNavView(
         spec.strokeWidth = Display.dp(context, 1.2f)
         spec.shader = LinearGradient(0f, 0f, w, 0f,
             intArrayOf(Color.TRANSPARENT,
-                Color.parseColor(if (dark) "#3DFFFFFF" else "#B3FFFFFF"),
+                if (dark) SPEC_D else SPEC_L,
                 Color.TRANSPARENT),
             floatArrayOf(0f, 0.5f, 1f), Shader.TileMode.CLAMP)
         canvas.drawLine(Display.dp(context, 14f), top + Display.dp(context, 2f),
@@ -195,7 +221,7 @@ class LiquidNavView(
         // FAB 液体融合光晕（v3 .fabslot::before：68dp 圆，rgba(125,211,252,.48) → 透明）
         halo.shader = android.graphics.RadialGradient(
             w / 2f, top - Display.dp(context, 2f), Display.dp(context, 34f),
-            Color.parseColor("#7A7DD3FC"), Color.TRANSPARENT, Shader.TileMode.CLAMP)
+            HALO, Color.TRANSPARENT, Shader.TileMode.CLAMP)
         canvas.drawCircle(w / 2f, top - Display.dp(context, 2f),
             Display.dp(context, 34f), halo)
         halo.shader = null
@@ -236,7 +262,7 @@ class LiquidNavView(
 
             // 液体融合光晕
             glow.setShadowLayer(Display.dp(context, 12f), 0f, 0f,
-                Color.parseColor(Theme.FAB_GLOW))
+                Theme.fabGlow())
             glow.color = Color.parseColor("#7C0EA5E9")
             canvas.drawCircle(cx, cy, r * 0.98f, glow)
             glow.clearShadowLayer()
@@ -257,7 +283,7 @@ class LiquidNavView(
             // 白色描边
             ring.style = Paint.Style.STROKE
             ring.strokeWidth = Display.dp(context, 1f)
-            ring.color = Color.parseColor(Theme.FAB_STROKE)
+            ring.color = Theme.fabStroke()
             canvas.drawCircle(cx, cy, r * 0.96f, ring)
             ring.style = Paint.Style.FILL
 

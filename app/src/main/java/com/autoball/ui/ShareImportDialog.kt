@@ -36,16 +36,34 @@ object ShareImportDialog {
         AlertDialog.Builder(act).setTitle("导入分享码").setView(box)
             .setPositiveButton("导入") { d, _ ->
                 val code = et.text.toString().trim()
-                val s = ShareCode.decode(code)
-                if (s == null) {
-                    AB.log.error("import", "分享码格式不正确或已损坏")
-                } else {
-                    s.id = Script.newId()
-                    AB.store.save(s)
-                    AB.log.info("import", "已导入「${s.name}」")
-                    host.openScript(s)
-                }
                 d.dismiss()
+                if (ShareCode.isBatch(code)) {
+                    val list = ShareCode.decodeAll(code)
+                    if (list.isNullOrEmpty()) {
+                        AB.log.error("import", "分享码格式不正确或已损坏")
+                        Ui.toast(act, "分享码格式不正确或已损坏")
+                    } else {
+                        list.forEach {
+                            it.id = Script.newId()
+                            AB.store.save(it)
+                        }
+                        AB.log.info("import", "已导入 ${list.size} 个脚本")
+                        Ui.toast(act, "已导入 ${list.size} 个脚本")
+                        host.refreshAll()
+                    }
+                } else {
+                    val s = ShareCode.decode(code)
+                    if (s == null) {
+                        AB.log.error("import", "分享码格式不正确或已损坏")
+                        Ui.toast(act, "分享码格式不正确或已损坏")
+                    } else {
+                        s.id = Script.newId()
+                        AB.store.save(s)
+                        AB.log.info("import", "已导入「${s.name}」")
+                        Ui.toast(act, "已导入「${s.name}」")
+                        host.openScript(s)
+                    }
+                }
             }
             .setNegativeButton("取消", null).show()
     }

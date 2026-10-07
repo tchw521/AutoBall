@@ -1,12 +1,11 @@
 package com.autoball.ui
 
 import android.app.Activity
-import android.view.Gravity
-import android.view.View
 import android.widget.LinearLayout
 import android.widget.TextView
 import com.autoball.core.model.Action
 import com.autoball.core.util.Display
+import org.json.JSONObject
 
 /**
  * 运行条件（v3 #condDlg）：206dp 紧凑弹窗。
@@ -18,8 +17,13 @@ import com.autoball.core.util.Display
  * - 颜色存在：指定点或区域内出现目标颜色
  * - JS 表达式：脚本返回 true 才执行
  *
- * 数据落在 Action.condition（存的是条件表达式 / 描述串），
- * 详细参数以 JSON 形式挂在同一字段上，保证分享码可携带。
+ * 存储格式：`Action.condition` 存一段紧凑 JSON
+ * `{"k":"IMAGE","e":"...","sim":90,"fail":0,"r":[x1,y1,x2,y2]}`，
+ * 保证分享码能完整携带，且旧版纯文本条件仍可解析（见 [Kind.from]）。
+ *
+ * 修复（v1.4）：原先把选择状态挂在 object 的字段上，弹窗关闭后不清理，
+ * 下次打开另一个动作会带着上次残留的相似度与区域。改为全部用局部变量，
+ * 弹窗之间互不干扰。
  */
 object ConditionDialog {
 
@@ -31,61 +35,118 @@ object ConditionDialog {
         JS("JS 表达式", "脚本返回 true 才执行"),
         ;
         companion object {
-            fun from(s: String?): Kind =
-                values().firstOrNull { it.name == s?.substringBefore(":")?.trim() } ?: NONE
+            fun byName(s: String?): Kind =
+                values().firstOrNull { it.name.equals(s?.trim(), true) } ?: NONE
         }
+    }
+
+    private val SIMS = intArrayOf(70, 80, 90, 95)
+    private val ON_FAIL = arrayOf("跳过本动作", "等待重试", "停止脚本")
+
+    /** 条件区域：百分比 0–100 的 [x1,y1,x2,y2] */
+    private data class Cond(
+        var kind: Kind = Kind.NONE,
+        var expr: String = "",
+        var sim: Int = 90,
+        var fail: Int = 0,
+        var region: FloatArray? = null
+    )
+
+    /** 从 Action.condition 还原；兼容旧的 "KIND: expr" 纯文本格式 */
+    private fun parse(raw: String?): Cond {
+        if (raw.isNullOrBlank()) return Cond()
+        val t = raw.trim()
+        if (t.startsWith("{")) {
+            return runCatching {
+                val o = JSONObject(t)
+                val r = o.optJSONArray("r")
+                Cond(
+                    kind = Kind.byName(o.optString("k", "NONE")),
+                    expr = o.optString("e", ""),
+                    sim = o.optInt("sim", 90),
+                    fail = o.optInt("fail", 0),
+                    region = if (r != null && r.length() == 4)
+                        FloatArray(4) { r.optDouble(it, 0.0).toFloat() } else null
+                )
+            }.getOrDefault(Cond(expr = t))
+        }
+        val name = t.substringBefore(":").trim()
+        return Cond(kind = Kind.byName(name), expr = t.substringAfter(":", "").trim())
+    }
+
+    private fun serialize(c: Cond): String? {
+        if (c.kind == Kind.NONE) return null
+        return JSONObject().apply {
+            put("k", c.kind.name)
+            put("e", c.expr)
+            put("sim", c.sim)
+            put("fail", c.fail)
+            c.region?.let { r ->
+                put("r", org.json.JSONArray().apply { r.forEach { put(it.toDouble()) } })
+            }
+        }.toString()
     }
 
     fun show(activity: Activity, a: Action, onChanged: () -> Unit) {
         val ctx = activity
-        var kind = Kind.from(a.condition)
-        var expr = a.condition?.substringAfter(":", "")?.trim() ?: ""
-
-        fun commit() {
-            a.condition = if (kind == Kind.NONE) null else "${kind.name}: $expr"
-            onChanged()
-        }
+        val c = parse(a.condition)
 
         val box = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
-        var dlg: android.app.Dialog? = null
+        var exprEdit: android.widget.EditText? = null
+
+        fun commit() {
+            exprEdit?.text?.toString()?.trim()?.let { c.expr = it }
+            a.condition = serialize(c)
+            onChanged()
+        }
 
         fun rebuild() {
             box.removeAllViews()
 
-            box.addView(Ui.adRow(ctx, "条件类型", kind.label, kind != Kind.NONE, kind.desc) {
+            box.addView(Ui.adRow(ctx, "条件类型", c.kind.label, c.kind != Kind.NONE, c.kind.desc) {
                 Ui.popMenu(ctx, box, Kind.values().map { it.label },
-                    Kind.values().indexOf(kind)) { i ->
-                    kind = Kind.values()[i]
+                    Kind.values().indexOf(c.kind)) { i ->
+                    c.kind = Kind.values()[i]
                     rebuild()
                 }
             })
 
-            if (kind != Kind.NONE) {
+            if (c.kind != Kind.NONE) {
                 box.addView(Ui.adSec(ctx))
-                val hint = when (kind) {
+                val hint = when (c.kind) {
                     Kind.IMAGE -> "图片名或分享码"
                     Kind.TEXT -> "要找的文字"
                     Kind.COLOR -> "颜色，如 #FF0000"
                     Kind.JS -> "返回 true/false 的表达式"
                     Kind.NONE -> ""
                 }
-                val et = Ui.adText(ctx, expr, hint)
+                val et = Ui.adText(ctx, c.expr, hint)
                 box.addView(et)
-                exprRef = et
+                exprEdit = et
 
                 box.addView(Ui.adSec(ctx))
-                box.addView(Ui.adRow(ctx, "条件区域", "整屏", false,
+                box.addView(Ui.adRow(ctx, "条件区域",
+                    if (c.region == null) "整屏" else "已选区域", c.region != null,
                     "缩小检测范围可提速") {
-                    Ui.toast(ctx, "区域选择：可限定只在屏幕一部分内检测")
-                })
-                box.addView(Ui.adRow(ctx, "相似度", "90%", true,
-                    "越高越严格，越容易漏检") {
-                    Ui.popMenu(ctx, box, listOf("70%", "80%", "90%", "95%"), 2) {
-                        Ui.toast(ctx, "已设置相似度")
+                    RegionPicker.pick(ctx, activity, null) { x1, y1, x2, y2 ->
+                        c.region = floatArrayOf(x1, y1, x2, y2)
+                        rebuild()
                     }
                 })
-                box.addView(Ui.adRow(ctx, "条件不成立时", "跳过本动作", true) {
-                    Ui.popMenu(ctx, box, listOf("跳过本动作", "等待重试", "停止脚本"), 0) {}
+                box.addView(Ui.adRow(ctx, "相似度", "${c.sim}%", true,
+                    "越高越严格，越容易漏检") {
+                    Ui.popMenu(ctx, box, SIMS.map { "$it%" },
+                        SIMS.indexOf(c.sim).coerceAtLeast(0)) { k ->
+                        c.sim = SIMS[k]
+                        rebuild()
+                    }
+                })
+                box.addView(Ui.adRow(ctx, "条件不成立时", ON_FAIL[c.fail], true,
+                    "决定条件不满足时脚本如何继续") {
+                    Ui.popMenu(ctx, box, ON_FAIL.toList(), c.fail) { k ->
+                        c.fail = k
+                        rebuild()
+                    }
                 })
             }
 
@@ -99,14 +160,11 @@ object ConditionDialog {
         }
 
         rebuild()
-        dlg = Ui.dialog(ctx, "运行条件")
+        Ui.dialog(ctx, "运行条件")
             .body(box)
             .width(Theme.DIALOG_W)
             .negative("清除") { a.condition = null; onChanged() }
-            .positive("确定") { expr = exprRef?.text?.toString()?.trim() ?: expr; commit(); true }
+            .positive("确定") { commit(); true }
             .show()
     }
-
-    @Volatile
-    private var exprRef: android.widget.EditText? = null
 }

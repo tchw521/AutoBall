@@ -32,6 +32,54 @@ object ShareCode {
         return PREFIX + crc.toString(16) + ":" + body
     }
 
+    /**
+     * 批量导出：把多个脚本打成一个 JSON 数组后走同一套打包流程。
+     * 导入端用 [decodeAll] 还原，单脚本码仍走 [decode]，两者前缀不同可区分。
+     */
+    private const val PREFIX_ALL = "AB1A:"
+
+    fun encodeAll(scripts: List<Script>): String {
+        val arr = org.json.JSONArray()
+        scripts.forEach { arr.put(it.toJson()) }
+        val bytes = org.json.JSONObject().put("version", 1)
+            .put("scripts", arr).toString().toByteArray(Charsets.UTF_8)
+        val crc = crc32(bytes)
+        val bos = ByteArrayOutputStream()
+        GZIPOutputStream(bos).use { it.write(bytes) }
+        val body = Base64.encodeToString(bos.toByteArray(), Base64.NO_WRAP)
+        return PREFIX_ALL + crc.toString(16) + ":" + body
+    }
+
+    /** @return 还原出的脚本列表；格式错误或校验失败返回 null */
+    fun decodeAll(code: String): List<Script>? {
+        return try {
+            val c = code.trim()
+            if (!c.startsWith(PREFIX_ALL)) return null
+            if (c.length > MAX_CODE_LEN) return null
+            val rest = c.substring(PREFIX_ALL.length)
+            val sep = rest.indexOf(':')
+            if (sep <= 0) return null
+            val crcHex = rest.substring(0, sep)
+            val body = rest.substring(sep + 1)
+            val bytes = GUNZIP(Base64.decode(body, Base64.NO_WRAP))
+            if (bytes.size > MAX_SCRIPT_LEN) return null
+            if (crc32(bytes).toString(16) != crcHex) return null
+            val o = org.json.JSONObject(String(bytes, Charsets.UTF_8))
+            val arr = o.optJSONArray("scripts") ?: return null
+            val out = ArrayList<Script>()
+            for (i in 0 until arr.length()) {
+                val so = arr.optJSONObject(i) ?: continue
+                out.add(Script.fromJson(so))
+            }
+            out
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    /** 是否批量码（用于导入时分流） */
+    fun isBatch(code: String): Boolean = code.trim().startsWith(PREFIX_ALL)
+
     /** @return 解析出的脚本；格式错误或校验失败返回 null */
     fun decode(code: String): Script? {
         return try {

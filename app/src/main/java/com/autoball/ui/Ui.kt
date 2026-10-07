@@ -199,13 +199,17 @@ object Ui {
 
         private var body: View? = null
         private var positive: Pair<String, (() -> Boolean)?>? = null
+        private var positiveColor: Int = 0
         private var negative: Pair<String, (() -> Unit)?>? = null
         private var widthDp = 302f
         private var maxHeightRatio = 0.76f
 
         fun body(v: View) = apply { body = v }
         fun positive(text: String, onClick: (() -> Boolean)? = null) =
-            apply { positive = text to onClick }
+            apply { positive = text to onClick; positiveColor = 0 }
+        /** 危险操作按钮：标红 */
+        fun positiveDanger(text: String, onClick: (() -> Boolean)? = null) =
+            apply { positive = text to onClick; positiveColor = Theme.danger() }
         fun negative(text: String, onClick: (() -> Unit)? = null) =
             apply { negative = text to onClick }
         fun width(dp: Float) = apply { widthDp = dp }
@@ -272,6 +276,9 @@ object Ui {
                 }
                 pos?.let { (t, cb) ->
                     val b = button(ctx, t, true)
+                    if (positiveColor != 0) {
+                        b.background = Theme.rect(positiveColor, Theme.BTN_R, ctx)
+                    }
                     b.setOnClickListener {
                         // 返回 false 表示校验未通过，保持弹窗不关闭
                         if (cb?.invoke() != false) d?.dismiss()

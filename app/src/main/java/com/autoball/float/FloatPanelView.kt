@@ -47,6 +47,17 @@ class FloatPanelView(context: Context, private val listener: Listener) : LinearL
 
     private var skin: Skin = Skin.DEFAULT
     private var buttonDp = 40f
+    private val stepTv: TextView = TextView(context).apply {
+        textSize = 10.5f
+        setTypeface(null, android.graphics.Typeface.BOLD)
+        setTextColor(Color.parseColor("#B9B2D6"))
+        gravity = Gravity.CENTER
+        setSingleLine(true)
+        ellipsize = android.text.TextUtils.TruncateAt.END
+        visibility = View.GONE
+        setPadding(Display.dpInt(context, 4f), Display.dpInt(context, 2f),
+            Display.dpInt(context, 4f), 0)
+    }
 
     init {
         orientation = VERTICAL
@@ -86,10 +97,17 @@ class FloatPanelView(context: Context, private val listener: Listener) : LinearL
         bar.addView(smallButton("停止", Color.parseColor("#FF5B6E")) { listener.onStop() })
         bar.addView(smallButton("录制", Color.parseColor("#7C3AED")) { listener.onRecord() })
         bar.addView(smallButton("收起", Color.parseColor("#4A9EFF")) { listener.onCollapse() })
+        addView(stepTv)
         addView(bar)
     }
 
     fun currentSkin(): Skin = skin
+
+    /** 运行时在底部条上方显示当前步骤名（设置项「显示步骤名」控制） */
+    fun setStep(text: String?) {
+        stepTv.text = text ?: ""
+        stepTv.visibility = if (text.isNullOrEmpty()) View.GONE else View.VISIBLE
+    }
 
     // ---------- 布局 ----------
 

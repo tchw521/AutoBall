@@ -34,6 +34,8 @@ class ScriptPage(
     private var groupIdx = 0
     private var chipIdx = 0
     private val CHIPS = arrayOf("全部", "最近运行", "已绑定手势", "已禁用")
+    private var query = ""
+    private lateinit var clearBtn: TextView
     private val sel = HashSet<String>()
     private var multiMode = false
 
@@ -79,6 +81,7 @@ class ScriptPage(
             LinearLayout.LayoutParams.MATCH_PARENT))
 
         val right = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+        right.addView(searchBar())
         chipRow = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             setPadding(Display.dpInt(context, 14f), Display.dpInt(context, 12f),
@@ -125,7 +128,7 @@ class ScriptPage(
                             ShareImportDialog.show(act, host)
                         }
                         2 -> { multiMode = true; renderList() }
-                        3 -> Ui.toast(context, "已复制全部脚本的分享码（暂为逐条）")
+                        3 -> exportAll()
                     }
                 }
             }
@@ -152,7 +155,7 @@ class ScriptPage(
                     12f, context)
                 setOnClickListener { groupIdx = i; renderGroups(); renderList() }
                 setOnLongClickListener {
-                    if (i > 0) Ui.toast(context, "长按分组：重命名 / 删除")
+                    if (i > 0) groupMenu(this, i)
                     true
                 }
             }
@@ -197,7 +200,7 @@ class ScriptPage(
                 setStroke(Display.dpInt(context, 1f), Theme.line2())
                 // 虚线近似为细描边 + 低透明度
             }
-            setOnClickListener { Ui.toast(context, "新建分组") }
+            setOnClickListener { newGroupDialog() }
         })
     }
 
@@ -263,7 +266,75 @@ class ScriptPage(
             3 -> l.filter { !it.enabled }
             else -> l
         }
+        val kw = query.trim()
+        if (kw.isNotEmpty()) {
+            l = l.filter {
+                it.name.contains(kw, true) ||
+                    (it.jsCode.contains(kw, true)) ||
+                    (it.flow?.name?.contains(kw, true) == true)
+            }
+        }
         return l
+    }
+
+    /** 搜索框：输入即过滤，清空按钮一键还原 */
+    private fun searchBar(): LinearLayout {
+        val row = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            background = Theme.rect(Theme.surface(), 12f, context, Theme.line())
+            setPadding(Display.dpInt(context, 12f), Display.dpInt(context, 6f),
+                Display.dpInt(context, 10f), Display.dpInt(context, 6f))
+            val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT)
+            lp.setMargins(Display.dpInt(context, 14f), Display.dpInt(context, 2f),
+                Display.dpInt(context, 14f), 0)
+            layoutParams = lp
+        }
+        row.addView(TextView(context).apply {
+            text = "⌕"
+            textSize = 14f
+            setTextColor(Theme.textTer())
+        })
+        val et = android.widget.EditText(context).apply {
+            hint = "搜索脚本"
+            setHintTextColor(Theme.textTer())
+            setTextColor(Theme.textPri())
+            textSize = 13f
+            background = null
+            setSingleLine(true)
+            layoutParams = LinearLayout.LayoutParams(0,
+                LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                marginStart = Display.dpInt(context, 8f)
+            }
+            addTextChangedListener(object : android.text.TextWatcher {
+                override fun beforeTextChanged(c: CharSequence?, a: Int, b: Int, n: Int) {}
+                override fun onTextChanged(c: CharSequence?, a: Int, b: Int, n: Int) {}
+                override fun afterTextChanged(e: android.text.Editable?) {
+                    query = e?.toString() ?: ""
+                    clearBtn.visibility = if (query.isEmpty()) View.GONE else View.VISIBLE
+                    renderList()
+                }
+            })
+        }
+        row.addView(et)
+        clearBtn = TextView(context).apply {
+            text = "✕"
+            textSize = 13f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(Theme.textTer())
+            gravity = Gravity.CENTER
+            visibility = View.GONE
+            setPadding(Display.dpInt(context, 6f), 0, Display.dpInt(context, 2f), 0)
+            setOnClickListener {
+                et.setText("")
+                query = ""
+                visibility = View.GONE
+                renderList()
+            }
+        }
+        row.addView(clearBtn)
+        return row
     }
 
     private fun renderList() {
@@ -443,9 +514,20 @@ class ScriptPage(
                             sel.addAll(filtered().map { it.id }.toSet())
                             renderList(); updateMulti()
                         }
+                        1 -> moveToGroupDialog()
+                        2 -> {
+                            val ids = sel.toSet()
+                            AB.store.all().forEach {
+                                if (it.id in ids) { it.enabled = true; AB.store.save(it) }
+                            }
+                            AB.log.info("script", "已启用 ${ids.size} 个脚本")
+                            Ui.toast(context, "已启用 ${ids.size} 个脚本")
+                            renderList(); updateMulti()
+                        }
                         3 -> {
                             AB.store.delete(sel.toSet())
                             AB.log.info("script", "已删除 ${sel.size} 个脚本")
+                            Ui.toast(context, "已删除 ${sel.size} 个脚本")
                             exitMulti(); renderList()
                         }
                     }
@@ -469,6 +551,150 @@ class ScriptPage(
             setOnClickListener { exitMulti(); renderList() }
         })
         return b
+    }
+
+    // ---------- 分组管理 ----------
+
+    /** 分组长按：重命名 / 换色 / 删除 */
+    private fun groupMenu(anchorView: View, i: Int) {
+        val gs = AB.store.groups()
+        val g = gs.getOrNull(i - 1) ?: return
+        Ui.menu(context, anchorView,
+            listOf("重命名" to false, "更换颜色" to false, "删除分组" to true)) { k ->
+            when (k) {
+                0 -> groupNameDialog(g)
+                1 -> groupColorDialog(g)
+                2 -> groupDeleteDialog(g)
+            }
+        }
+    }
+
+    private fun groupNameDialog(g: com.autoball.core.model.Group) {
+        val act = context as? android.app.Activity ?: return
+        val et = android.widget.EditText(act).apply {
+            setText(g.name)
+            setTextColor(Theme.textPri())
+            textSize = 14f
+            setSingleLine(true)
+        }
+        val box = LinearLayout(act).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(Display.dpInt(act, 20f), Display.dpInt(act, 12f),
+                Display.dpInt(act, 20f), 0)
+            addView(et)
+        }
+        Ui.dialog(act, "重命名分组").body(box)
+            .negative("取消")
+            .positive("确定") {
+                val n = et.text.toString().trim()
+                if (n.isEmpty()) { Ui.toast(act, "名称不能为空"); false }
+                else { g.name = n; AB.store.saveGroup(g); renderGroups(); true }
+            }.show()
+    }
+
+    private fun groupColorDialog(g: com.autoball.core.model.Group) {
+        val act = context as? android.app.Activity ?: return
+        val grid = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
+        val colors = List(7) { idx ->
+            "配色 ${idx + 1}" to ""
+        }
+        val gv = Ui.actionGrid(act, colors) { idx ->
+            g.colorIndex = idx
+            AB.store.saveGroup(g)
+            renderGroups()
+        }
+        grid.addView(gv)
+        Ui.dialog(act, "选择分组配色").body(grid)
+            .width(Theme.DIALOG_W + 60f)
+            .negative("取消").show()
+    }
+
+    private fun groupDeleteDialog(g: com.autoball.core.model.Group) {
+        val act = context as? android.app.Activity ?: return
+        val n = AB.store.all().count { it.groupId == g.id }
+        val box = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
+        box.addView(TextView(act).apply {
+            text = if (n > 0) "该分组下有 $n 个脚本，删除后它们会移动到「默认分组」，不会丢失。"
+            else "确定删除分组「${g.name}」？"
+            textSize = 12.5f
+            setTextColor(Theme.textSec())
+            setLineSpacing(Display.dp(act, 2f), 1.6f)
+        })
+        Ui.dialog(act, "删除分组").body(box)
+            .negative("取消")
+            .positiveDanger("删除") {
+                AB.store.deleteGroup(g.id)
+                groupIdx = 0
+                renderGroups(); renderList()
+                true
+            }.show()
+    }
+
+    private fun newGroupDialog() {
+        val act = context as? android.app.Activity ?: return
+        val et = android.widget.EditText(act).apply {
+            hint = "分组名称"
+            setHintTextColor(Theme.textTer())
+            setTextColor(Theme.textPri())
+            textSize = 14f
+            setSingleLine(true)
+        }
+        var colorIdx = AB.store.groups().size % 7
+        val box = LinearLayout(act).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(Display.dpInt(act, 20f), Display.dpInt(act, 12f),
+                Display.dpInt(act, 20f), 0)
+            addView(et)
+        }
+        Ui.dialog(act, "新建分组").body(box)
+            .negative("取消")
+            .positive("创建") {
+                val n = et.text.toString().trim()
+                if (n.isEmpty()) { Ui.toast(act, "名称不能为空"); false }
+                else {
+                    val g = com.autoball.core.model.Group().apply {
+                        id = "g" + System.nanoTime().toString(36)
+                        name = n
+                        kind = "custom"
+                        this.colorIndex = colorIdx
+                    }
+                    AB.store.saveGroup(g)
+                    renderGroups()
+                    true
+                }
+            }.show()
+    }
+
+    // ---------- 批量 ----------
+
+    /** 批量移动到分组 */
+    private fun moveToGroupDialog() {
+        val act = context as? android.app.Activity ?: return
+        val gs = AB.store.groups()
+        val box = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
+        gs.forEach { g ->
+            box.addView(Ui.sheetOption(act, "▸", Theme.gInk(g.colorIndex), g.name,
+                "移动到这里") {
+                AB.store.move(sel.toSet(), g.id)
+                Ui.toast(act, "已移动 ${sel.size} 个脚本")
+                exitMulti(); renderList()
+            })
+        }
+        Ui.sheet(act, "移动到分组").body(box).show()
+    }
+
+    /** 全部导出：把所有脚本打包成一段分享码 */
+    private fun exportAll() {
+        val act = context as? android.app.Activity ?: return
+        val all = AB.store.all()
+        if (all.isEmpty()) { Ui.toast(act, "还没有脚本"); return }
+        val code = runCatching {
+            com.autoball.core.store.ShareCode.encodeAll(all)
+        }.getOrElse {
+            Ui.toast(act, "导出失败：${it.message}")
+            return
+        }
+        ShareImportDialog.showCopy(act, "全部 ${all.size} 个脚本", code)
     }
 
     private fun updateMulti() {

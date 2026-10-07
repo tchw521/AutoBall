@@ -24,7 +24,9 @@ class FlowRunner(
     /** 运行子脚本（RUN_SCRIPT 动作）；由协调器注入以防重入 */
     private val runScript: ((String) -> Boolean)? = null,
     /** 坐标缩放（多分辨率适配）：由调用方按录制签名计算后传入 */
-    private val scale: CoordMapper.Scale = CoordMapper.Scale.NONE
+    private val scale: CoordMapper.Scale = CoordMapper.Scale.NONE,
+    /** 进度回调（动作序号从 0 开始）：用于悬浮窗显示当前步骤名 */
+    private val onProgress: ((index: Int, total: Int, action: com.autoball.core.model.Action) -> Unit)? = null
 ) {
 
     class Outcome(
@@ -39,11 +41,17 @@ class FlowRunner(
         var failed = 0
         val speed = if (flow.speed > 0f) flow.speed else 1f
 
+        val total = flow.actions.count { it.enabled }
         var round = 0
+        var shown = 0
         while (true) {
             for (a in flow.actions) {
                 if (control.canceled) {
                     return Outcome(false, executed, failed, "已停止")
+                }
+                if (a.enabled) {
+                    onProgress?.invoke(shown, total, a)
+                    shown++
                 }
                 control.checkStep()
                 control.checkPause()
@@ -70,6 +78,7 @@ class FlowRunner(
                         }
                     }
                 }
+                onProgress?.invoke(-1, total, a)
                 if (!okAll && a.type != ActionType.RUN_JS) {
                     // 单个动作失败不中止整体，交由上层策略决定是否继续
                     log.warn(ctx.runId, "动作失败：${a.type.label}")
