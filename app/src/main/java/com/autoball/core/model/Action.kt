@@ -33,6 +33,7 @@ data class NodeSpec(
     var clickableOnly: Boolean = true
 ) {
     fun toJson(): JSONObject = JSONObject().apply {
+        put("optionLabel", optionLabel)
         text?.let { put("text", it) }
         id?.let { put("id", it) }
         desc?.let { put("desc", it) }
@@ -67,6 +68,13 @@ data class NodeSpec(
 class Action {
     var id: String = ""
     var type: ActionType = ActionType.CLICK
+    /**
+     * 用户在动作类型宫格里选中的标签（如「长按」「连续点击」「返回键」）。
+     *
+     * 同一 [ActionType] 可对应多个入口（点击/长按/连续点击都是 CLICK），
+     * 没有它就回显不出用户当初选的是哪一个。
+     */
+    var optionLabel: String? = null
     var comment: String? = null
     var enabled: Boolean = true
 
@@ -75,6 +83,7 @@ class Action {
         val c = Action()
         c.id = id
         c.type = type
+        c.optionLabel = optionLabel
         c.enabled = enabled
         c.comment = comment
         c.repeat = repeat

@@ -37,6 +37,9 @@ class CreatePage(context: Context, @Suppress("unused") private val host: PageHos
 
         @Volatile
         var controller: RecordController? = null
+        /** 录制对应的脚本，用于把新增动作同步回悬浮窗列表 */
+        @Volatile
+        var currentScript: com.autoball.core.model.Script? = null
 
         /** 启动一次录制：显示采集层、隐藏悬浮窗、注册中断回调 */
         fun startRecording(activity: Activity, name: String) {
@@ -71,6 +74,13 @@ class CreatePage(context: Context, @Suppress("unused") private val host: PageHos
                 }
                 override fun onActionAdded(action: com.autoball.core.model.Action, count: Int) {
                     AB.log.info("record", "已记录 $count 个动作：${action.type.label}")
+                    // 同步到工作台悬浮窗：录制窗是用户此刻唯一能看到的界面
+                    controller?.currentFlow()?.let { f ->
+                        currentScript?.let { sc ->
+                            sc.flow = f
+                            ScriptWorkDialog.refresh(sc)
+                        }
+                    }
                 }
                 override fun onInterrupted(reason: String, count: Int, estimatedMs: Long) {
                     RecordOverlay.hide()

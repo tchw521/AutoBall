@@ -1,8 +1,6 @@
 package com.autoball.ui
 
 import android.app.Activity
-import android.os.Handler
-import android.os.Looper
 import com.autoball.AB
 import com.autoball.core.model.Script
 import com.autoball.core.recorder.GlobalSettingsDialog
@@ -10,18 +8,16 @@ import com.autoball.core.util.Display
 import com.autoball.float.FloatWorkWindow
 
 /**
- * 脚本工作台入口（统一组件）。
+ * 录制 / 添加动作的总入口（统一组件）——一比一对齐自动精灵。
  *
- * 「开始录制」与「添加动作」共用一个界面——进来后脚本还是空的，
- * 由用户决定是录制还是手动加动作，不在入口处就分叉。
+ * 形态是**悬浮窗**（[FloatWorkWindow]）：两者都要操作别的应用，
+ * 应用内弹窗占住屏幕，用户切不过去。未授予悬浮窗权限时直接引导去开启——
+ * 降级成应用内弹窗会让录制功能事实上不可用，不如明确告知。
  *
- * 形态是**悬浮窗**（[FloatWorkWindow]，仿自动精灵布局）：两者都要操作别的应用，
- * 应用内弹窗占住屏幕，用户切不过去。未授予悬浮窗权限时提示用户去开启，
- * 因为降级成应用内弹窗会让录制功能事实上不可用。
+ * 悬浮窗上的每个动作都对应自动精灵的一项：
+ * 运行 / 录制(停止) / 更多 → 添加动作 · 保存脚本 · 清空动作 · 开启日志 · 查看变量 · 全局设置
  */
 object ScriptWorkDialog {
-
-    private val handler = Handler(Looper.getMainLooper())
 
     fun show(activity: Activity, script: Script, host: PageHost) {
         if (!Display.canDrawOverlay(activity)) {
@@ -30,24 +26,38 @@ object ScriptWorkDialog {
             return
         }
         FloatWorkWindow.show(activity, script, object : FloatWorkWindow.Callback {
-            override fun onRecord(s: Script) {
-                FloatWorkWindow.setRecording(true)
-                host.startRecording()
+
+            override fun onRun(s: Script) = host.runScript(s)
+
+            override fun onRecord(s: Script, willRecord: Boolean) {
+                if (willRecord) {
+                    FloatWorkWindow.setRecording(true)
+                    // 让录制控制器能把新增动作同步回本窗口的列表
+                    CreatePage.currentScript = s
+                    host.startRecording()
+                } else {
+                    FloatWorkWindow.setRecording(false)
+                    // 控制器没有 stop()：interrupt 会触发 onInterrupted 回调，
+                    // 由 CreatePage 弹出「放弃 / 继续 / 保存」三选一并结束录制
+                    CreatePage.controller?.interrupt("用户停止")
+                    FloatWorkWindow.refresh(s)
+                }
             }
 
             override fun onAddAction(s: Script) {
-                // 添加动作要回到应用内的动作编辑器（表单复杂，悬浮窗承载不下）
-                host.openScript(s)
-            }
-
-            override fun onSettings(s: Script) {
-                // 全局设置同样在悬浮窗层弹出，不把用户拽回应用界面
+                // 直接在悬浮窗层弹出动作编辑框（仿自动精灵）：
+                // 用户此刻正在操作别的应用，跳回应用会把目标应用切走
                 val flow = s.flow
                 if (flow == null) {
                     Ui.toast(activity, "该脚本还没有动作流")
                     return
                 }
-                GlobalSettingsDialog.showFloat(activity, flow) { AB.store.save(s) }
+                ActionEditor.showFloat(activity, null, flow) { act ->
+                    flow.actions.add(act)
+                    AB.store.save(s)
+                    FloatWorkWindow.refresh(s)
+                    Ui.toast(activity, "已添加：${ActionEditor.describe(act)}")
+                }
             }
 
             override fun onSave(s: Script) {
@@ -63,8 +73,24 @@ object ScriptWorkDialog {
                 Ui.toast(activity, "已清空动作")
             }
 
-            override fun onLog(s: Script) {
-                host.openSubPage("log")
+            override fun onToggleLog(s: Script) {
+                val on = !AB.store.getBool("log_enabled", true)
+                AB.store.putBool("log_enabled", on)
+                Ui.toast(activity, if (on) "运行日志已开启" else "运行日志已关闭")
+            }
+
+            override fun onVars(s: Script) {
+                VarsDialog.show(activity, s)
+            }
+
+            override fun onSettings(s: Script) {
+                val flow = s.flow
+                if (flow == null) {
+                    Ui.toast(activity, "该脚本还没有动作流")
+                    return
+                }
+                // 全局设置同样在悬浮窗层弹出，不把用户拽回应用界面
+                GlobalSettingsDialog.showFloat(activity, flow) { AB.store.save(s) }
             }
         })
     }
