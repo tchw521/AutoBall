@@ -23,7 +23,6 @@ import android.widget.TextView
 import android.widget.Toast
 import com.autoball.AB
 import com.autoball.core.util.Display
-import com.autoball.core.util.Perf
 
 /**
  * 底部半框 / 气泡帮助 / 页标题 / 说明文字。

@@ -23,7 +23,6 @@ import android.widget.TextView
 import android.widget.Toast
 import com.autoball.AB
 import com.autoball.core.util.Display
-import com.autoball.core.util.Perf
 
 /**
  * 小部件：按钮 / 分组气泡 / 徽标 / 标签 / 分区标题 / 胶囊。

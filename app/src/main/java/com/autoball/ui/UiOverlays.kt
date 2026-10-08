@@ -23,7 +23,6 @@ import android.widget.TextView
 import android.widget.Toast
 import com.autoball.AB
 import com.autoball.core.util.Display
-import com.autoball.core.util.Perf
 
 /**
  * 浮层：弹出菜单 / 变量提示 / 动作宫格 / 版本条 / Toast / 气泡。

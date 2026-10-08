@@ -41,6 +41,7 @@ object FloatManager {
     // ---------- 悬浮球 ----------
 
     fun showBall(context: Context) {
+        lastCtx = context.applicationContext
         if (!Display.canDrawOverlay(context)) {
             AB.log.warn("float", "未获得悬浮窗权限")
             return
@@ -94,6 +95,7 @@ object FloatManager {
     // ---------- 悬浮窗 ----------
 
     fun showPanel(context: Context) {
+        lastCtx = context.applicationContext
         if (!Display.canDrawOverlay(context)) return
         handler.post {
             if (panel != null) return@post
@@ -157,6 +159,30 @@ object FloatManager {
     }
 
     fun hideAll() { hideBall(); hidePanel() }
+
+    /**
+     * 取色/取图结束后恢复悬浮球与悬浮窗（与 [hideAll] 配对）。
+     *
+     * 只恢复**之前确实显示过**的组件——否则取色完会凭空冒出一个
+     * 用户本来没开的悬浮球。
+     */
+    fun restore() {
+        val ctx = lastCtx ?: return
+        handler.post {
+            if (ballWasShown && !isBallShown()) showBall(ctx)
+            if (panelWasShown && panel == null) showPanel(ctx)
+        }
+    }
+
+    @Volatile private var lastCtx: android.content.Context? = null
+    @Volatile private var ballWasShown = false
+    @Volatile private var panelWasShown = false
+
+    /** 记录当前显示状态，供 [restore] 还原 */
+    fun markShown() {
+        ballWasShown = isBallShown()
+        panelWasShown = panel != null
+    }
 
     /** 录制开始时隐藏悬浮窗，结束时恢复 */
     fun setRecording(recording: Boolean) {

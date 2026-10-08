@@ -21,34 +21,12 @@ import android.widget.TextView
  * 本门面保留 `Ui.xxx(...)` 的调用方式——现有 148 处调用点无需改动，
  * 全部转发到对应实现，避免为纯重构承担大面积改动的回归风险。
  */
+typealias SheetBuilder = UiSheets.SheetBuilder
+typealias DialogBuilder = UiDialogs.DialogBuilder
+
 object Ui {
 
-    // 弹窗 / 半框构建器（内部类，转发类型）
-    class SheetBuilder(private val ctx: Context, private val title: String) {
-        fun body(v: View) = apply { d.body(v) }
-        fun closeable(v: Boolean) = apply { d.closeable(v) }
-        fun aboveNav(v: Boolean) = apply { d.aboveNav(v) }
-        fun show(): android.app.AlertDialog = d.show()
-        private val d = UiSheets.sheet(ctx, title)
-    }
-
-    class DialogBuilder(private val ctx: Context, private val title: String) {
-        private val d = UiDialogs.dialog(ctx, title)
-        fun body(v: View) = apply { d.body(v) }
-        fun positive(text: String, onClick: (() -> Boolean)? = null) =
-            apply { d.positive(text, onClick) }
-        fun positiveDanger(text: String, onClick: (() -> Boolean)? = null) =
-            apply { d.positiveDanger(text, onClick) }
-        fun negative(text: String, onClick: (() -> Unit)? = null) =
-            apply { d.negative(text, onClick) }
-        fun width(dp: Float) = apply { d.width(dp) }
-        fun maxHeight(ratio: Float) = apply { d.maxHeight(ratio) }
-        fun onReady(cb: (android.app.AlertDialog, android.widget.ScrollView, TextView) -> Unit) =
-            apply { d.onReady(cb) }
-        fun show(): android.app.AlertDialog = d.show()
-    }
-
-    fun sheet(ctx: Context, title: String) : SheetBuilder = UiSheets.sheet(ctx, title)
+    fun sheet(ctx: Context, title: String) : UiSheets.SheetBuilder = UiSheets.sheet(ctx, title)
     fun helpBubble(anchor: View, title: String, text: String) = UiSheets.helpBubble(anchor, title, text)
     fun pageTitle(ctx: Context, text: String) : TextView = UiSheets.pageTitle(ctx, text)
     fun note(ctx: Context, text: String) : TextView = UiSheets.note(ctx, text)
@@ -61,7 +39,7 @@ object Ui {
                  hint: String = "") = UiDialogs.adNumber(ctx, value, unit, hint)
     fun adNumberValue(row: LinearLayout) : String = UiDialogs.adNumberValue(row)
     fun adText(ctx: Context, value: String, hint: String) : EditText = UiDialogs.adText(ctx, value, hint)
-    fun dialog(ctx: Context, title: String) : DialogBuilder = UiDialogs.dialog(ctx, title)
+    fun dialog(ctx: Context, title: String) : UiDialogs.DialogBuilder = UiDialogs.dialog(ctx, title)
     fun row(ctx: Context, label: String, value: String, help: String? = null,
             onClick: (() -> Unit)? = null) = UiDialogs.row(ctx, label, value, help, onClick)
     fun switchRow(ctx: Context, label: String, init: Boolean, onChange: (Boolean) -> Unit) = UiDialogs.switchRow(ctx, label, init, onChange)

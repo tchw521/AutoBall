@@ -23,7 +23,6 @@ import android.widget.TextView
 import android.widget.Toast
 import com.autoball.AB
 import com.autoball.core.util.Display
-import com.autoball.core.util.Perf
 
 /**
  * 通用弹窗 / 紧凑弹窗行 / 表单行。
@@ -127,7 +126,7 @@ object UiDialogs {
                         Display.dpInt(ctx, 14f), Display.dpInt(ctx, 14f))
                 }
                 neg?.let { (t, cb) ->
-                    val b = button(ctx, t, false)
+                    val b = UiBits.button(ctx, t, false)
                     b.setOnClickListener { cb?.invoke(); d?.dismiss() }
                     foot.addView(b, LinearLayout.LayoutParams(0,
                         Display.dpInt(ctx, 39f), 1f).apply {
@@ -135,7 +134,7 @@ object UiDialogs {
                     })
                 }
                 pos?.let { (t, cb) ->
-                    val b = button(ctx, t, true)
+                    val b = UiBits.button(ctx, t, true)
                     if (positiveColor != 0) {
                         b.background = Theme.rect(positiveColor, Theme.BTN_R, ctx)
                     }
@@ -249,7 +248,7 @@ object UiDialogs {
                 layoutParams = LinearLayout.LayoutParams(sz, sz).apply {
                     marginStart = Display.dpInt(ctx, 4f)
                 }
-                setOnClickListener { tip(this, "说明", help) }
+                setOnClickListener { UiOverlays.tip(this, "说明", help) }
             })
         }
         return row
@@ -376,7 +375,7 @@ object UiDialogs {
                 layoutParams = LinearLayout.LayoutParams(s, s).apply {
                     marginStart = Display.dpInt(ctx, 8f)
                 }
-                setOnClickListener { tip(this, "说明", help) }
+                setOnClickListener { UiOverlays.tip(this, "说明", help) }
             })
         }
         onClick?.let { cb ->
