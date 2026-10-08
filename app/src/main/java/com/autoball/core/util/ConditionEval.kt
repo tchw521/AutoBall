@@ -90,8 +90,11 @@ object ConditionEval {
                 }
             ActionCondition.Kind.COLOR -> {
                 if (c.value.isBlank()) return Outcome.UNKNOWN
-                when (probe?.findColor(c.value, c.tol, c.region)) {
-                    true -> matchProbes(c, probe)
+                // 先取非空局部变量：`when (probe?.x)` 的分支**不会**让编译器
+                // 智能转换 probe 为非空，直接传给 matchProbes 会编译失败
+                val p = probe ?: return Outcome.UNKNOWN
+                when (p.findColor(c.value, c.tol, c.region)) {
+                    true -> matchProbes(c, p)
                     false -> Outcome.NOT_SATISFIED
                     null -> Outcome.UNKNOWN
                 }

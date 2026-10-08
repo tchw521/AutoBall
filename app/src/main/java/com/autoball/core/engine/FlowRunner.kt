@@ -244,7 +244,9 @@ class FlowRunner(
         if (!hasCoord(a.type)) return a
         val px = Display.dp(App.get(), (r * 2).toFloat()) / 2f
         fun j(v: Float): Float =
-            (v + (Math.random() * 2 - 1) * px / screenW() * 100f)
+            // Math.random() 是 Double，必须先转 Float——
+            // 否则整个表达式是 Double，coerceIn(0f,100f) 没有 Double 重载会编译失败
+            (v + (Math.random().toFloat() * 2f - 1f) * px / screenW() * 100f)
                 .coerceIn(0f, 100f)
         val c = a.copy()
         c.x = j(a.x); c.y = j(a.y)
