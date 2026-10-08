@@ -24,6 +24,14 @@ class JsHost(
     private val log: RunLog
 ) {
 
+    /**
+     * 最近一次触摸位置（供 getMousePosition 使用）。
+     *
+     * 自动精灵里这是"调试用指针位置"；真机上没有鼠标，
+     * 所以返回本引擎最后一次派发的坐标，语义更接近"上次点在哪"。
+     */
+    private var lastTouch: Pair<Float, Float>? = null
+
     companion object {
         /** sleep 上限：避免 sleep(MAX_INT) 让脚本永不响应停止 */
         const val MAX_SLEEP_MS = 300_000L
@@ -78,16 +86,19 @@ class JsHost(
             val v = when (name) {
                 "click" -> {
                     val a = tapAction(coord(args.opt(0), true), coord(args.opt(1), false), 80)
+                    lastTouch = a.x to a.y
                     exec(a)
                 }
                 "press" -> {
                     val a = tapAction(coord(args.opt(0), true), coord(args.opt(1), false),
                         args.optLong(2, 80).coerceAtLeast(10))
+                    lastTouch = a.x to a.y
                     exec(a)
                 }
                 "longClick" -> {
                     val a = tapAction(coord(args.opt(0), true), coord(args.opt(1), false),
                         args.optLong(2, 600).coerceAtLeast(350))
+                    lastTouch = a.x to a.y
                     exec(a)
                 }
                 "swipe" -> {
@@ -97,6 +108,8 @@ class JsHost(
                         x2 = coord(args.opt(2), true); y2 = coord(args.opt(3), false)
                         durationMs = args.optLong(4, 300).coerceAtLeast(30)
                     }
+                    // 取终点：滑动后手指停在终点，调试时更关心"停在哪"
+                    lastTouch = a.x2 to a.y2
                     exec(a)
                 }
                 "sleep" -> {
@@ -456,6 +469,13 @@ class JsHost(
                     exec(a)
                     ctx.getVar(a.varName ?: "screen") ?: ""
                 }
+                /** playMedia：播放音频，同步等到播完（上限 120s，期间响应停止） */
+                "playMedia" -> playMedia(args.optString(0, ""))
+                "getMousePosition" -> {
+                    val p = lastTouch
+                    if (p == null) null else JSONObject()
+                        .put("x", p.first.toDouble()).put("y", p.second.toDouble())
+                }
                 "runAction" -> runAction(args.optString(0, ""))
                 "check" -> evalCondition(args.optString(0, ""))
                 "stop" -> { control.cancel(); true }
@@ -745,6 +765,37 @@ class JsHost(
      * 存进 `Action.path` 的是**像素**——后端直接拿它构造 Path，
      * 与录制产生的动作一致（CoordMapper 的缩放也按像素算）。
      */
+    /** 播放音频：本地路径 / file:// / http(s)://，同步等待播完（上限 120s） */
+    private fun playMedia(src: String): Boolean {
+        if (src.isBlank()) throw CancelException("playMedia 需要文件路径")
+        val mp = android.media.MediaPlayer()
+        return try {
+            if (src.startsWith("http://", true) || src.startsWith("https://", true)) {
+                mp.setDataSource(src)
+            } else {
+                val p = src.removePrefix("file://")
+                val f = java.io.File(p)
+                if (!f.exists()) throw CancelException("音频文件不存在：$p")
+                mp.setDataSource(f.absolutePath)
+            }
+            mp.prepare()
+            mp.start()
+            val t0 = System.currentTimeMillis()
+            // isPlaying 播完自动转 false；流媒体拿不到时长，靠超时兜底
+            while (mp.isPlaying && System.currentTimeMillis() - t0 < 120_000) {
+                if (control.canceled) break
+                Thread.sleep(50)
+            }
+            runCatching { if (mp.isPlaying) mp.stop() }
+            true
+        } catch (e: Exception) {
+            log.warn(ctx.runId, "playMedia 失败：${e.message}")
+            false
+        } finally {
+            runCatching { mp.release() }
+        }
+    }
+
     private fun gesture(args: org.json.JSONArray): Boolean {
         val dur = args.optLong(0, 400).coerceAtLeast(30)
         val pts = ArrayList<com.autoball.core.model.Pt>()

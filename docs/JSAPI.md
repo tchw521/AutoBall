@@ -153,3 +153,21 @@ JS 脚本不可用但动作流完整。Rhino 变体依赖网络拉 `org.mozilla:
 
 - 自动精灵官方文档：`zdjl.*` 98 个 + 全局函数 57 个 + console 14 个
 - 研究细节：`/data/workspace/jsapi_research.md`（坐标 / findLocation / findNode / 存储 / runAction / 异步六项核实）
+
+## v1.33.0 补充
+
+### Promise 已可用
+
+- QuickJS：`JS_Eval` 后宿主排空微任务队列（上限 100000 个 job）
+- 脚本被包成 async IIFE，**支持顶层 await**（仅 QuickJS；Rhino 1.7.15 无 async/await）
+- Rhino：注入同步 Promise 垫片（宿主 API 同步，终态必然已知，同步执行 then 不改变语义）
+- `*Async` **仍是同步别名**：宿主调用本身同步阻塞，返回真 Promise 会让
+  `Promise.all` 看起来并发、实际顺序执行，属误导
+
+### require
+
+```js
+const utils = require('utils.js');   // 私有目录，路径映射同 readFile
+```
+
+只支持同步返回 exports 的模块，不支持 npm 包 / 网络加载。

@@ -51,9 +51,7 @@
 
 ### 阻塞项（下次开发前必须先做）
 
-- [ ] **T-01 推送构建，集中修复 v1.26 + v1.27 编译错误**
-      v1.26.0 / v1.27.0 共 10 个文件改动**均未编译验证**（沙盒无 Android SDK），
-      只做过括号与引用平衡检查。错误会攒一批，须一次推完集中修。
+- [x] ~~T-01 推送构建集中修复~~ ✅ v1.31.0：32 处错误一次修完（双变体通过）
 - [x] ~~T-02 `FloatPanelView` 硬编码色值收敛进 Theme~~ ✅ v1.31.0
       16 处 → 0。浮层底/描边/运行中描边新增令牌；槽位色复用已有 `Theme.G`（不另造色表）
 
@@ -82,6 +80,28 @@
       runAction 已拒绝 RUN_JS / SET_VAR（引擎重入死锁）；type 兼容中文与英文枚举名
 - [x] ~~R-126 `gesture` / `gestures` / touchDown-Move-Up~~ ✅ v1.30.0
       ⚠️ 多指在 Shizuku 下会降级为顺序单指（无障碍并行 stroke 的 ROM 差异）
+
+### P1 · JS 引擎能力
+
+- [x] ~~R-127 QuickJS 排空 Promise 微任务队列~~ ✅ v1.33.0（待 CI 验证）
+      C++ 侧 `JS_Eval` 后加 `drainJobs` 循环（上限 100000 个 job）。
+      **不排空的后果**：脚本里 .then / await 之后的代码永不执行且无报错。
+      配套：脚本包成 async IIFE 以支持**顶层 await**（仅 QuickJS，Rhino 不支持 async）。
+      顶层 promise 由 `settleTopPromise` 展开为终值；永远 pending 时报明确错误。
+      ⚠️ `*Async` **保持同步别名**：宿主调用本身是同步阻塞的，
+      返回真 Promise 会让 `Promise.all` 看起来并发、实际顺序，属误导（R-003）。
+      真并发需先让宿主支持异步派发，另立需求。
+- [x] ~~require 本地模块（CommonJS 简化版）~~ ✅ v1.33.0
+      路径走 readFile 同样的私有目录映射；**不支持 npm 包与网络加载**——
+      本应用不联网也无模块仓库，硬做只会给出能写不能跑的假能力（R-003）
+- [x] ~~playMedia / getMousePosition~~ ✅ v1.33.0
+      playMedia 同步等播完（上限 120s，期间响应停止）；getMousePosition 返回
+      本引擎最后一次派发的坐标（真机无鼠标，语义是"上次点在哪"）
+
+- [ ] **R-128 内置 OCR 模块**（P2）：`ocr()` 当前直接报错，需引三方或自训练模型
+- [ ] **R-129 设备开关类 API**（P3）：wakeupScreen / setScreenBrightness /
+      setWifiEnable / setBluetoothEnable / setCameraFlashEnable 多需系统签名权限，
+      普通应用拿不到；若要实现应按 R-003 **如实报错**而非静默返回 true
 
 ### P2 · 体验补齐
 

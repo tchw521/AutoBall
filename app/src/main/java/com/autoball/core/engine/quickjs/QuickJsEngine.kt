@@ -66,7 +66,10 @@ class QuickJsEngine : JsEngine {
             }
             // 统一 prelude：API 表面只在一处定义，两个引擎共用（R-121）。
             // 加 "\n" 而非空串，避免用户代码首行是 // 注释时被拼接吞掉。
-            val raw = nativeEval(h, JsBridge.PRELUDE + "\n" + code, adapter, timeoutMs)
+            // 包成 async IIFE：让脚本能用顶层 await（R-127）。
+            // 返回的 promise 由 C++ 侧 drain 后展开为终值。
+            val raw = nativeEval(h, JsBridge.PRELUDE + "\n" + JsBridge.wrapAsync(code),
+                adapter, timeoutMs)
             val o = JSONObject(raw)
             JsOutcome(
                 ok = o.optBoolean("ok", false),

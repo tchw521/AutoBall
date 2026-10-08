@@ -31,6 +31,57 @@ object JsBridge {
      * 统一走字符串最稳。
      */
     val PRELUDE: String = """
+// Promise 垫片（Rhino 1.7.15 没有原生 Promise）。
+// 宿主 API 全是同步的，promise 在 return 前必然已定终态，
+// 所以 then 回调**同步立即执行**——不改变单线程脚本的语义，只提前时机。
+// 有原生 Promise 时（QuickJS）不生效。
+(function(g){
+ if(typeof g.Promise!=='undefined') return;
+ function P(exec){
+  var self=this; self._s=0; self._v=null; self._c=[];
+  function settle(st,v){
+   if(self._s!==0) return;
+   self._s=st; self._v=v;
+   for(var i=0;i<self._c.length;i++){self._c[i]();}
+  }
+  try{ exec(function(v){settle(1,v);}, function(e){settle(2,e);}); }
+  catch(e){ settle(2,e); }
+ }
+ P.prototype.then=function(ok,err){
+  var self=this;
+  return new P(function(res,rej){
+   function run(){
+    try{
+     if(self._s===1){ res(typeof ok==='function'?ok(self._v):self._v); }
+     else if(typeof err==='function'){ res(err(self._v)); }
+     else { rej(self._v); }
+    }catch(e){ rej(e); }
+   }
+   if(self._s!==0){ run(); } else { self._c.push(run); }
+  });
+ };
+ P.prototype['catch']=function(f){return this.then(null,f);};
+ P.resolve=function(v){return new P(function(r){r(v);});};
+ P.reject=function(e){return new P(function(r,j){j(e);});};
+ P.all=function(arr){
+  return new P(function(res,rej){
+   var out=[],n=0,i;
+   for(i=0;i<arr.length;i++){
+    (function(idx){
+     P.resolve(arr[idx]).then(function(v){out[idx]=v;if(++n===arr.length)res(out);},rej);
+    })(i);
+   }
+   if(arr.length===0){ res(out); }
+  });
+ };
+ P.race=function(arr){
+  return new P(function(res,rej){
+   for(var i=0;i<arr.length;i++){ P.resolve(arr[i]).then(res,rej); }
+  });
+ };
+ g.Promise=P;
+})(typeof globalThis!=='undefined'?globalThis:(function(){return this;})());
+
 function __call(name){
   var a=[];for(var i=1;i<arguments.length;i++){a.push(arguments[i]);}
   var r=__host(name, JSON.stringify(a));
@@ -119,7 +170,10 @@ var ab={
  requestUrl:function(o){return __call('requestUrl',__s(o));},
  ocr:function(o){return __call('ocr',__s(o));},
  recognitionScreen:function(o){return __call('recognitionScreen',__s(o));},
- findNode:function(q,o){return __call('findNode',__s(q),__s(o));}
+ findNode:function(q,o){return __call('findNode',__s(q),__s(o));},
+ require:function(n){return require(n);},
+ playMedia:function(p,o){return __call('playMedia',p,__s(o));},
+ getMousePosition:function(){return __call('getMousePosition');}
 };
 
 // console：全部写进运行日志（自动精灵里是日志面板）
@@ -142,9 +196,11 @@ var console={
 function __cl(lv,a){var m=[];for(var i=0;i<a.length;i++){m.push(typeof a[i]==='string'?a[i]:__s(a[i]));}
  __call('console',lv,m.join(' '));}
 
-// 异步变体：本引擎未排空 Promise 任务队列（见 R-127），
-// 这里**按同步执行**并直接返回值——保证脚本不挂死，
-// 而不是返回一个永远不会 resolve 的 Promise。
+// 异步变体：宿主调用是**同步阻塞**的（同一个 OS 线程里跑完才返回），
+// 所以这里按同步别名实现并直接返回值。
+// 不是偷懒——若返回真 Promise，Promise.all([...Async, ...Async]) 看着像并发，
+// 实际仍是顺序执行，会误导脚本作者。诚实返回当前行为（R-003）。
+// 脚本自身的 Promise 链（then / await）已由宿主排空队列后正常执行。
 (function(){
  var asyncNames=['sleepAsync','alertAsync','confirmAsync','promptAsync','selectAsync',
   'clickAsync','longClickAsync','swipeAsync','gestureAsync','gesturesAsync',
@@ -160,8 +216,34 @@ function __cl(lv,a){var m=[];for(var i=0;i<a.length;i++){m.push(typeof a[i]==='s
   })(asyncNames[i]);
  }
 })();
+/**
+ * require：加载本地 JS 模块（CommonJS 简化版）。
+ *
+ * 路径走与 readFile 相同的私有目录映射，所以 require('utils.js')
+ * 读的是脚本私有目录里的文件。
+ *
+ * 只支持**同步返回 exports** 的模块——不支持 npm 包与网络加载，
+ * 本应用不联网、也没有模块仓库，硬做只会给出能写不能跑的假能力（R-003）。
+ */
+function require(name){
+ var code=__call('readFile',name);
+ var m={exports:{}};
+ (function(module,exports){ eval(code); })(m,m.exports);
+ return m.exports;
+}
 function __s(q){return (typeof q==='string')?q:JSON.stringify(q);}
 function __arr(a){var r=[];for(var i=0;i<a.length;i++){r.push(a[i]);}return r;}
 var zdjl=ab;
 """.trimIndent()
+
+    /**
+     * 把用户脚本包成 async IIFE（**仅 QuickJS 可用**）。
+     *
+     * 自动精灵文档里的示例大量使用顶层 `await`（`await zdjl.requestUrlAsync(...)`），
+     * 而 QuickJS 的 JS_Eval 在 GLOBAL 模式下不支持顶层 await——不包装会直接语法错误。
+     *
+     * 不能用 Rhino：1.7.15 不支持 async/await，套上去会让所有脚本语法错误。
+     * 代价：报错行号偏移 1 行。
+     */
+    fun wrapAsync(code: String): String = "(async function(){\n$code\n})()"
 }

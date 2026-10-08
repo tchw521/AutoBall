@@ -94,6 +94,93 @@ static void appendJsValueAsJson(JSContext *ctx, std::string &out, JSValueConst v
     }
 }
 
+// ---------- Promise 微任务队列（R-127）----------
+
+// 单次执行最多排空多少个微任务。
+// 脚本可以写出"then 里再 new Promise"的链，队列理论上永不空；
+// deadline 只拦 CPU 时间、不拦 job 数量，所以再设一道数量上限，
+// 否则一个自我 reschedule 的链就能把线程吃满。
+#define AUTOBALL_MAX_JOBS 100000
+
+/**
+ * 排空 Promise 微任务队列。
+ *
+ * QuickJS **不会自动执行** Promise 回调，必须由宿主调用 JS_ExecutePendingJob。
+ * 不排空的后果：脚本里 .then / await 之后的代码永远不执行，
+ * 而且没有任何报错——表现为"脚本跑一半就没动静了"，是最难排查的一类缺陷。
+ *
+ * @return false 表示 job 抛异常或未捕获的 rejection，错误已写入 errOut
+ */
+static bool drainJobs(JSRuntime *rt, std::string &errOut) {
+    int guard = 0;
+    for (;;) {
+        JSContext *jobCtx = nullptr;
+        int r = JS_ExecutePendingJob(rt, &jobCtx);
+        if (r == 0) return true;           // 队列已空
+        if (r < 0) {
+            if (jobCtx == nullptr) { errOut = "Promise 回调执行失败"; return false; }
+            JSValue e = JS_GetException(jobCtx);
+            const char *m = JS_ToCString(jobCtx, e);
+            errOut = (m != nullptr) ? m : "Promise 回调抛出异常";
+            if (m != nullptr) JS_FreeCString(jobCtx, m);
+            JS_FreeValue(jobCtx, e);
+            return false;
+        }
+        if (g_interrupted) return true;    // 超时/被停止：交给外层统一处理
+        if (++guard >= AUTOBALL_MAX_JOBS) {
+            errOut = "Promise 任务过多（超过 100000 个），已中止";
+            return false;
+        }
+    }
+}
+
+/**
+ * 展开顶层 Promise：把 JS_Eval 返回的 promise 换成它的终值。
+ *
+ * 脚本最后一句是 `await xxx` 或返回 promise 时，直接取值只能拿到一个空对象，
+ * 脚本作者会以为"代码没生效"。
+ *
+ * 关于 JS_PromiseState 的安全性：本引擎没有 JS_IsPromise（那是 quickjs-ng 的扩展），
+ * 先用 thenable 粗筛；对非 promise 对象 JS_GetOpaque 不匹配即返回 NULL，
+ * JS_PromiseState 会返回 PENDING，不会崩溃——最坏情况是误报"等待未完成"，
+ * 属于明确报错而非静默，符合 R-003。
+ *
+ * @return false 表示被拒绝或永远 pending，错误已写入 errOut
+ *
+ * 若编译报 `undefined reference to JS_PromiseState`（quickjs 版本过旧），
+ * 可改用两段式：先注册 then 把结果写进全局对象 → drain → 再读全局对象，
+ * 只依赖 JS_GetGlobalObject / JS_GetPropertyStr / JS_Call 这些基础 API。
+ */
+static bool settleTopPromise(JSContext *ctx, JSValue *pv, std::string &errOut) {
+    JSValue v = *pv;
+    if (!JS_IsObject(v)) return true;
+    JSValue then = JS_GetPropertyStr(ctx, v, "then");
+    bool isThenable = JS_IsFunction(ctx, then);
+    JS_FreeValue(ctx, then);
+    if (!isThenable) return true;
+
+    JSPromiseStateEnum st = JS_PromiseState(ctx, v);
+    if (st == JS_PROMISE_FULFILLED) {
+        JSValue r = JS_PromiseResult(ctx, v);
+        JS_FreeValue(ctx, v);
+        *pv = r;
+        return true;
+    }
+    if (st == JS_PROMISE_REJECTED) {
+        JSValue r = JS_PromiseResult(ctx, v);
+        const char *m = JS_ToCString(ctx, r);
+        errOut = (m != nullptr) ? m : "Promise 被拒绝";
+        if (m != nullptr) JS_FreeCString(ctx, m);
+        JS_FreeValue(ctx, r);
+        return false;
+    }
+    // PENDING：宿主 API 是同步的，*Async 也按同步执行，
+    // 所以"永远 pending"只可能是脚本在等一个外部事件——如实告知，不要干等
+    errOut = "脚本在等待一个不会完成的 Promise（本引擎宿主 API 为同步执行，"
+             "*Async 已按同步别名实现；请检查是否依赖了真正的异步事件）";
+    return false;
+}
+
 // 通用转发入口：JS 侧的 __host('click', ...) 走这里。
 // 具体 API 名称与包装全部定义在 Kotlin 的 JsBridge.PRELUDE——
 // 新增 API 不必再改本文件（此前每个 API 都要在这里加一个字符串）。
@@ -278,6 +365,23 @@ Java_com_autoball_core_engine_quickjs_QuickJsEngine_nativeEval(JNIEnv *env, jobj
 
     JSValue ret = JS_Eval(ctx, src.c_str(), src.size(), "<script>", JS_EVAL_TYPE_GLOBAL);
     std::string out;
+
+    // ---- R-127：先排空 Promise 队列，再读结果 ----
+    // 顺序不能反：.then 回调可能修改 ret 指向的对象。
+    // 两段都把失败转成异常，交给下面统一的异常处理分支，避免重复写一份序列化。
+    std::string asyncErr;
+    if (!JS_IsException(ret)) {
+        if (!drainJobs(rt, asyncErr)) {
+            JS_FreeValue(ctx, ret);
+            ret = JS_ThrowInternalError(ctx, "%s", asyncErr.c_str());
+        } else if (g_interrupted) {
+            JS_FreeValue(ctx, ret);
+            ret = JS_ThrowInternalError(ctx, "脚本执行超时或被停止");
+        } else if (!settleTopPromise(ctx, &ret, asyncErr)) {
+            JS_FreeValue(ctx, ret);
+            ret = JS_ThrowInternalError(ctx, "%s", asyncErr.c_str());
+        }
+    }
 
     if (JS_IsException(ret)) {
         JSValue err = JS_GetException(ctx);
