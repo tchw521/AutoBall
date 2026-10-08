@@ -291,11 +291,12 @@ object FloatWorkWindow {
         val scroll = ScrollView(ctx).apply {
             isFillViewport = false
             overScrollMode = View.OVER_SCROLL_NEVER
-            // ScrollView 没有 maxHeight 属性，用固定高度（屏高一半）夹紧，
-            // 窗口不会越滚越长顶满屏幕
+            // 列表固定 4 行高：窗口大小恒定，超出部分内部滚动。
+            // 早前用 WRAP_CONTENT，空态时塌成一条、动作多了又顶满屏幕，
+            // 窗口忽大忽小没法用。
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
-                FloatWindows.maxHeightPx(ctx) / 2)
+                FloatWindows.listHeightPx(ctx))
         }
         val list = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
         scroll.addView(list, ViewGroup.LayoutParams(
@@ -433,16 +434,20 @@ object FloatWorkWindow {
             return
         }
         acts.forEachIndexed { i, a ->
-            h.list.addView(TextView(h.list.context).apply {
+            val lc = h.list.context
+            h.list.addView(TextView(lc).apply {
                 text = "${i + 1}. ${ActionEditor.describe(a)}"
                 textSize = 12f
                 setTextColor(Theme.textSec())
                 setSingleLine(true)
                 ellipsize = android.text.TextUtils.TruncateAt.END
-                setPadding(Display.dpInt(context, 12f),
-                    Display.dpInt(context, 6f),
-                    Display.dpInt(context, 12f),
-                    Display.dpInt(context, 6f))
+                gravity = Gravity.CENTER_VERTICAL
+                // 行高固定，保证"至少四行"是可预期的
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    Display.dpInt(lc, FloatWindows.ROW_H_DP))
+                setPadding(Display.dpInt(lc, 12f), 0,
+                    Display.dpInt(lc, 12f), 0)
             })
         }
     }

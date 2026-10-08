@@ -86,6 +86,17 @@ object FloatWindows {
         return (sz.y * if (sz.x > sz.y) 0.70f else 0.78f).toInt()
     }
 
+    /**
+     * 动作列表固定高度（px）= 4 行 × 行高。
+     *
+     * 窗口要保持固定大小：列表高度不随动作数量变化，
+     * 空的时候不会塌成一条，动作多了也不会把窗口顶满——超出部分内部滚动。
+     */
+    fun listHeightPx(ctx: Context): Int = 4 * Display.dpInt(ctx, ROW_H_DP)
+
+    /** 列表行高（dp）：与 FloatWorkWindow 的行 padding 一致 */
+    const val ROW_H_DP = 34f
+
     /** 加入一个窗口；返回 false 表示已有同名窗口或没有权限 */
     fun add(ctx: Context, view: View, params: WindowManager.LayoutParams): Boolean {
         if (!Display.canDrawOverlay(ctx)) return false

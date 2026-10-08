@@ -115,8 +115,27 @@ class RecordController(private val context: Context) {
         val r = AB.router.execute(action, ctx)
         if (!r.ok) suppressor.clearDispatch()
 
-        append(action)
+        // 采集层采到的是**像素**坐标，而 Action.x/y 的约定是**百分比**。
+        // 不转换的话，列表里会显示成 "点击(612.0%, 1344.0%)" 这种荒谬的值。
+        // 必须在补发之后转——补发要用真实像素。
+        append(toPercent(action))
         return true
+    }
+
+    /** 像素 → 百分比。带坐标的动作才转，其余字段原样保留 */
+    private fun toPercent(a: Action): Action {
+        if (!a.type.hasCoord) return a
+        val p = Display.screenSize(context)
+        val w = p.x.coerceAtLeast(1)
+        val h = p.y.coerceAtLeast(1)
+        a.x = a.x / w * 100f
+        a.y = a.y / h * 100f
+        if (a.type == ActionType.SWIPE || a.type == ActionType.GESTURE_SINGLE ||
+            a.type == ActionType.GESTURE_MULTI) {
+            a.x2 = a.x2 / w * 100f
+            a.y2 = a.y2 / h * 100f
+        }
+        return a
     }
 
     private fun append(a: Action) {

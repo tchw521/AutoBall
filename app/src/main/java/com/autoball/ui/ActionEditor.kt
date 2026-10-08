@@ -392,6 +392,28 @@ object ActionEditor {
                 },
                 help = "不检测 / 图片存在 / 文字存在 / 颜色存在 / JS 表达式。\n" +
                     "条件不成立时可跳过、等待重试或停止脚本。"))
+
+            // ---- 监听动作（自动精灵同款：动作级钩子）----
+            // 脚本级 9 个时机在「脚本全局设置」里；这里是**本动作**的钩子，
+            // 两者粒度不同，不能互相替代。
+            val lc = a.listeners?.size ?: 0
+            box.addView(zsRow(ctx, "监听动作",
+                valueView(ctx, if (lc > 0) "已设置 $lc 项" else "未设置", lc > 0),
+                null,
+                pick = {
+                    (ctx as? Activity)?.let { act ->
+                        ListenerDialog.show(act, a) { rebuild() }
+                    }
+                },
+                help = "本动作执行前后挂载的动作（截图、日志、兜底）。\n" +
+                    "与「脚本全局设置 → 全局监听动作」的区别：那作用于整段脚本，" +
+                    "这里只作用于当前动作。"))
+
+            // ---- 动作描述（备注，自动精灵在末尾一行）----
+            val descEt = textField(ctx, a.desc ?: "", "选填")
+            readers["desc"] = { a.desc = descEt.text.toString().trim() }
+            box.addView(zsRow(ctx, "动作描述", descEt, null, null,
+                help = "仅作备注，不影响执行；便于日后回看脚本时理解每一步在做什么。"))
         }
 
         rebuild()
