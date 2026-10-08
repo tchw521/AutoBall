@@ -60,7 +60,7 @@ class EditPage(context: Context, private val host: PageHost) : FrameLayout(conte
             Ui.toast(act, "请先选择一个脚本")
             return
         }
-        GlobalSettingsDialog.show(act, flow) { save(); syncGlobal() }
+        GlobalSettingsDialog.showFloat(act, flow) { save(); syncGlobal() }
     }
 
 

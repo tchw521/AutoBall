@@ -94,7 +94,7 @@ class MainActivity : Activity(), PageHost {
         root.addView(navWrap)
 
         // 底部版本条（v3 .verbar）：点一下看更新日志
-        root.addView(Ui.versionBar(this, "v1.10.0", "查看更新日志") {
+        root.addView(Ui.versionBar(this, "v1.11.0", "查看更新日志") {
             ChangeLog.show(this)
         })
 
@@ -200,6 +200,10 @@ class MainActivity : Activity(), PageHost {
         val v = runCatching {
             when (key) {
                 "float" -> FloatSetPage(this, this)
+                "perm" -> MineSections.perm(this, this)
+                "disp" -> MineSections.disp(this, this)
+                "data" -> MineSections.data(this, this)
+                "about" -> MineSections.about(this, this)
                 "log" -> LogPage(this, this)
                 "set" -> SetPage(this, this)
                 "js" -> {

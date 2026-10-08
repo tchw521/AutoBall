@@ -6,11 +6,13 @@ import android.view.Gravity
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.content.Context
 import com.autoball.core.engine.Morph
 import com.autoball.core.model.Flow
 import com.autoball.core.util.Display
 import com.autoball.ui.ListenerDialog
 import com.autoball.ui.Theme
+import com.autoball.float.FloatDialog
 import com.autoball.ui.Ui
 
 /**
@@ -51,11 +53,48 @@ object GlobalSettingsDialog {
 
     /**
      * @param flow 目标脚本流程；修改直接写回该对象
-     * @param onSaved 点「确定」后的回调（通常用于落库）
+     * @param onSaved 点「确定」且校验通过后的回调（通常用于落库）
      */
+    /**
+     * 悬浮窗形态（默认）：直接在当前屏幕上弹出，不把用户拽回应用界面。
+     *
+     * 这是主路径——脚本正跑在别的应用上时调设置，跳回应用会把目标应用切走。
+     * 无悬浮窗权限时回退到 Activity 弹窗。
+     */
+    fun showFloat(ctx: Context, flow: Flow, onSaved: (() -> Unit)? = null) {
+        val box = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
+        val hook = buildBody(ctx, flow, box)
+        val d = FloatDialog.show(ctx, "脚本全局设置")
+            .body(box)
+            .width(Theme.DIALOG_W + 24f)
+            .negative("取消")
+            .positive("确定") { if (hook()) { onSaved?.invoke(); true } else false }
+        if (!d.show()) {
+            val act = ctx as? Activity ?: return
+            show(act, flow, onSaved)
+        }
+    }
+
+    /** Activity 形态：无悬浮窗权限或需要复杂输入时的回退 */
     fun show(ctx: Activity, flow: Flow, onSaved: (() -> Unit)? = null) {
         val box = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
-        var dlg: android.app.Dialog? = null
+        val hook = buildBody(ctx, flow, box)
+        Ui.dialog(ctx, "脚本全局设置")
+            .body(box)
+            .width(Theme.DIALOG_W + 24f)
+            .maxHeight(0.78f)
+            .negative("取消") { }
+            .positive("确定") { if (hook()) { onSaved?.invoke(); true } else false }
+            .show()
+    }
+
+    /**
+     * 构建表单体，返回「确定」时的提交回调。
+     *
+     * 抽出来是为了让悬浮窗形态与 Activity 形态共用同一份表单与取值逻辑——
+     * 两处各写一遍必然出现参数口径不一致。
+     */
+    private fun buildBody(ctx: Context, flow: Flow, box: LinearLayout): () -> Boolean {
 
         // 默认值：重复次数 0 显示为 1 次（0 = 无限），这里按设计稿「选填」留空
         val waitSec = if (flow.defaultWaitMs > 0) (flow.defaultWaitMs / 1000f).toString() else ""
@@ -146,31 +185,25 @@ object GlobalSettingsDialog {
         }
         box.addView(fieldRow(ctx, "全局手势变形", morphEt, null, H_MORPH))
 
-        dlg = Ui.dialog(ctx, "脚本全局设置")
-            .body(box)
-            .width(Theme.DIALOG_W + 24f)
-            .maxHeight(0.78f)
-            .negative("取消") { }
-            .positive("确定") {
-                val v = morphEt.text.toString().trim()
-                if (v.isNotEmpty() && !Morph.valid(v)) {
-                    Ui.toast(ctx, "手势变形格式不正确，应为 a,b,c,d,e,f")
-                    false
-                } else {
-                    flow.morph = v
-                    val w = waitEt.text.toString().trim().toFloatOrNull()
-                    flow.defaultWaitMs = if (w == null || w <= 0f) 0L else (w * 1000).toLong()
-                    val r = repeatEt.text.toString().trim().toIntOrNull()
-                    flow.loopCount = r ?: 0
-                    onSaved?.invoke()
-                    true
-                }
-            }.show()
+        return {
+            val v = morphEt.text.toString().trim()
+            if (v.isNotEmpty() && !Morph.valid(v)) {
+                Ui.toast(ctx, "手势变形格式不正确，应为 a,b,c,d,e,f")
+                false
+            } else {
+                flow.morph = v
+                val w = waitEt.text.toString().trim().toFloatOrNull()
+                flow.defaultWaitMs = if (w == null || w <= 0f) 0L else (w * 1000).toLong()
+                val r = repeatEt.text.toString().trim().toIntOrNull()
+                flow.loopCount = r ?: 0
+                true
+            }
+        }
     }
 
     // ---------- 复用件 ----------
 
-    private fun numInput(ctx: Activity, value: String, hint: String): EditText =
+    private fun numInput(ctx: Context, value: String, hint: String): EditText =
         EditText(ctx).apply {
             setText(value)
             this.hint = hint
@@ -186,7 +219,7 @@ object GlobalSettingsDialog {
                 LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
 
-    private fun unitView(ctx: Activity, text: String): TextView = TextView(ctx).apply {
+    private fun unitView(ctx: Context, text: String): TextView = TextView(ctx).apply {
         this.text = text
         textSize = 11.5f
         setTextColor(Theme.textTer())
@@ -197,7 +230,7 @@ object GlobalSettingsDialog {
      * 一行：标签（可空）+ 内容 + 「?」气泡。
      * 标签为空时内容整行铺满（勾选框与监听行属于这种）。
      */
-    private fun fieldRow(ctx: Activity, label: String, content: android.view.View,
+    private fun fieldRow(ctx: Context, label: String, content: android.view.View,
                          unit: android.view.View?, help: String): LinearLayout =
         LinearLayout(ctx).apply {
             orientation = LinearLayout.HORIZONTAL

@@ -203,7 +203,7 @@ object RecChrome {
             // 录制中的脚本流程；为空时退化为空流程，仍可设置
             val act = ctx as? android.app.Activity ?: return@iconBtn
             val fl = flowRef ?: com.autoball.core.model.Flow()
-            GlobalSettingsDialog.show(act, fl) { flowRef = fl }
+            GlobalSettingsDialog.showFloat(ctx, fl) { flowRef = fl }
         })
         head.addView(iconBtn(ctx, "✕") { hide() })
         col.addView(head)
