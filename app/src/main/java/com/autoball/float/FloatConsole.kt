@@ -12,7 +12,6 @@ import android.widget.ScrollView
 import android.widget.TextView
 import com.autoball.core.log.RunLog
 import com.autoball.core.util.Display
-import com.autoball.core.util.Perf
 import com.autoball.ui.Theme
 
 /**
@@ -80,7 +79,7 @@ object FloatConsole {
             layoutParams = LinearLayout.LayoutParams(
                 0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         })
-        bar.addView(miniBtn(ctx, "清空") { RunLog.clear() })
+        bar.addView(miniBtn(ctx, "清空") { com.autoball.AB.log.clear() })
         bar.addView(miniBtn(ctx, "✕") { hide() })
         card.addView(bar)
 
