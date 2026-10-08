@@ -20,6 +20,7 @@ import com.autoball.core.model.ScriptKind
 import com.autoball.core.recorder.GestureCompiler
 import com.autoball.core.util.Display
 import com.autoball.core.engine.Morph
+import com.autoball.core.recorder.GlobalSettingsDialog
 
 /**
  * 编辑页（v3 #p-edit）：顶栏 + 字段区 + 动作步骤列表 + JS 预览。
@@ -47,7 +48,22 @@ class EditPage(context: Context, private val host: PageHost) : FrameLayout(conte
     private var globalTv: TextView? = null
 
     /** 脚本全局设置（v3 gdlg：等待 / 重复 / 失败策略 / morph / 监听钩子） */
+    /**
+     * 脚本全局设置：复用统一组件 [GlobalSettingsDialog]，
+     * 与工作台弹窗右上角「⚙」是同一个弹窗，参数口径一致。
+     * （下方 legacyGlobalSettings 保留旧的明细表单，暂未被调用）
+     */
     private fun globalSettings() {
+        val act = context as? Activity ?: return
+        val flow = script?.flow
+        if (flow == null) {
+            Ui.toast(act, "请先选择一个脚本")
+            return
+        }
+        GlobalSettingsDialog.show(act, flow) { save(); syncGlobal() }
+    }
+
+    private fun legacyGlobalSettings() {
         val act = context as? Activity ?: return
         val flow = script?.flow ?: return
         val box = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
@@ -213,6 +229,7 @@ class EditPage(context: Context, private val host: PageHost) : FrameLayout(conte
     private fun build() {
         val root = Kit.root(context)
         root.addView(Kit.topbar(context, "编辑", "未选择脚本", listOf(
+            Kit.actionBtn(context, "⚙", Theme.pri2()) { globalSettings() },
             Kit.actionBtn(context, "✓", Theme.pri()) { save(); host.refreshAll() },
             Kit.actionBtn(context, "⋯") { showMore() }
         ), subtitleView = subTv))

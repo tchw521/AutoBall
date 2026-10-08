@@ -71,6 +71,8 @@ class LiquidNavView(
 
         /** 容器总高 = 顶出部分 + 凝胶本体 */
         fun heightDp(): Float = BAR_DP + OVER_DP
+        /** 导航离屏幕底边的距离：半框避让时要把这段也算进去 */
+        const val BOTTOM_MARGIN_DP = 14f
     }
 
     private val gel = Paint(Paint.ANTI_ALIAS_FLAG)

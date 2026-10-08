@@ -49,7 +49,18 @@ key(4);
         root.addView(Kit.statusBar(context))
 
         val samplePill = Kit.pill(context, "示例") { codeEt.setText(SAMPLE) }
-        root.addView(Kit.subbar(context, "JS 脚本", { host.showPage(0) }, samplePill))
+        // 导入分享码：与「编写 JS 代码」同处一屏
+        val importPill = Kit.pill(context, "导入分享码") {
+            val act = context as? android.app.Activity ?: return@pill
+            ShareImportDialog.show(act, host)
+        }
+        val trailing = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            addView(samplePill)
+            addView(importPill)
+        }
+        root.addView(Kit.subbar(context, "JS 脚本", { host.showPage(0) }, trailing))
 
         val pad = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL

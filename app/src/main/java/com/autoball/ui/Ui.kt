@@ -1,6 +1,7 @@
 package com.autoball.ui
 
 import android.app.AlertDialog
+import android.os.Build
 import android.content.Context
 import android.graphics.Color
 import android.graphics.Typeface
@@ -39,10 +40,14 @@ object Ui {
 
         private var body: View? = null
         private var closeable = true
+        /** 是否上抬到导航栏之上（默认 true：半框不遮挡导航） */
+        private var aboveNav = true
 
         fun body(v: View) = apply { body = v }
         /** 是否显示右上角圆形关闭按钮 */
         fun closeable(v: Boolean) = apply { closeable = v }
+        /** 少数需要真正贴底的半框（如确认类）可关闭避让 */
+        fun aboveNav(v: Boolean) = apply { aboveNav = v }
 
         fun show(): AlertDialog {
             val wrap = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
@@ -95,17 +100,11 @@ object Ui {
                     Display.dpInt(ctx, 10f))
             })
 
-            // 玻璃面板底：顶部圆角 24dp
-            val gd = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
-                if (Theme.isDark()) intArrayOf(Theme.surface(), Theme.bg1())
-                else intArrayOf(Color.WHITE, Theme.surface2())).apply {
-                cornerRadii = floatArrayOf(
-                    Display.dp(ctx, 24f), Display.dp(ctx, 24f),
-                    Display.dp(ctx, 24f), Display.dp(ctx, 24f),
-                    0f, 0f, 0f, 0f)
-                setStroke(1, Theme.line())
-            }
-            wrap.background = gd
+            // 液态玻璃面板：半透明而非实色，顶部圆角 26dp
+            //
+            // 关键：不能是不透明实色——设计稿的半框要能透出底层界面的模糊光，
+            // 否则会盖住背景、也盖住导航栏，看起来像一块贴片。
+            wrap.background = glassSheet(ctx)
 
             dlg = AlertDialog.Builder(ctx).setView(wrap).setCancelable(true).create()
             dlg.show()
@@ -113,6 +112,21 @@ object Ui {
             dlg.window?.setGravity(Gravity.BOTTOM)
             dlg.window?.setLayout(ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT)
+            // 贴在导航栏上方：否则半框会压住导航，用户既看不到导航、
+            // 也没法直接切页。Gravity.BOTTOM 下 y 为正即向上偏移。
+            if (aboveNav) {
+                val a = dlg.window?.attributes
+                if (a != null) {
+                    a.y = Display.dpInt(ctx, LiquidNavView.heightDp() +
+                        LiquidNavView.BOTTOM_MARGIN_DP)
+                    dlg.window?.attributes = a
+                }
+            }
+            // Android 12+ 背后的真实模糊，配合半透明形成玻璃感；
+            // 低端机（lowBlur）下跳过——实时模糊开销很高
+            if (Build.VERSION.SDK_INT >= 31 && !Perf.lowBlur()) {
+                runCatching { dlg.window?.setBackgroundBlurRadius(28) }
+            }
             // 入场：底部滑入 + 轻微上浮
             wrap.translationY = Display.dp(ctx, 48f)
             wrap.alpha = 0f
@@ -122,6 +136,77 @@ object Ui {
     }
 
     fun sheet(ctx: Context, title: String): SheetBuilder = SheetBuilder(ctx, title)
+
+    /**
+     * 液态玻璃面板底。
+     *
+     * 四段渐变营造"上薄下厚"的玻璃厚度感，颜色带 alpha 让底层界面透出来；
+     * 顶缘一条 1px 高光模拟弧面折射。lowBlur 下改为纯半透明，不做渐变。
+     */
+    private fun glassSheet(ctx: Context): GradientDrawable {
+        val dark = Theme.isDark()
+        val grad = if (Perf.lowBlur()) {
+            GradientDrawable().apply {
+                setColor(if (dark) 0xF2201C36.toInt() else 0xF8F7F5FF.toInt())
+            }
+        } else {
+            GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
+                if (dark) intArrayOf(
+                    0xE6242040.toInt(), 0xF01F1A34.toInt(),
+                    0xF41B1730.toInt(), 0xFA171326.toInt())
+                else intArrayOf(
+                    0xE6FFFFFF.toInt(), 0xF2FBFAFF.toInt(),
+                    0xF6F6F4FF.toInt(), 0xFAF2F0FF.toInt()))
+        }
+        grad.cornerRadii = floatArrayOf(
+            Display.dp(ctx, 26f), Display.dp(ctx, 26f),
+            Display.dp(ctx, 26f), Display.dp(ctx, 26f),
+            0f, 0f, 0f, 0f)
+        grad.setStroke(Display.dpInt(ctx, 1f),
+            if (dark) 0x2EFFFFFF else 0x33000000.toInt())
+        return grad
+    }
+
+    /**
+     * 帮助气泡（统一组件）。
+     *
+     * 所有「?」按钮统一走这里——此前各处自己拼气泡，文案与圆角各不相同。
+     * 气泡在锚点上方展开，超出屏幕时自动落到下方。
+     */
+    fun helpBubble(anchor: View, title: String, text: String) {
+        val ctx = anchor.context
+        val box = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            background = GradientDrawable().apply {
+                setColor(if (Theme.isDark()) 0xF21F1B33.toInt() else 0xFAFFFFFF.toInt())
+                cornerRadius = Display.dp(ctx, 12f)
+                setStroke(Display.dpInt(ctx, 1f), Theme.line())
+            }
+            setPadding(Display.dpInt(ctx, 12f), Display.dpInt(ctx, 10f),
+                Display.dpInt(ctx, 12f), Display.dpInt(ctx, 10f))
+            elevation = Display.dp(ctx, 10f)
+        }
+        box.addView(TextView(ctx).apply {
+            this.text = title
+            textSize = 12f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(Theme.pri2())
+            setPadding(0, 0, 0, Display.dpInt(ctx, 4f))
+        })
+        box.addView(TextView(ctx).apply {
+            this.text = text
+            textSize = 11.5f
+            setTextColor(Theme.textSec())
+            setLineSpacing(Display.dp(ctx, 2f), 1.6f)
+        })
+        val pw = android.widget.PopupWindow(box,
+            Display.dpInt(ctx, 236f),
+            android.view.ViewGroup.LayoutParams.WRAP_CONTENT, true)
+        pw.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+        pw.isOutsideTouchable = true
+        pw.elevation = Display.dp(ctx, 10f)
+        pw.showAsDropDown(anchor, -Display.dpInt(ctx, 150f), -Display.dpInt(ctx, 8f))
+    }
 
     /** 页面大标题（各页统一，消除散落的硬编码 TextView） */
     fun pageTitle(ctx: Context, text: String): TextView = TextView(ctx).apply {
