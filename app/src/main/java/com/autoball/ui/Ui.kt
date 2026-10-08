@@ -301,9 +301,10 @@ object Ui {
          * 早前这类二级选择是另开一个 Dialog，两个 Dialog 争同一窗口层级，
          * 内层常被外层遮住——就地换页彻底避开这个问题，也保留了外层已填的表单内容。
          */
-        private var onReady: ((AlertDialog, LinearLayout, TextView) -> Unit)? = null
+        // 容器用 ScrollView（弹窗体本身可滚动），换页时对它 removeAllViews 再 addView
+        private var onReady: ((AlertDialog, android.widget.ScrollView, TextView) -> Unit)? = null
 
-        fun onReady(cb: (AlertDialog, LinearLayout, TextView) -> Unit) =
+        fun onReady(cb: (AlertDialog, android.widget.ScrollView, TextView) -> Unit) =
             apply { onReady = cb }
 
         fun body(v: View) = apply { body = v }

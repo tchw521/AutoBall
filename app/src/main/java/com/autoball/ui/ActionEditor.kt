@@ -192,7 +192,7 @@ object ActionEditor {
         // 当前显示哪一屏：表单 或 类型列表（就地换页，共用同一个 Dialog）
         var page = 0
         var dlg: Dialog? = null
-        var host: LinearLayout? = null
+        var host: android.widget.ScrollView? = null
         var titleTv: TextView? = null
 
         fun showFormPage() {
@@ -409,7 +409,7 @@ object ActionEditor {
      * 列表能同时显示图标、名称与用途，选错的概率更低。
      */
     private fun showTypeList(ctx: android.content.Context, a: Action,
-                             host: LinearLayout, titleTv: TextView,
+                             host: android.widget.ScrollView, titleTv: TextView,
                              onChange: () -> Unit) {
         val box = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
         val groups = OPTIONS.map { it.group }.distinct()
