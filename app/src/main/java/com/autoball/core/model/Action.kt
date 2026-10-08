@@ -33,7 +33,6 @@ data class NodeSpec(
     var clickableOnly: Boolean = true
 ) {
     fun toJson(): JSONObject = JSONObject().apply {
-        put("optionLabel", optionLabel)
         text?.let { put("text", it) }
         id?.let { put("id", it) }
         desc?.let { put("desc", it) }
@@ -171,6 +170,7 @@ class Action {
 
     // ---------- JSON ----------
     fun toJson(): JSONObject = JSONObject().apply {
+        put("optionLabel", optionLabel)
         put("id", id)
         put("type", type.name)
         comment?.let { put("comment", it) }

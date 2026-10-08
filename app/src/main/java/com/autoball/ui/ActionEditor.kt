@@ -294,7 +294,7 @@ object ActionEditor {
                 val ivEt = numField(ctx,
                     a.repeatIntervalMs.takeIf { it > 0 }?.toString() ?: "", "选填")
                 readers["interval"] = {
-                    a.repeatIntervalMs = ivEt.text.toString().trim().toIntOrNull() ?: 0
+                    a.repeatIntervalMs = ivEt.text.toString().trim().toLongOrNull() ?: 0L
                 }
                 box.addView(zsRow(ctx, "重复间隔", ivEt, "毫秒", null,
                     help = "每次重复之间的间隔。留空则不等待。"))
