@@ -154,7 +154,6 @@ class FloatSetPage(context: Context, private val host: PageHost) : FrameLayout(c
     }
 
     private fun gestRow(slot: BallSlot): LinearLayout {
-        val bound = AB.store.all().firstOrNull { it.slot == slot }
         val row = Kit.rowCard(context)
         row.addView(TextView(context).apply {
             text = when (slot) {

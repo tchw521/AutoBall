@@ -54,6 +54,18 @@ object VarsDialog {
         box.addView(Kit.button(act, "+ 添加变量", false) {
             editVar(act, "", "") { k, v -> vars[k] = v; fill() }
         })
+
+        // R-107：从上次失败回填。调试时不用重跑一遍去猜当时各变量的值。
+        val snap = com.autoball.AB.log.lastFailVars()
+        if (snap != null && snap.isNotEmpty()) {
+            box.addView(Kit.button(act, "↺ 用上次失败时的值回填（${snap.size} 个）", true) {
+                snap.forEach { (k, v) -> vars[k] = v }
+                fill()
+                Ui.toast(act, "已回填，确认无误后点「保存」")
+            })
+            box.addView(Kit.note(act,
+                "变量快照只在脚本失败时记录，总量截断 2KB；成功运行不留存。", 6f))
+        }
         box.addView(Kit.note(act,
             "手动添加的变量会写回脚本，作为「设置变量」动作的初始值。", 6f))
 

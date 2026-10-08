@@ -138,7 +138,10 @@ class FlowRunner(
                 if (!okAll && a.type != ActionType.RUN_JS) {
                     // 「有动作失败立即暂停」：防止后续动作在错误界面上乱点
                     if (flow.failStop) {
-                        log.error(ctx.runId, "动作失败且已开启失败暂停，中止脚本：${a.type.label}")
+                        // 失败时记录变量快照（R-107）：调试时可直接回填到变量面板，
+                        // 不用手动重跑一遍去猜当时各变量是什么值
+                        log.errorWithVars(ctx.runId,
+                            "动作失败且已开启失败暂停，中止脚本：${a.type.label}", ctx.vars)
                         fire("er")
                         return Outcome(false, executed, failed, "动作失败，已按设置暂停")
                     }
@@ -166,6 +169,9 @@ class FlowRunner(
         }
 
         val msg = if (failed == 0) null else "完成，其中 $failed 个动作失败"
+        if (failed > 0) {
+            log.errorWithVars(ctx.runId, msg ?: "存在失败动作", ctx.vars)
+        }
         return Outcome(failed == 0, executed, failed, msg)
     }
 
