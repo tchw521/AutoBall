@@ -201,7 +201,7 @@ object MineSections {
         val g1 = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
         g1.addView(Kit.valueRow(ctx, "脚本引擎", JsEngines.engineName() +
             if (JsEngines.engineName() == "quickjs") "（未内置源码时自动降级）" else "",
-            "⚙", Theme.pri2()))
+            "⚙", Theme.pri2()) { })
         g1.addView(Kit.valueRow(ctx, "版本", "v1.11.0", "ⓘ", Theme.pri2()) {
             val act = ctx as? Activity ?: return@valueRow
             ChangeLog.show(act)

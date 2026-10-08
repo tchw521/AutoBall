@@ -153,7 +153,8 @@ object GlobalSettingsDialog {
             setPadding(Display.dpInt(ctx, 8f), Display.dpInt(ctx, 5f),
                 Display.dpInt(ctx, 8f), Display.dpInt(ctx, 5f))
             setOnClickListener {
-                ListenerDialog.show(ctx, flow) {
+                val act = ctx as? Activity ?: return@setOnClickListener
+                ListenerDialog.show(act, flow) {
                     val (stages, n) = flow.hookSummary()
                     listenTv.text = if (stages == 0) "未设置" else "已设置 $stages 项 · $n 个动作"
                     listenTv.setTextColor(if (stages == 0) Theme.textTer() else Theme.pri2())
