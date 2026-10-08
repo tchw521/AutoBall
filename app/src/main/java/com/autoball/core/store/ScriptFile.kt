@@ -56,13 +56,15 @@ object ScriptFile {
         return i to { uri -> writeTo(uri, scripts) }
     }
 
-    fun writeTo(uri: Uri, scripts: List<Script>): String? = try {
-        val ctx = com.autoball.App.get()
-        ctx.contentResolver.openOutputStream(uri)?.use {
-            it.write(build(scripts).toByteArray())
-        } ?: return "无法写入文件"
-        null
-    } catch (e: Exception) { "导出失败：${e.message}" }
+    fun writeTo(uri: Uri, scripts: List<Script>): String? {
+        return try {
+            val ctx = com.autoball.App.get()
+            val os = ctx.contentResolver.openOutputStream(uri)
+            if (os == null) return "无法写入文件"
+            os.use { it.write(build(scripts).toByteArray()) }
+            null
+        } catch (e: Exception) { "导出失败：${e.message}" }
+    }
 
     /** 导入：弹出系统文件选择器 */
     fun importIntent(): Intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
