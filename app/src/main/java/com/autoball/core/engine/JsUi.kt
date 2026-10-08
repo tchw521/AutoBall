@@ -75,7 +75,8 @@ object JsUi {
 
     /**
      * select：单选/多选列表。
-     * 返回 `{ result: Boolean, items: [下标...] }`；拿不到答复时 result=false。
+     * 返回 JSON 串：result（是否有答复）+ items（选中下标数组）。
+     * 拿不到答复时 result=false、items 为空。
      */
     fun select(ctx: Context, title: String, items: List<String>, selected: List<Int>,
                multi: Boolean, timeoutMs: Long): Answer =
