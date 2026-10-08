@@ -127,6 +127,38 @@ class SetPage(context: Context, private val host: PageHost) : FrameLayout(contex
             "⚙", Theme.pri2()) { })
         wrap.addView(Kit.settingCard(context, g4))
 
+        // ================= 数据与分组 =================
+        wrap.addView(Kit.groupHead(context, "数据与分组"))
+        val g5 = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+        g5.addView(Kit.valueRow(context, "分组管理", "新建 / 重命名 / 换色 / 删除分组",
+            "◫", Theme.pri()) { host.showPage(0) })
+        g5.addView(Kit.valueRow(context, "导入脚本", "从分享码导入",
+            "⤓", Theme.ok()) {
+            val act = context as? android.app.Activity ?: return@valueRow
+            ShareImportDialog.show(act, host)
+        })
+        g5.addView(Kit.valueRow(context, "导出全部", "把所有脚本导出为分享码",
+            "⤒", Theme.pri2()) { exportAll() })
+        g5.addView(Kit.valueRow(context, "运行日志", "查看每一步的执行结果",
+            "≡", Theme.warn()) { host.openSubPage("log") })
+        g5.addView(Kit.valueRow(context, "悬浮设置", "悬浮球 / 悬浮窗 / 手势绑定",
+            "◉", Theme.pri()) { host.openSubPage("float") })
+        wrap.addView(Kit.settingCard(context, g5))
+
+        // ================= 关于 =================
+        wrap.addView(Kit.groupHead(context, "关于"))
+        val g6 = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+        g6.addView(Kit.valueRow(context, "版本", "v1.8.0 · QuickJS / Rhino 双构建",
+            "ⓘ", Theme.pri2()) {
+            val act = context as? android.app.Activity ?: return@valueRow
+            ChangeLog.show(act)
+        })
+        g6.addView(Kit.valueRow(context, "合规说明", "本地运行 · 不联网 · 不统计",
+            "⛨", Theme.ok()) {
+            Ui.toast(context, "所有动作由用户手动启动并可随时停止")
+        })
+        wrap.addView(Kit.settingCard(context, g6))
+
         wrap.addView(Kit.tip(context,
             "所有设置立即生效并本地保存，不会上传。顶栏「↺」可恢复默认（主题保持不变）。"))
     }
@@ -180,6 +212,22 @@ class SetPage(context: Context, private val host: PageHost) : FrameLayout(contex
                 render()
                 true
             }.show()
+    }
+
+    /** 导出全部脚本为分享码 */
+    private fun exportAll() {
+        val act = context as? android.app.Activity ?: return
+        val all = AB.store.all()
+        if (all.isEmpty()) {
+            Ui.toast(act, "还没有脚本可导出")
+            return
+        }
+        runCatching {
+            val code = com.autoball.core.store.ShareCode.encodeAll(all)
+            ShareImportDialog.showCopy(act, "全部脚本（${all.size} 个）", code)
+        }.onFailure {
+            Ui.toast(act, "导出失败：${it.message}")
+        }
     }
 
     /** 恢复默认：主题保持用户当前选择，其余全部回退 */

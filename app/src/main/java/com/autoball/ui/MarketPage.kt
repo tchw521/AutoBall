@@ -163,6 +163,18 @@ class MarketPage(context: Context, private val host: PageHost) : FrameLayout(con
         list.forEach { s -> mineCard(s) }
     }
 
+    /** 相对时间：社区卡片右上角（设计稿 ptime） */
+    private fun ago(ts: Long): String {
+        val d = (System.currentTimeMillis() - ts) / 1000L
+        return when {
+            d < 60 -> "刚刚"
+            d < 3600 -> "${d / 60} 分钟前"
+            d < 86400 -> "${d / 3600} 小时前"
+            d < 86400 * 30 -> "${d / 86400} 天前"
+            else -> "${d / (86400 * 30)} 个月前"
+        }
+    }
+
     private fun renderSamples() {
         samples.forEachIndexed { i, (name, desc, flow) ->
             box.addView(card(
@@ -170,6 +182,8 @@ class MarketPage(context: Context, private val host: PageHost) : FrameLayout(con
                 title = name,
                 desc = desc,
                 tag = null,
+                stats = "内置 · ${flow.actions.size} 步 · 无需联网",
+                timeAgo = "示例",
                 onImport = {
                     val s = Script.blank(name)
                     s.kind = ScriptKind.FLOW
@@ -190,6 +204,8 @@ class MarketPage(context: Context, private val host: PageHost) : FrameLayout(con
                 title = m.name,
                 desc = m.desc,
                 tag = if (m.installed) "已装" else null,
+                stats = "扩展模块 · 约 ${m.sizeMb}MB · 按需下载",
+                timeAgo = "官方",
                 onImport = {
                     Ui.toast(context,
                         if (m.installed) "「${m.name}」已安装"
@@ -216,6 +232,8 @@ class MarketPage(context: Context, private val host: PageHost) : FrameLayout(con
             title = s.name,
             desc = "共 ${s.flow?.actions?.size ?: 0} 个动作 · 已运行 ${s.runCount} 次",
             tag = if (s.isDefault) "默认" else null,
+            stats = "${s.flow?.actions?.size ?: 0} 步 · 已运行 ${s.runCount} 次",
+            timeAgo = ago(s.updatedAt),
             onImport = {
                 val act = context as? Activity
                 if (act != null) {
@@ -234,7 +252,8 @@ class MarketPage(context: Context, private val host: PageHost) : FrameLayout(con
      * pfoot（3 个 mini + 右侧 imp）
      */
     private fun card(author: String, title: String, desc: String, tag: String?,
-                     onImport: () -> Unit, onPreview: () -> Unit): LinearLayout {
+                     onImport: () -> Unit, onPreview: () -> Unit,
+                     stats: String = "", timeAgo: String = ""): LinearLayout {
         val c = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             background = Theme.rect(Theme.surface(), Theme.RADIUS, context, Theme.line())
@@ -272,6 +291,13 @@ class MarketPage(context: Context, private val host: PageHost) : FrameLayout(con
                 marginStart = Display.dpInt(context, 9f)
             }
         })
+        if (timeAgo.isNotEmpty()) {
+            head.addView(TextView(context).apply {
+                text = timeAgo
+                textSize = 10.5f
+                setTextColor(Theme.textTer())
+            })
+        }
         c.addView(head)
 
         // .ptitle（标题 + 标签）
@@ -305,6 +331,24 @@ class MarketPage(context: Context, private val host: PageHost) : FrameLayout(con
             setLineSpacing(Display.dp(context, 2f), 1.65f)
             setPadding(0, 0, 0, Display.dpInt(context, 10f))
         })
+
+        // 统计行：步数 / 运行次数 / 更新时间（设计稿 pstats）
+
+        if (stats.isNotEmpty()) {
+
+        c.addView(TextView(context).apply {
+
+        text = stats
+
+        textSize = 11f
+
+        textColor = Theme.textTer()
+
+        setPadding(0, Display.dpInt(context, 6f), 0, 0)
+
+        })
+
+        }
 
         // .pfoot：3 个 mini + imp
         val foot = LinearLayout(context).apply {

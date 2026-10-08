@@ -31,7 +31,7 @@ class ScriptPage(
 
     companion object { const val TAG = "脚本" }
 
-    private var groupIdx = 0
+    private var curGroupId = "all"
     private var chipIdx = 0
     private val CHIPS = arrayOf("全部", "最近运行", "已绑定手势", "已禁用")
     private var query = ""
@@ -46,12 +46,44 @@ class ScriptPage(
     private lateinit var countTv: TextView
 
     /** 分组：0=全部，其后为真实分组 */
-    private fun groups(): List<Pair<String?, Int>> {
-        val used = AB.store.all().map { it.groupId }.distinct()
-        val out = ArrayList<Pair<String?, Int>>()
-        out.add(null to 0) // 全部（渐变实心）
-        used.forEachIndexed { i, g -> out.add(g to (i + 1)) }
+    /** 分组条目：全部 / 自定义分组 / 按应用分组，三段并存 */
+    private data class GroupEntry(
+        val id: String, val name: String, val kind: String,
+        val pkg: String?, val colorIdx: Int
+    )
+
+    /**
+     * 分组列表。
+     *
+     * 此前是从「脚本实际用到的 groupId」反推，导致两个问题：
+     * 1. 新建的空分组因为没有任何脚本归属，立刻从列表消失；
+     * 2. 持久化下来的分组名与配色根本没被读取（读的是 id 不是 name）。
+     *
+     * 改为以持久化分组为准，并额外生成「按应用」虚拟分组
+     * （来自脚本的 targetPkg，与设计稿 .gb-head「按应用」一致）。
+     */
+    private fun groupEntries(): List<GroupEntry> {
+        val out = ArrayList<GroupEntry>()
+        out.add(GroupEntry("all", "全部", "all", null, 0))
+        AB.store.groups().forEach {
+            out.add(GroupEntry(it.id, it.name, "custom", null, it.colorIndex))
+        }
+        val pkgs = AB.store.all().mapNotNull { sc -> sc.targetPkg }
+            .filter { it.isNotBlank() }.distinct()
+        pkgs.forEach { pkg ->
+            out.add(GroupEntry("pkg:$pkg", Display.appLabel(context, pkg), "app", pkg, 6))
+        }
         return out
+    }
+
+    /** 该分组下的脚本数 */
+    private fun countOf(e: GroupEntry): Int {
+        val all = AB.store.all()
+        return when (e.kind) {
+            "all" -> all.size
+            "app" -> all.count { it.targetPkg == e.pkg }
+            else -> all.count { it.groupId == e.id }
+        }
     }
 
     /**
@@ -144,11 +176,35 @@ class ScriptPage(
         ))
     }
 
+    /** 分组栏分区标题（设计稿 .gb-head） */
+    private fun gbHead(title: String): TextView = TextView(context).apply {
+        text = title
+        textSize = 10.5f
+        setTypeface(null, Typeface.BOLD)
+        setTextColor(Theme.textTer())
+        setPadding(Display.dpInt(context, 12f), Display.dpInt(context, 8f),
+            Display.dpInt(context, 12f), Display.dpInt(context, 4f))
+    }
+
+    /** 按 id 打开分组菜单（重命名 / 换色 / 删除） */
+    private fun groupMenuById(anchor: View, gid: String) {
+        val gs = AB.store.groups()
+        val i = gs.indexOfFirst { it.id == gid }
+        if (i >= 0) groupMenu(anchor, i)
+    }
+
     private fun renderGroups() {
         groupBar.removeAllViews()
-        val gs = groups()
-        gs.forEachIndexed { i, (name, _) ->
-            val on = i == groupIdx
+        val gs = groupEntries()
+        // 分区标题：自定义分组 / 按应用（设计稿 .gb-head）
+        groupBar.addView(gbHead("自定义分组"))
+        var lastKind = "custom"
+        gs.forEachIndexed { i, e ->
+            val on = e.id == curGroupId
+            if (e.kind == "app" && lastKind != "app") {
+                groupBar.addView(gbHead("按应用"))
+                lastKind = "app"
+            }
             val row = LinearLayout(context).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
@@ -162,9 +218,9 @@ class ScriptPage(
                     Display.dpInt(context, 9f), Display.dpInt(context, 7f))
                 background = Theme.rect(if (on) Theme.surface() else Color.TRANSPARENT,
                     12f, context)
-                setOnClickListener { groupIdx = i; renderGroups(); renderList() }
+                setOnClickListener { curGroupId = e.id; renderGroups(); renderList() }
                 setOnLongClickListener {
-                    if (i > 0) groupMenu(this, i)
+                    if (e.kind == "custom") groupMenuById(this, e.id)
                     true
                 }
             }
@@ -179,9 +235,8 @@ class ScriptPage(
                     layoutParams = lp
                 })
             }
-            val cnt = if (name == null) AB.store.all().size
-            else AB.store.all().count { it.groupId == name }
-            row.addView(bubble(if (i == 0) "全部" else name ?: "默认", i - 1, i == 0))
+            val cnt = countOf(e)
+            row.addView(bubble(e.name, e.colorIdx, e.kind == "all"))
             row.addView(TextView(context).apply {
                 text = cnt.toString()
                 textSize = 10f
@@ -263,11 +318,12 @@ class ScriptPage(
 
     private fun filtered(): List<Script> {
         var l: List<Script> = AB.store.all()
-        val gs = groups()
-        if (groupIdx >= gs.size) groupIdx = 0
-        if (groupIdx > 0) {
-            val g = gs[groupIdx].first
-            l = l.filter { it.groupId == g }
+        val e = groupEntries().firstOrNull { it.id == curGroupId }
+            ?: groupEntries()[0].also { curGroupId = "all" }
+        l = when (e.kind) {
+            "all" -> l
+            "app" -> l.filter { it.targetPkg == e.pkg }
+            else -> l.filter { it.groupId == e.id }
         }
         l = when (chipIdx) {
             1 -> l.sortedByDescending { it.runCount }
@@ -616,7 +672,7 @@ class ScriptPage(
     /** 分组长按：重命名 / 换色 / 删除 */
     private fun groupMenu(anchorView: View, i: Int) {
         val gs = AB.store.groups()
-        val g = gs.getOrNull(i - 1) ?: return
+        val g = gs.getOrNull(i) ?: return
         Ui.menu(context, anchorView,
             listOf("重命名" to false, "更换颜色" to false, "删除分组" to true)) { k ->
             when (k) {
@@ -682,7 +738,7 @@ class ScriptPage(
             .negative("取消")
             .positiveDanger("删除") {
                 AB.store.deleteGroup(g.id)
-                groupIdx = 0
+                curGroupId = "all"
                 renderGroups(); renderList()
                 true
             }.show()

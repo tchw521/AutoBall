@@ -220,7 +220,7 @@ class MinePage(context: Context, private val host: PageHost) : FrameLayout(conte
         box.addView(Kit.section(context, "关于"))
         box.addView(infoRow("脚本引擎", JsEngines.engineName() + if (JsEngines.engineName() == "quickjs")
             "（未内置源码时自动降级为纯 Java 引擎）" else ""))
-        box.addView(infoRow("版本", "v1.7.0"))
+        box.addView(infoRow("版本", "v1.8.0"))
         box.addView(infoRow("更新日志", "查看").apply {
             setOnClickListener { ChangeLog.show(context as? Activity ?: return@setOnClickListener) }
         })
@@ -419,6 +419,19 @@ class MinePage(context: Context, private val host: PageHost) : FrameLayout(conte
         })
         b.addView(l, LinearLayout.LayoutParams(0,
             LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        // 设置入口（齿轮）：把权限、分组管理、导入导出等整合进二级设置页
+        b.addView(TextView(context).apply {
+            text = "⚙"
+            textSize = 17f
+            setTextColor(Theme.textSec())
+            gravity = Gravity.CENTER
+            background = Theme.rect(Theme.surface(), 12f, context, Theme.line())
+            val sz = Display.dpInt(context, 36f)
+            layoutParams = LinearLayout.LayoutParams(sz, sz).apply {
+                marginEnd = Display.dpInt(context, 6f)
+            }
+            setOnClickListener { host.openSubPage("set") }
+        })
         // 主题切换按钮：点击后图标旋转（v3 .iconbtn.tbtn）
         b.addView(TextView(context).apply {
             text = if (Theme.isDark()) "☾" else "☀"

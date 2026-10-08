@@ -60,7 +60,7 @@ class LiquidNavView(
         private val SPEC_L = Color.parseColor("#B3FFFFFF")
 
         private val HALO = Color.parseColor("#7A7DD3FC")
-        val TABS = arrayOf("脚本", "编辑", "制作", "市场", "我的")
+        val TABS = arrayOf("脚本", "编辑", "", "市场", "我的")
 
         /** 凝胶本体高度 */
         private const val BAR_DP = 64f
@@ -298,7 +298,25 @@ class LiquidNavView(
             canvas.drawCircle(cx, cy, r * 0.96f, ring)
             ring.style = Paint.Style.FILL
 
-            drawStar(canvas, cx, cy, Display.dp(context, 14f))
+            drawPlus(canvas, cx, cy, Display.dp(context, 13f))
+        }
+
+        /**
+         * 加号（设计稿：中间凸起 Fab 为「＋」，四角为圆角）。
+         *
+         * 此前画的是四角星，与设计稿的「＋」不符；同时星形在小尺寸下
+         * 尖角容易糊成一团，加号在 56dp 上更清晰。
+         */
+        private fun drawPlus(canvas: Canvas, cx: Float, cy: Float, r: Float) {
+            val w = r * 0.30f          // 笔画半宽
+            val len = r                 // 笔画半长
+            star.setShadowLayer(Display.dp(context, 2f), 0f, Display.dp(context, 1f),
+                Color.parseColor("#590E7FB8"))
+            canvas.drawRoundRect(cx - len, cy - w, cx + len, cy + w,
+                w, w, star)
+            canvas.drawRoundRect(cx - w, cy - len, cx + w, cy + len,
+                w, w, star)
+            star.clearShadowLayer()
         }
 
         private fun drawStar(canvas: Canvas, cx: Float, cy: Float, r: Float) {
