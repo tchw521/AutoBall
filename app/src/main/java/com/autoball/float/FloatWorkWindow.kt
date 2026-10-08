@@ -416,17 +416,18 @@ object FloatWorkWindow {
                 setPadding(Display.dpInt(context, 12f), 0,
                     Display.dpInt(context, 12f), Display.dpInt(context, 12f))
             }
-            row.addView(bigBtn(h.list.context, "开始录制", Theme.ok()) {
+            val lc = h.list.context
+            row.addView(bigBtn(lc, "开始录制", Theme.ok()) {
                 cbRef?.onRecord(script, true)
             }, LinearLayout.LayoutParams(0,
                 LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
-                marginEnd = Display.dpInt(context, 5f)
+                marginEnd = Display.dpInt(lc, 5f)
             })
-            row.addView(bigBtn(h.list.context, "添加动作", Theme.pri()) {
+            row.addView(bigBtn(lc, "添加动作", Theme.pri()) {
                 cbRef?.onAddAction(script)
             }, LinearLayout.LayoutParams(0,
                 LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
-                marginStart = Display.dpInt(context, 5f)
+                marginStart = Display.dpInt(lc, 5f)
             })
             h.list.addView(row)
             return

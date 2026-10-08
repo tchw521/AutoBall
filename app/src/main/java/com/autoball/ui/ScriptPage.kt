@@ -556,11 +556,9 @@ class ScriptPage(
                             if (act != null) ShareImportDialog.showCopy(
                                 act, s.name, com.autoball.core.store.ShareCode.encode(s))
                         }
-                        3 -> askPassThenShare(
-                            context as? android.app.Activity ?: return@setOnClickListener, s)
-                        4 -> ScheduleDialog.show(
-                            context as? android.app.Activity ?: return@setOnClickListener, s) {
-                            AB.store.save(s); renderList()
+                        3 -> (context as? android.app.Activity)?.let { askPassThenShare(it, s) }
+                        4 -> (context as? android.app.Activity)?.let {
+                            ScheduleDialog.show(it, s) { AB.store.save(s); renderList() }
                         }
                         5 -> host.openSubPage("float")
                         6 -> renameDialog(s)

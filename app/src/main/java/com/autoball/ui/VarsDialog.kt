@@ -51,10 +51,8 @@ object VarsDialog {
 
         // 自动精灵的变量面板可手动添加变量，这里补齐——
         // 否则只能等脚本跑起来才有值，调试时很不方便
-        box.addView(Kit.button(act, "+ 添加变量", false).apply {
-            setOnClickListener {
-                editVar(act, "", "") { k, v -> vars[k] = v; fill() }
-            }
+        box.addView(Kit.button(act, "+ 添加变量", false) {
+            editVar(act, "", "") { k, v -> vars[k] = v; fill() }
         })
         box.addView(Kit.note(act,
             "手动添加的变量会写回脚本，作为「设置变量」动作的初始值。", 6f))
