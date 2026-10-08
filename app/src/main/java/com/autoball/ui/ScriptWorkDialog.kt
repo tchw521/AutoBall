@@ -8,6 +8,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import com.autoball.AB
 import com.autoball.core.model.Script
+import com.autoball.core.recorder.GlobalSettingsDialog
 import com.autoball.core.util.Display
 
 /**

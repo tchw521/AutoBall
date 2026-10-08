@@ -34,6 +34,9 @@ import com.autoball.ui.Theme
  */
 object RecChrome {
 
+    /** 当前录制对应的脚本流程，供全局设置写入 */
+    var flowRef: com.autoball.core.model.Flow? = null
+
     private val handler = Handler(Looper.getMainLooper())
 
     @Volatile private var win: FrameLayout? = null
