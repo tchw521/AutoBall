@@ -63,63 +63,7 @@ class EditPage(context: Context, private val host: PageHost) : FrameLayout(conte
         GlobalSettingsDialog.show(act, flow) { save(); syncGlobal() }
     }
 
-    private fun legacyGlobalSettings() {
-        val act = context as? Activity ?: return
-        val flow = script?.flow ?: return
-        val box = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
 
-        // 默认等待
-        box.addView(Ui.adRow(act, "默认等待",
-            "${flow.defaultWaitMs}${if (flow.waitUnit == "s") " 秒" else if (flow.waitUnit == "min") " 分" else " 毫秒"}",
-            flow.defaultWaitMs > 0, "每个动作之间额外等待的时间") {
-            Ui.popMenu(act, box, listOf("0 毫秒", "200 毫秒", "500 毫秒", "1 秒", "3 秒"),
-                WAITS.indexOf(flow.defaultWaitMs).coerceAtLeast(0)) { k ->
-                flow.defaultWaitMs = WAITS[k]
-                save(); syncGlobal()
-            }
-        })
-        // 重复次数
-        box.addView(Ui.adRow(act, "重复次数",
-            if (flow.loopCount == 0) "1 次" else "${flow.loopCount} 次",
-            false, "填 0 代表无限循环，配合循环开关使用") {
-            Ui.popMenu(act, box, listOf("1 次", "3 次", "5 次", "10 次", "无限"),
-                if (flow.loopCount == 0) 4
-                else listOf(1L, 3L, 5L, 10L).indexOf(flow.loopCount.toLong()).coerceAtLeast(0)) { k ->
-                flow.loopCount = if (k == 4) 0 else listOf(1, 3, 5, 10)[k]
-                save(); syncGlobal()
-            }
-        })
-        box.addView(Ui.adSec(act))
-        box.addView(Ui.switchRow(act, "有动作失败立即暂停", flow.failStop) {
-            flow.failStop = it; save(); syncGlobal()
-        })
-        box.addView(Ui.switchRow(act, "失败自动重试一次", flow.retryOnce) {
-            flow.retryOnce = it; save(); syncGlobal()
-        })
-        box.addView(Ui.adSec(act))
-        // morph
-        box.addView(Ui.adRow(act, "手势矩阵变形",
-            if (flow.morph.isBlank()) "未设置" else flow.morph,
-            flow.morph.isNotBlank(),
-            "让坐标带上随机抖动，更接近真人。留空表示不变换") {
-            morphDialog(act, flow)
-        })
-        // 监听钩子
-        val (stages, n) = flow.hookSummary()
-        box.addView(Ui.adRow(act, "全局监听动作",
-            if (stages == 0) "未设置" else "已设置 $stages 项 · $n 个动作",
-            stages > 0, "9 个时机可挂多个动作，用于截图、日志、兜底") {
-            ListenerDialog.show(act, flow) { save(); syncGlobal() }
-        })
-
-        Ui.dialog(act, "脚本全局设置").body(box)
-            .width(Theme.DIALOG_W + 30f).maxHeight(0.76f)
-            .negative("关闭").show()
-    }
-
-    private val WAITS = longArrayOf(0L, 200L, 500L, 1000L, 3000L)
-
-    /** morph 预设选择 + 自定义输入 */
     private fun morphDialog(act: Activity, flow: com.autoball.core.model.Flow) {
         val box = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
         val customRaw = com.autoball.AB.store.getString("morph_presets", "")

@@ -60,104 +60,80 @@ class SetPage(context: Context, private val host: PageHost) : FrameLayout(contex
         wrap.removeAllViews()
 
         // ================= 运行 =================
+        // 合并原「运行」+「脚本权限」中真正影响执行的项：
+        // 防误触、来电暂停、回桌面属于同一类"运行期行为"，不再各占一组
         wrap.addView(Kit.groupHead(context, "运行"))
         val g1 = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
         g1.addView(sw("volKey", "音量键控制", "用音量上/下键快速开始与停止脚本运行",
             "🔊", Theme.pri2()))
-        g1.addView(sw("hideFloat", "隐藏运行浮层", "脚本运行时不显示悬浮控制球，界面更干净",
+        g1.addView(sw("hideFloat", "隐藏运行浮层", "运行时不显示悬浮控制球，界面更干净",
             "◌", Theme.pri()))
-        g1.addView(txt("shotDir", "截图保存目录", "运行与监听动作的截图保存位置",
-            "▣", Theme.warn()))
-        g1.addView(sw("pauseCall", "来电时自动暂停脚本", "通话接通即暂停当前脚本，挂断后可手动继续",
+        g1.addView(sw("pauseCall", "来电时自动暂停", "通话接通即暂停，挂断后可手动继续",
             "☏", Theme.ok()))
-        g1.addView(sw("guardTouch", "运行时防误触", "脚本运行期间屏蔽实体按键与边缘手势",
-            "⛨", Theme.pri2()))
-        g1.addView(sw("backHome", "脚本结束后回到桌面", "运行完成自动按 HOME，方便连续跑下一个",
+        g1.addView(sw("backHome", "结束后回到桌面", "运行完成自动按 HOME",
             "⌂", Theme.textTer()))
+        g1.addView(sw("ignoreBattery", "忽略省电优化", "避免系统休眠杀掉脚本进程",
+            "⚡", Theme.warn()))
         wrap.addView(Kit.settingCard(context, g1))
 
-        // ================= 脚本权限 =================
-        wrap.addView(Kit.groupHead(context, "脚本权限"))
+        // ================= 脚本 =================
+        // 合并原「编辑」+「脚本权限」中属于脚本能力的项
+        wrap.addView(Kit.groupHead(context, "脚本"))
         val g2 = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
-        g2.addView(sw("netPerm", "脚本网络权限", "允许脚本在运行时发起网络请求",
+        g2.addView(pick("recWait", "录制等待时间", "录制后每个动作默认补的等待时长",
+            "◷", Theme.pri2(), listOf("0ms", "300ms", "800ms", "1500ms")))
+        g2.addView(sw("netPerm", "允许脚本联网", "脚本运行时可发起网络请求",
             "◎", Theme.pri2()))
-        g2.addView(sw("clipPerm", "读取剪贴板", "允许脚本读取系统剪贴板内容",
+        g2.addView(sw("clipPerm", "允许读剪贴板", "脚本可读取系统剪贴板内容",
             "▤", Theme.pri()))
-        g2.addView(sw("bgRun", "允许后台运行", "切到其它应用时脚本继续执行",
-            "▯", Theme.ok()))
-        g2.addView(sw("ignoreBattery", "忽略系统省电优化", "避免系统休眠杀掉脚本进程",
-            "⚡", Theme.warn()))
-        g2.addView(sw("mockLoc", "允许模拟位置", "让脚本可以模拟定位，用于打卡类场景",
-            "⌖", Theme.pri()))
+        g2.addView(txt("shotDir", "截图保存目录", "运行与监听动作的截图保存位置",
+            "▣", Theme.warn()))
         wrap.addView(Kit.settingCard(context, g2))
 
-        // ================= 编辑 =================
-        wrap.addView(Kit.groupHead(context, "编辑"))
+        // ================= 界面与性能 =================
+        // 主题、流畅模式、毛玻璃、日志条数：都是"影响观感/开销"的项
+        wrap.addView(Kit.groupHead(context, "界面与性能"))
         val g3 = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
-        g3.addView(pick("recWait", "录制运行等待时间", "录制后每个动作默认补的等待时长",
-            "◷", Theme.pri2(), listOf("0ms", "300ms", "800ms", "1500ms")))
-        g3.addView(sw("snapAlign", "动作吸附对齐", "拖拽动作时自动吸附到网格与动作边缘",
-            "⊞", Theme.ok()))
-        g3.addView(sw("showGrid", "显示坐标网格", "在取点界面显示参考网格",
-            "▦", Theme.textTer()))
-        g3.addView(sw("autoFind", "自动识别控件", "自动识别界面控件并生成选择器，减少坐标依赖",
-            "✦", Theme.pri()))
-        wrap.addView(Kit.settingCard(context, g3))
-
-        // ================= 通用 =================
-        wrap.addView(Kit.groupHead(context, "通用"))
-        val g4 = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
-        // 流畅模式 / 降低毛玻璃：改动后重建界面才能彻底生效
-        g4.addView(Kit.switchRow(context, "流畅模式",
-            "关闭液态流动与循环动画，降低滚动与运行时的掉帧",
+        g3.addView(Kit.switchRow(context, "深色主题", "跟随设计稿双主题",
+            "◐", Theme.pri(), Theme.isDark()) { host.toggleTheme() })
+        g3.addView(Kit.switchRow(context, "流畅模式",
+            "关闭液态流动与循环动画，降低掉帧",
             "⚡", Theme.ok(), Perf.perf()) {
             Perf.setPerf(it)
             host.recreateUi()
         })
-        g4.addView(Kit.switchRow(context, "降低毛玻璃模糊",
+        g3.addView(Kit.switchRow(context, "降低毛玻璃模糊",
             "用纯半透明代替实时背景模糊，低端机提升明显",
             "◍", Theme.pri2(), Perf.lowBlur()) {
             Perf.setLowBlur(it)
             host.recreateUi()
         })
-        g4.addView(pick("logKeep", "日志保留条数", "超出后自动丢弃最早的记录",
+        g3.addView(pick("logKeep", "日志保留条数", "超出后自动丢弃最早的记录",
             "≡", Theme.warn(), listOf("100 条", "200 条", "500 条", "1000 条")))
-        g4.addView(Kit.valueRow(context, "脚本引擎",
-            JsEngines.engineName() + "（当前编译所选）",
-            "⚙", Theme.pri2()) { })
-        wrap.addView(Kit.settingCard(context, g4))
+        wrap.addView(Kit.settingCard(context, g3))
 
-        // ================= 数据与分组 =================
-        wrap.addView(Kit.groupHead(context, "数据与分组"))
-        val g5 = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
-        g5.addView(Kit.valueRow(context, "分组管理", "新建 / 重命名 / 换色 / 删除分组",
+        // ================= 数据与关于 =================
+        wrap.addView(Kit.groupHead(context, "数据与关于"))
+        val g4 = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+        g4.addView(Kit.valueRow(context, "分组管理", "新建 / 重命名 / 换色 / 删除分组",
             "◫", Theme.pri()) { host.showPage(0) })
-        g5.addView(Kit.valueRow(context, "导入脚本", "从分享码导入",
+        g4.addView(Kit.valueRow(context, "导入脚本", "从分享码导入",
             "⤓", Theme.ok()) {
             val act = context as? android.app.Activity ?: return@valueRow
             ShareImportDialog.show(act, host)
         })
-        g5.addView(Kit.valueRow(context, "导出全部", "把所有脚本导出为分享码",
+        g4.addView(Kit.valueRow(context, "导出全部", "把所有脚本导出为分享码",
             "⤒", Theme.pri2()) { exportAll() })
-        g5.addView(Kit.valueRow(context, "运行日志", "查看每一步的执行结果",
+        g4.addView(Kit.valueRow(context, "运行日志", "查看每一步的执行结果",
             "≡", Theme.warn()) { host.openSubPage("log") })
-        g5.addView(Kit.valueRow(context, "悬浮设置", "悬浮球 / 悬浮窗 / 手势绑定",
+        g4.addView(Kit.valueRow(context, "悬浮设置", "悬浮球 / 悬浮窗 / 手势绑定",
             "◉", Theme.pri()) { host.openSubPage("float") })
-        wrap.addView(Kit.settingCard(context, g5))
-
-        // ================= 关于 =================
-        wrap.addView(Kit.groupHead(context, "关于"))
-        val g6 = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
-        g6.addView(Kit.valueRow(context, "版本", "v1.8.0 · QuickJS / Rhino 双构建",
+        g4.addView(Kit.valueRow(context, "版本", "v1.10.0 · QuickJS / Rhino 双构建",
             "ⓘ", Theme.pri2()) {
             val act = context as? android.app.Activity ?: return@valueRow
             ChangeLog.show(act)
         })
-        g6.addView(Kit.valueRow(context, "合规说明", "本地运行 · 不联网 · 不统计",
-            "⛨", Theme.ok()) {
-            Ui.toast(context, "所有动作由用户手动启动并可随时停止")
-        })
-        wrap.addView(Kit.settingCard(context, g6))
+        wrap.addView(Kit.settingCard(context, g4))
 
         wrap.addView(Kit.tip(context,
             "所有设置立即生效并本地保存，不会上传。顶栏「↺」可恢复默认（主题保持不变）。"))

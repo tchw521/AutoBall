@@ -115,12 +115,17 @@ object Ui {
             // 贴在导航栏上方：否则半框会压住导航，用户既看不到导航、
             // 也没法直接切页。Gravity.BOTTOM 下 y 为正即向上偏移。
             if (aboveNav) {
+                // 上抬到导航栏之上。Gravity.BOTTOM 下 y 为正即向上偏移。
                 val a = dlg.window?.attributes
                 if (a != null) {
                     a.y = Display.dpInt(ctx, LiquidNavView.heightDp() +
                         LiquidNavView.BOTTOM_MARGIN_DP)
                     dlg.window?.attributes = a
                 }
+                // 关键：清掉背景压暗。AlertDialog 默认 dim 会把底层界面与导航栏
+                // 一起压暗，视觉上等同于"遮住"了导航——即便几何位置已经错开。
+                dlg.window?.clearFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+                dlg.window?.setDimAmount(0f)
             }
             // Android 12+ 背后的真实模糊，配合半透明形成玻璃感；
             // 低端机（lowBlur）下跳过——实时模糊开销很高

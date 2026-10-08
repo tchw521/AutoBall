@@ -61,6 +61,14 @@ class LiquidNavView(
 
         private val HALO = Color.parseColor("#7A7DD3FC")
         val TABS = arrayOf("脚本", "编辑", "", "市场", "我的")
+        /** 导航图标（矢量路径，随选中态变色） */
+        private val ICONS = arrayOf(
+            "M4 6h16M4 12h16M4 18h10",                       // 脚本：列表
+            "M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z", // 编辑：铅笔
+            "",                                              // 中央：＋（已由 FAB 绘制）
+            "M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z",  // 市场：商店
+            "M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2M12 11a4 4 0 100-8 4 4 0 000 8z" // 我的：人
+        )
 
         /** 凝胶本体高度 */
         private const val BAR_DP = 64f
@@ -102,19 +110,9 @@ class LiquidNavView(
             setPadding(Display.dpInt(context, 8f), 0, Display.dpInt(context, 8f), 0)
         }
         for (i in TABS.indices) {
-            val tv = TextView(context).apply {
-                text = TABS[i]
-                textSize = 10f
-                setTypeface(null, android.graphics.Typeface.BOLD)
-                if (i == 2) {
-                    // 「制作」标签：落在 FAB 正下方、导航栏内部
-                    gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
-                    setPadding(0, 0, 0, Display.dpInt(context, 6f))
-                } else {
-                    gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
-                    setPadding(0, 0, 0, Display.dpInt(context, 11f))
-                }
-                setTextColor(Theme.textSec())
+            val cell = LinearLayout(context).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER_HORIZONTAL or Gravity.BOTTOM
                 // 只有用户真实点击才通知外部。
                 // 放进 select() 会形成 select → showPage → select 无限递归，启动即栈溢出。
                 setOnClickListener {
@@ -122,8 +120,26 @@ class LiquidNavView(
                     else { select(i); onSelect(i) }
                 }
             }
+            val iv = IconView(context, ICONS[i]).apply {
+                val lp = LinearLayout.LayoutParams(Display.dpInt(context, 21f),
+                    Display.dpInt(context, 21f))
+                lp.bottomMargin = Display.dpInt(context, 2f)
+                layoutParams = lp
+                if (i == 2) visibility = View.INVISIBLE   // 中央由 FAB 承担
+            }
+            icons.add(iv)
+            cell.addView(iv)
+            val tv = TextView(context).apply {
+                text = TABS[i]
+                textSize = 10f
+                setTypeface(null, android.graphics.Typeface.BOLD)
+                gravity = Gravity.CENTER_HORIZONTAL
+                setPadding(0, 0, 0, Display.dpInt(context, 9f))
+                setTextColor(Theme.textSec())
+            }
             tabs.add(tv)
-            row.addView(tv, LinearLayout.LayoutParams(0,
+            cell.addView(tv)
+            row.addView(cell, LinearLayout.LayoutParams(0,
                 LinearLayout.LayoutParams.MATCH_PARENT, 1f))
         }
         addView(row, LayoutParams(LayoutParams.MATCH_PARENT, barH).apply {
@@ -142,12 +158,15 @@ class LiquidNavView(
         startMorph()
     }
 
+    private val icons = ArrayList<IconView>()
+
     fun select(index: Int) {
         selected = index
         for (i in tabs.indices) {
             val tv = tabs[i]
             val isSel = (i == index && i != 2)
             tv.setTextColor(if (isSel) Theme.pri() else Theme.textSec())
+            icons.getOrNull(i)?.tint(if (isSel) Theme.pri() else Theme.textSec())
             tv.textSize = if (isSel) 10.5f else 10f
             tv.visibility = View.VISIBLE
         }
@@ -254,6 +273,33 @@ class LiquidNavView(
         })
     }
 
+    /** 导航图标：用 Path 矢量绘制，避免为 5 个图标引入图片资源 */
+    class IconView(context: Context, pathData: String) : View(context) {
+        private val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            style = android.graphics.Paint.Style.STROKE
+            strokeWidth = Display.dp(context, 1.7f)
+            strokeCap = android.graphics.Paint.Cap.ROUND
+            strokeJoin = android.graphics.Paint.Join.ROUND
+            color = Theme.textSec()
+        }
+        private val path = if (pathData.isEmpty()) android.graphics.Path()
+        else runCatching { android.util.PathParser.createPathFromPathData(pathData) }
+            .getOrDefault(android.graphics.Path())
+
+        fun tint(c: Int) { paint.color = c; invalidate() }
+
+        override fun onDraw(canvas: android.graphics.Canvas) {
+            super.onDraw(canvas)
+            if (path.isEmpty) return
+            // 源坐标为 24×24，等比缩放填满本视图
+            val s = width / 24f
+            canvas.save()
+            canvas.scale(s, s)
+            canvas.drawPath(path, paint)
+            canvas.restore()
+        }
+    }
+
     /** 中央 56dp 天蓝渐变四角星 */
     class FabButton(context: Context) : View(context) {
 
@@ -318,23 +364,6 @@ class LiquidNavView(
                 w, w, star)
             canvas.drawRoundRect(cx - w, cy - len, cx + w, cy + len,
                 w, w, star)
-            star.clearShadowLayer()
-        }
-
-        private fun drawStar(canvas: Canvas, cx: Float, cy: Float, r: Float) {
-            val p = Path()
-            val inner = r * 0.40f
-            for (i in 0 until 8) {
-                val rad = Math.toRadians((i * 45 - 90).toDouble())
-                val rr = if (i % 2 == 0) r else inner
-                val x = cx + (rr * Math.cos(rad)).toFloat()
-                val y = cy + (rr * Math.sin(rad)).toFloat()
-                if (i == 0) p.moveTo(x, y) else p.lineTo(x, y)
-            }
-            p.close()
-            star.setShadowLayer(Display.dp(context, 2f), 0f, Display.dp(context, 1f),
-                Color.parseColor("#590E7FB8"))
-            canvas.drawPath(p, star)
             star.clearShadowLayer()
         }
 

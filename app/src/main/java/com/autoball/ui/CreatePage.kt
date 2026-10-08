@@ -31,7 +31,7 @@ import com.autoball.service.FloatingService
  *
  * Companion 中保留录制会话的启动与结束逻辑，供半框入口调用。
  */
-class CreatePage(context: Context, private val host: PageHost) : FrameLayout(context) {
+class CreatePage(context: Context, @Suppress("unused") private val host: PageHost) : FrameLayout(context) {
 
     companion object {
 
