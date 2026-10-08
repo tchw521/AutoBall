@@ -52,9 +52,11 @@ object ConditionDialog {
             return "%.1f%%, %.1f%% → %.1f%%, %.1f%%".format(r[0], r[1], r[2], r[3])
         }
 
-        // rebuild 与 editCond 互相调用，局部函数不支持前向引用。
-        // 用 lateinit lambda 变量声明在前，editCond 里就能引用它。
+        // rebuild 与 editCond 互相调用，而 Kotlin 局部**函数**不支持前向引用
+        // （声明顺序即解析顺序）。所以两个都声明为 lateinit lambda 变量：
+        // 先声明名字，再赋值，彼此就能互相引用了。
         lateinit var rebuild: () -> Unit
+        lateinit var editCond: (ActionCondition) -> Unit
 
         rebuild = {
             box.removeAllViews()
@@ -89,7 +91,7 @@ object ConditionDialog {
                 + "无法判定（如缺少截图能力）时按不满足跳过，不会静默当作成立。"))
         }
 
-        fun editCond(c: ActionCondition) {
+        editCond = { c ->
             val inner = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
             // 每类条件的输入项数量不同（变量有 3 项、节点有 4 项），
             // 用 readers 列表统一回读，避免"只回读第一个输入框"的漏字段问题
@@ -159,8 +161,9 @@ object ConditionDialog {
                 }
 
                 // 取色 / 取图入口需回写输入框，故保留一个引用
-                val et = (0 until inner.childCount)
-                    .mapNotNull { inner.getChildAt(it) as? android.widget.EditText }
+                val et: android.widget.EditText? = (0 until inner.childCount)
+                    .map { inner.getChildAt(it) }
+                    .filterIsInstance<android.widget.EditText>()
                     .firstOrNull()
 
                 // 取色 / 取图入口：这两个条件此前只能手填色值和路径，
@@ -171,7 +174,7 @@ object ConditionDialog {
                         ScreenPicker.pick(ctx, activity, ScreenPicker.Mode.COLOR,
                             onColor = { hex ->
                                 c.value = hex
-                                et.setText(hex)
+                                et?.setText(hex)
                                 Ui.toast(ctx, "已取色 $hex")
                             })
                     })
@@ -183,7 +186,7 @@ object ConditionDialog {
                         ScreenPicker.pick(ctx, activity, ScreenPicker.Mode.IMAGE,
                             onImage = { ref ->
                                 c.value = ref
-                                et.setText(ref)
+                                et?.setText(ref)
                                 Ui.toast(ctx, "模板已保存")
                             })
                     })

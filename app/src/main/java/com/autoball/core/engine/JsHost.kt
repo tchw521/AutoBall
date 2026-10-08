@@ -364,7 +364,9 @@ class JsHost(
         val o = runCatching { JSONObject(js) }.getOrNull()
             ?: throw CancelException("runAction 需要一个对象参数")
         val t = o.optString("type", o.optString("t", ""))
-        val preset = ActionPreset.byLabel(t)
+        // byLabel 收的是 Action（按 optionLabel 反查），这里只有字符串——
+        // 直接按 label / 枚举名两条路找（R-125 兼容中文与英文写法）
+        val preset = ActionPreset.ALL.firstOrNull { it.label == t }
         val type: ActionType = preset?.type
             ?: ActionType.fromName(t)
             ?: ActionType.values().firstOrNull { it.label == t }

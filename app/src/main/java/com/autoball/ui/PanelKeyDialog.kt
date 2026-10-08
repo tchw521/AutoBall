@@ -38,7 +38,7 @@ object PanelKeyDialog {
                 "▦", Theme.pri2()) {
                 Ui.popMenu(ctx, box, listOf("1 列", "2 列", "3 列", "4 列"), cols - 1) { i ->
                     cols = i + 1
-                    AB.store.setInt("panel_cols", cols)
+                    AB.store.putInt("panel_cols", cols)
                     rebuild()
                 }
             })

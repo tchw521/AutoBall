@@ -22,7 +22,7 @@ import java.util.Calendar
  *
  * 与 [ScheduleDialog] 共用"补触发"语义（不做后台常驻），日历只做展示与跳转。
  */
-class ScheduleBoard(ctx: Context, private val onEdit: (Script) -> Unit) : ScrollView(ctx) {
+class ScheduleBoard(private val ctx: Context, private val onEdit: (Script) -> Unit) : ScrollView(ctx) {
 
     private val dayLabels = arrayOf("周日", "周一", "周二", "周三", "周四", "周五", "周六")
 

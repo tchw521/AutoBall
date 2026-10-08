@@ -170,7 +170,7 @@ class Script {
             s.loopIntervalMs = o.optLong("loopIntervalMs", 0L)
             s.sharePass = o.optStringOrNull("sharePass") ?: ""
             s.lastFiredDay = o.optInt("lastFiredDay", 0)
-        notifyEnabled = o.optBoolean("notifyEnabled", false)
+        s.notifyEnabled = o.optBoolean("notifyEnabled", false)
             s.notifyPkg = o.optStringOrNull("notifyPkg") ?: ""
             s.notifyKeyword = o.optStringOrNull("notifyKeyword") ?: ""
             return s

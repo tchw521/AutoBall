@@ -1,5 +1,7 @@
 package com.autoball.core.engine.quickjs
 
+import com.autoball.core.engine.JsBridge
+
 import com.autoball.core.engine.HostCb
 import com.autoball.core.engine.JsEngine
 import com.autoball.core.engine.JsHost

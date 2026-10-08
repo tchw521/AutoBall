@@ -80,7 +80,7 @@ object ActionEditor {
         Thread {
             val text = try {
                 val be = com.autoball.core.backend.AccessibilityBackend()
-                val ectx = com.autoball.core.backend.ExecContext()
+                val ectx = com.autoball.core.backend.ExecContext("preview")
                 val r = be.execute(a, ectx)
                 if (r.ok) {
                     ectx.getVar(a.varName ?: "screen")?.takeIf { it.isNotBlank() }
