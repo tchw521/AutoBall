@@ -419,6 +419,22 @@ object Ui {
             scroll.post {
                 if (box.height > maxH) d?.window?.setLayout(w, maxH)
             }
+            // 转屏重排：Activity 若不重建（已声明 configChanges），
+            // 这里跟着新屏幕重算宽高，否则弹窗会停在旧尺寸上被裁
+            box.addOnLayoutChangeListener(object : View.OnLayoutChangeListener {
+                override fun onLayoutChange(v: View, l: Int, t: Int, r: Int, b: Int,
+                                            ol: Int, ot: Int, or_: Int, ob: Int) {
+                    val sz = Display.screenSize(ctx)
+                    val nw = kotlin.math.min(Display.dpInt(ctx, widthDp),
+                        (sz.x * 0.86f).toInt())
+                    val nr = if (sz.x > sz.y) kotlin.math.min(maxHeightRatio, 0.62f)
+                             else maxHeightRatio
+                    val nH = (sz.y * nr).toInt()
+                    val win = d?.window ?: return
+                    if (v.height > nH) win.setLayout(nw, nH) else win.setLayout(nw,
+                        ViewGroup.LayoutParams.WRAP_CONTENT)
+                }
+            })
             return d!!
         }
 

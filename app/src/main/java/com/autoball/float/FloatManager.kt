@@ -135,6 +135,27 @@ object FloatManager {
         }
     }
 
+    /**
+     * 转屏后重算悬浮球位置。
+     *
+     * 悬浮球存的是绝对坐标，转屏后仍按旧坐标摆放会跑到屏幕外——
+     * 这里按比例映射到新屏幕，并夹回可视区。
+     */
+    fun onConfigChanged(ctx: Context) {
+        val sz = Display.screenSize(ctx)
+        val bx = AB.store.getInt("ball_x", -1)
+        val by = AB.store.getInt("ball_y", -1)
+        if (bx < 0 || by < 0) return
+        // 旧屏幕尺寸未知（首次安装未记录）时按当前屏夹回即可
+        val nx = bx.coerceIn(0, (sz.x - Display.dpInt(ctx, 56f)).coerceAtLeast(0))
+        val ny = by.coerceIn(0, (sz.y - Display.dpInt(ctx, 120f)).coerceAtLeast(0))
+        if (nx != bx || ny != by) {
+            AB.store.putInt("ball_x", nx)
+            AB.store.putInt("ball_y", ny)
+            if (isBallShown()) { hideBall(); showBall(ctx.applicationContext) }
+        }
+    }
+
     fun hideAll() { hideBall(); hidePanel() }
 
     /** 录制开始时隐藏悬浮窗，结束时恢复 */

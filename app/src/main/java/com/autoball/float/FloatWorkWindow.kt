@@ -112,6 +112,8 @@ object FloatWorkWindow {
             p.y = Display.screenSize(ctx).y / 6
             view = v
             params = p
+            curScript = script
+            curCb = cb
             // 走统一栈：新窗口后入栈，天然压在旧窗口之上
             if (!FloatWindows.add(ctx, v, p)) {
                 view = null
@@ -128,6 +130,8 @@ object FloatWorkWindow {
             view = null
             params = null
             holder = null
+            curScript = null
+            curCb = null
             removeCap()
             stealth = false
         }
@@ -179,18 +183,38 @@ object FloatWorkWindow {
         handler.post { fillList(script); refreshCap() }
     }
 
-    /** 转屏后重算窗口宽度（横屏收窄到屏宽 1/4） */
+    /**
+     * 转屏后重算窗口尺寸（横屏收窄到屏宽 1/4）。
+     *
+     * **为什么这里重新构建而不是只改宽度**：动作列表的最大高度是按当时屏幕
+     * 算出来的固定像素值，只改宽度的话，横屏下列表仍按竖屏的限高显示，
+     * 窗口会被撑到屏幕外。所以转屏必须重建整个内容视图，再塞回同一个窗口
+     * 位置——用户看到的窗口不跳、不闪，只是换了尺寸。
+     */
     fun onConfigChanged(ctx: Context) {
         handler.post {
             val p = params ?: return@post
-            p.width = Display.dpInt(ctx, FloatWindows.widthDp(ctx))
-            FloatWindows.update(view, p)
-            capParams?.let { cp ->
-                cp.y = 0
-                capView?.let { FloatWindows.update(it, cp) }
+            val old = view ?: return@post
+            val script = curScript
+            val cb = curCb
+            if (script == null || cb == null) {
+                // 没有可重建的数据时，退化为只改宽度
+                p.width = Display.dpInt(ctx, FloatWindows.widthDp(ctx))
+                FloatWindows.update(old, p)
+                return@post
             }
+            FloatWindows.remove(old)
+            val v = buildView(ctx.applicationContext, script, cb)
+            p.width = Display.dpInt(ctx, FloatWindows.widthDp(ctx))
+            view = v
+            FloatWindows.add(ctx, v, p)
+            capParams?.let { capView?.let { FloatWindows.update(it, it.layoutParams as WindowManager.LayoutParams) } }
         }
     }
+
+    /** 当前宿主脚本与回调，供转屏后重建内容 */
+    private var curScript: Script? = null
+    private var curCb: Callback? = null
 
     // ================= 构建 =================
 

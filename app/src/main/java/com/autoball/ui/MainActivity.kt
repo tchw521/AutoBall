@@ -94,7 +94,7 @@ class MainActivity : Activity(), PageHost {
         root.addView(navWrap)
 
         // 底部版本条（v3 .verbar）：点一下看更新日志
-        root.addView(Ui.versionBar(this, "v1.15.0", "查看更新日志") {
+        root.addView(Ui.versionBar(this, "v1.16.0", "查看更新日志") {
             ChangeLog.show(this)
         })
 
@@ -241,8 +241,13 @@ class MainActivity : Activity(), PageHost {
 
     override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
         super.onConfigurationChanged(newConfig)
+        // 顺序很重要：先让屏幕尺寸缓存失效，再重算窗口。
+        // 否则 screenSize() 返回转屏前的旧值，横屏算出的"屏宽 1/4"
+        // 其实是竖屏宽度的错误值。
+        com.autoball.core.util.Display.invalidateScreen()
         // 转屏后窗口宽度规则变了（竖屏 1/2 ↔ 横屏 1/4），通知悬浮窗重算
         com.autoball.float.FloatWorkWindow.onConfigChanged(this)
+        com.autoball.float.FloatManager.onConfigChanged(this)
     }
 
     override fun onResume() {

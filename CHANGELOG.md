@@ -4,6 +4,33 @@
 
 ---
 
+## v1.16.0 · 转屏链路真正打通
+
+上一版称"转屏自动重算"，实际**是失效的**，两处断口：
+
+**断口一：manifest 未声明 `configChanges`**
+
+不声明的话转屏时 Activity 会重建（onDestroy → onCreate），
+`onConfigurationChanged` 根本不会被调用——通知悬浮窗重算的那行代码永远跑不到。
+已补 `orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|density|uiMode`。
+
+**断口二：屏幕尺寸缓存永不失效**
+
+`Display.screenSize()` 带缓存，但 `invalidateScreen()` 从未被调用过，
+于是转屏后仍返回竖屏的旧值（1080×2400），横屏算出的"屏宽 1/4"
+其实是竖屏宽度的错误值。已在转屏回调里先失效缓存再重算——**顺序不能反**。
+
+**顺带补齐的三处**
+
+- 悬浮球存的是绝对坐标，转屏后会跑到屏幕外：转屏时按比例夹回可视区。
+- 录制窗改为**重建内容**而非只改宽度：动作列表限高是固定像素，
+  只改宽度的话横屏下列表仍按竖屏限高显示，窗口会被撑出屏幕。
+  重建后塞回同一个窗口位置，用户看不到跳动。
+- 应用内弹窗加 `OnLayoutChangeListener`：Activity 不重建时，
+  弹窗会停在旧尺寸上被裁，这里跟着新屏幕重算。
+
+---
+
 ## v1.15.0 · 录制只剩一个窗口 + 弹窗就地换页 + 横屏适配
 
 **1. 录制时不再叠加多个窗口（融合 RecChrome）**
