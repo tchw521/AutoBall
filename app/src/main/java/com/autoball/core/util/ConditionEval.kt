@@ -3,6 +3,7 @@ package com.autoball.core.util
 import com.autoball.core.backend.ScreenResult
 import com.autoball.core.model.ActionCondition
 import com.autoball.core.model.ConditionSet
+import com.autoball.core.model.NodeSpec
 import org.json.JSONObject
 
 /**
@@ -39,6 +40,14 @@ object ConditionEval {
          * 由调用方持主匹配点坐标后换算；不支持返回 null。
          */
         fun probeAt(dxDp: Float, dyDp: Float, hex: String, tol: Int): Boolean? = null
+        /**
+         * 无障碍控件树里能否找到指定节点（R-116）；不支持返回 null。
+         *
+         * 注意：节点查找是无障碍**独有**能力，Shizuku 后端下必须返回 null
+         * （表示无法判定），绝不能返回 false——那会让条件在 Shizuku 下
+         * 恒不成立，脚本莫名其妙卡住。
+         */
+        fun findNode(spec: NodeSpec?): Boolean? = null
     }
 
     /**
@@ -115,8 +124,59 @@ object ConditionEval {
                     null -> Outcome.UNKNOWN
                 }
             }
+            ActionCondition.Kind.NODE -> {
+                if (c.nodeSpec == null) return Outcome.UNKNOWN
+                when (probe?.findNode(c.nodeSpec)) {
+                    true -> Outcome.SATISFIED
+                    false -> Outcome.NOT_SATISFIED
+                    null -> Outcome.UNKNOWN
+                }
+            }
+            // 变量判断不需要后端能力，vars 已在参数里——
+            // 所以不经过 Probe，直接判定，不存在 UNKNOWN
+            ActionCondition.Kind.VAR -> if (matchVar(c, vars)) Outcome.SATISFIED
+            else Outcome.NOT_SATISFIED
         }
         return base
+    }
+
+    /**
+     * 变量判断（R-116）。
+     *
+     * 两个细节：
+     * 1. 变量名兼容带/不带 `$` 前缀——运行时注入的是 `$ok`，
+     *    而用户在 UI 里多半直接填 `ok`，两种都要认。
+     * 2. 比较时**数字优先**：`"10" > "9"` 按字符串比是 false（"1"<"9"），
+     *    按数字比才是 true。这是脚本里的直觉语义，不按数字比会被当成 bug。
+     *    两边都能转数字就比数字，否则退化为字符串比较。
+     */
+    private fun matchVar(c: ActionCondition, vars: Map<String, String>): Boolean {
+        val name = c.value.trim().trimStart('$')
+        if (name.isEmpty()) return false
+        val got = vars[name] ?: vars["$$name"]
+        return when (c.cmp) {
+            ActionCondition.Cmp.EXISTS -> !got.isNullOrEmpty()
+            ActionCondition.Cmp.CONTAINS -> got?.contains(c.cmpValue) == true
+            else -> {
+                val left = got ?: ""
+                compareVal(left, c.cmpValue.trim(), c.cmp)
+            }
+        }
+    }
+
+    private fun compareVal(l: String, r: String, cmp: ActionCondition.Cmp): Boolean {
+        val ln = l.trim().toDoubleOrNull()
+        val rn = r.toDoubleOrNull()
+        val r2 = if (ln != null && rn != null) ln.compareTo(rn) else l.compareTo(r)
+        return when (cmp) {
+            ActionCondition.Cmp.EQ -> r2 == 0
+            ActionCondition.Cmp.NE -> r2 != 0
+            ActionCondition.Cmp.GT -> r2 > 0
+            ActionCondition.Cmp.GE -> r2 >= 0
+            ActionCondition.Cmp.LT -> r2 < 0
+            ActionCondition.Cmp.LE -> r2 <= 0
+            else -> false
+        }
     }
 
     /**
@@ -287,6 +347,16 @@ object ConditionEval {
             (if (c.probes.isNotEmpty()) " +${c.probes.size}个周围点" else "")
         ActionCondition.Kind.TEXT -> "文字「${c.value}」"
         ActionCondition.Kind.IMAGE -> "图片匹配"
+        ActionCondition.Kind.NODE -> {
+            val sp = c.nodeSpec
+            val what = sp?.text ?: sp?.id ?: sp?.desc ?: sp?.className ?: "未设置"
+            "节点「$what」"
+        }
+        ActionCondition.Kind.VAR -> {
+            val n = c.value.trimStart('$')
+            if (c.cmp == ActionCondition.Cmp.EXISTS) "变量 $n 已定义"
+            else "变量 $n ${c.cmp.symbol} ${c.cmpValue}"
+        }
     }
 
     /** 能力不足时的修复指引 */
@@ -297,6 +367,8 @@ object ConditionEval {
             kinds.contains(ActionCondition.Kind.IMAGE) -> "图片匹配需要模板图，请用「取图器」框选并保存"
             kinds.contains(ActionCondition.Kind.TEXT) -> "文字检测需要 OCR 或节点树能力，当前不可用"
             kinds.contains(ActionCondition.Kind.COLOR) -> "颜色检测需要截图能力，请开启无障碍或 Shizuku"
+            kinds.contains(ActionCondition.Kind.NODE) -> "节点检测需要无障碍服务的控件树能力（Shizuku 通道不支持）"
+            kinds.contains(ActionCondition.Kind.VAR) -> "变量未定义或比较不成立，检查「设置变量」动作是否已执行"
             else -> "需要截图或 JS 引擎能力"
         }
     }

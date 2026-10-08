@@ -60,6 +60,12 @@ class LiquidNavView(
         private val SPEC_L = Color.parseColor("#B3FFFFFF")
 
         private val HALO = Color.parseColor("#7A7DD3FC")
+
+        // 以下三个原先写在 onDraw 里，导致**每帧** parseColor。
+        // 导航栏带呼吸动画，是常驻重绘视图，必须预解析。
+        private val GLOW_BODY = Color.parseColor("#7C0EA5E9")
+        private val HL_TOP = Color.parseColor("#B8FFFFFF")
+        private val PLUS_SHADOW = Color.parseColor("#590E7FB8")
         val TABS = arrayOf("脚本", "编辑", "", "市场", "我的")
         /** 导航图标类型；0=脚本 1=编辑 2=中央 3=市场 4=我的 */
         private val ICONS = intArrayOf(0, 1, 2, 3, 4)
@@ -76,6 +82,25 @@ class LiquidNavView(
         /** 导航离屏幕底边的距离：半框避让时要把这段也算进去 */
         const val BOTTOM_MARGIN_DP = 14f
     }
+
+    // 导航栏带呼吸动画 → onDraw 每帧执行。两个渐变原本每帧 new，
+
+    // 现按依赖参数缓存（尺寸/主题变化时才重建）
+
+    private var gelGrad: android.graphics.Shader? = null
+
+    private var gelTop = -1f
+
+    private var gelH = -1f
+
+    private var gelDark: Boolean? = null
+
+    private var specGrad: android.graphics.Shader? = null
+
+    private var specW = -1f
+
+    private var specDark: Boolean? = null
+
 
     private val gel = Paint(Paint.ANTI_ALIAS_FLAG)
     private val sheen = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -181,12 +206,16 @@ class LiquidNavView(
 
         // ---- 液态玻璃：静置的折射质感，不做任何循环动画 ----
         // 玻璃基底：竖向三段，上缘更亮（模拟环境光在弧面顶部的聚集）
-        gel.shader = LinearGradient(0f, top, 0f, h,
-            intArrayOf(
-                if (dark) GL_D_TOP else GL_L_TOP,
-                if (dark) GL_D_MID else GL_L_MID,
-                if (dark) GL_D_BOT else GL_L_BOT),
-            floatArrayOf(0f, 0.42f, 1f), Shader.TileMode.CLAMP)
+        if (gelTop != top || gelH != h || gelDark != dark) {
+            gelTop = top; gelH = h; gelDark = dark
+            gelGrad = LinearGradient(0f, top, 0f, h,
+                intArrayOf(
+                    if (dark) GL_D_TOP else GL_L_TOP,
+                    if (dark) GL_D_MID else GL_L_MID,
+                    if (dark) GL_D_BOT else GL_L_BOT),
+                floatArrayOf(0f, 0.42f, 1f), Shader.TileMode.CLAMP)
+        }
+        gel.shader = gelGrad
         canvas.drawRoundRect(0f, top, w, h, r, r, gel)
         gel.shader = null
 
@@ -227,11 +256,15 @@ class LiquidNavView(
 
         // 顶部一道极细的镜面反射点（静置，非扫光）
         spec.strokeWidth = Display.dp(context, 1.2f)
-        spec.shader = LinearGradient(0f, 0f, w, 0f,
-            intArrayOf(Color.TRANSPARENT,
-                if (dark) SPEC_D else SPEC_L,
-                Color.TRANSPARENT),
-            floatArrayOf(0f, 0.5f, 1f), Shader.TileMode.CLAMP)
+        if (specW != w || specDark != dark) {
+            specW = w; specDark = dark
+            specGrad = LinearGradient(0f, 0f, w, 0f,
+                intArrayOf(Color.TRANSPARENT,
+                    if (dark) SPEC_D else SPEC_L,
+                    Color.TRANSPARENT),
+                floatArrayOf(0f, 0.5f, 1f), Shader.TileMode.CLAMP)
+        }
+        spec.shader = specGrad
         canvas.drawLine(Display.dp(context, 14f), top + Display.dp(context, 2f),
             w - Display.dp(context, 14f), top + Display.dp(context, 2f), spec)
         spec.shader = null
@@ -317,8 +350,20 @@ class LiquidNavView(
         }
     }
 
-    /** 中央 56dp 天蓝渐变四角星 */
+    /** 中央 56dp 天蓝渐变加号按钮 */
     class FabButton(context: Context) : View(context) {
+
+        // 高光渐变缓存（半径变化时才重建）
+
+        // 两个渐变都缓存：onDraw 每帧执行，此前每帧各 new 一个 Shader，
+        // 呼吸动画下等于持续制造短命对象（掉帧 + GC 压力）
+        private var hlShader: android.graphics.Shader? = null
+        private var bodyGrad: android.graphics.Shader? = null
+        private var bodyH = -1f
+        private var hlR = -1f
+        private var hlCx = -1f
+        private var hlCy = -1f
+
 
         private val glow = Paint(Paint.ANTI_ALIAS_FLAG)
         private val body = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -339,20 +384,30 @@ class LiquidNavView(
             // 液体融合光晕
             glow.setShadowLayer(Display.dp(context, 12f), 0f, 0f,
                 Theme.fabGlow())
-            glow.color = Color.parseColor("#7C0EA5E9")
+            glow.color = GLOW_BODY
             canvas.drawCircle(cx, cy, r * 0.98f, glow)
             glow.clearShadowLayer()
 
             // 天蓝渐变球体（155° 近似为自上而下）
-            body.shader = LinearGradient(0f, 0f, 0f, h, Theme.FAB_STOPS, null,
-                Shader.TileMode.CLAMP)
+            if (bodyH != h) {
+                bodyH = h
+                bodyGrad = LinearGradient(0f, 0f, 0f, h, Theme.FAB_STOPS, null,
+                    Shader.TileMode.CLAMP)
+            }
+            body.shader = bodyGrad
             canvas.drawCircle(cx, cy, r * 0.96f, body)
             body.shader = null
 
-            // 顶部液态高光
-            body.shader = android.graphics.RadialGradient(
-                cx - r * 0.36f, cy - r * 0.76f, r * 1.1f,
-                Color.parseColor("#B8FFFFFF"), Color.TRANSPARENT, Shader.TileMode.CLAMP)
+            // 顶部液态高光。
+            // 渐变坐标必须在**画布绝对坐标**上（以圆心 cx,cy 为基准）——
+            // 只用 r 推相对值会让高光跑到视图左上角。
+            if (hlR != r || hlCx != cx || hlCy != cy) {
+                hlR = r; hlCx = cx; hlCy = cy
+                hlShader = android.graphics.RadialGradient(
+                    cx - r * 0.36f, cy - r * 0.76f, r * 1.1f,
+                    HL_TOP, Color.TRANSPARENT, Shader.TileMode.CLAMP)
+            }
+            body.shader = hlShader
             canvas.drawCircle(cx, cy, r * 0.96f, body)
             body.shader = null
 
@@ -376,7 +431,7 @@ class LiquidNavView(
             val w = r * 0.30f          // 笔画半宽
             val len = r                 // 笔画半长
             star.setShadowLayer(Display.dp(context, 2f), 0f, Display.dp(context, 1f),
-                Color.parseColor("#590E7FB8"))
+                PLUS_SHADOW)
             canvas.drawRoundRect(cx - len, cy - w, cx + len, cy + w,
                 w, w, star)
             canvas.drawRoundRect(cx - w, cy - len, cx + w, cy + len,

@@ -6,6 +6,7 @@ import android.widget.TextView
 import com.autoball.core.model.Action
 import com.autoball.core.model.ActionCondition
 import com.autoball.core.model.ConditionSet
+import com.autoball.core.model.NodeSpec
 import com.autoball.core.util.Display
 import org.json.JSONObject
 
@@ -90,9 +91,18 @@ object ConditionDialog {
 
         fun editCond(c: ActionCondition) {
             val inner = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
-            var exprEdit: android.widget.EditText? = null
+            // 每类条件的输入项数量不同（变量有 3 项、节点有 4 项），
+            // 用 readers 列表统一回读，避免"只回读第一个输入框"的漏字段问题
+            val readers = ArrayList<() -> Unit>()
+
+            fun textRow(hint: String, cur: String, set: (String) -> Unit) {
+                val et = Ui.adText(ctx, cur, hint)
+                inner.addView(et)
+                readers.add { set(et.text.toString().trim()) }
+            }
 
             fun fill() {
+                readers.clear()
                 inner.removeAllViews()
                 inner.addView(Ui.adRow(ctx, "条件类型", c.kind.label,
                     c.kind != ActionCondition.Kind.NONE, c.kind.desc) {
@@ -107,16 +117,51 @@ object ConditionDialog {
                 if (c.kind == ActionCondition.Kind.NONE) return
 
                 inner.addView(Ui.adSec(ctx))
-                val hint = when (c.kind) {
-                    ActionCondition.Kind.IMAGE -> "模板图（请用取图器）"
-                    ActionCondition.Kind.TEXT -> "要找的文字"
-                    ActionCondition.Kind.COLOR -> "颜色，如 #FF0000"
-                    ActionCondition.Kind.JS -> "返回 true/false 的表达式"
-                    else -> ""
+
+                // ---- 两类新条件有各自的表单，其余走通用的单值输入 ----
+                if (c.kind == ActionCondition.Kind.VAR) {
+                    // 注意：`$ok` 里的 $ 在 Kotlin 字符串中是模板起始符，必须转义
+                    textRow("变量名，如 ok 或 \$ok", c.value) { c.value = it }
+                    inner.addView(Ui.adRow(ctx, "比较", c.cmp.label, true,
+                        "两边都能转成数字时按数字比较（如 10 > 9），否则按文本比较") {
+                        Ui.popMenu(ctx, inner,
+                            ActionCondition.Cmp.values().map { it.label },
+                            ActionCondition.Cmp.values().indexOf(c.cmp)) { i ->
+                            c.cmp = ActionCondition.Cmp.values()[i]
+                            fill()
+                        }
+                    })
+                    if (c.cmp != ActionCondition.Cmp.EXISTS) {
+                        textRow("比较值", c.cmpValue) { c.cmpValue = it }
+                    }
+                    inner.addView(Kit.note(ctx,
+                        "可用运行时变量：ok（目前全成功）、last（上一步成功）、stepN（第 N 步成功）"))
+                } else if (c.kind == ActionCondition.Kind.NODE) {
+                    val sp = c.nodeSpec ?: NodeSpec().also { c.nodeSpec = it }
+                    textRow("控件文字（包含匹配）", sp.text ?: "") { sp.text = it.ifEmpty { null } }
+                    textRow("控件 ID，如 com.x:id/ok", sp.id ?: "") { sp.id = it.ifEmpty { null } }
+                    textRow("内容描述", sp.desc ?: "") { sp.desc = it.ifEmpty { null } }
+                    textRow("类名，如 android.widget.Button", sp.className ?: "") {
+                        sp.className = it.ifEmpty { null }
+                    }
+                    inner.addView(Kit.note(ctx,
+                        "四项可任意组合，留空的不参与匹配；全留空则无法判定。"
+                        + "节点查找是无障碍独有能力，Shizuku 通道下会按不满足处理。"))
+                } else {
+                    val hint = when (c.kind) {
+                        ActionCondition.Kind.IMAGE -> "模板图（请用取图器）"
+                        ActionCondition.Kind.TEXT -> "要找的文字"
+                        ActionCondition.Kind.COLOR -> "颜色，如 #FF0000"
+                        ActionCondition.Kind.JS -> "返回 true/false 的表达式"
+                        else -> ""
+                    }
+                    textRow(hint, c.value) { c.value = it }
                 }
-                val et = Ui.adText(ctx, c.value, hint)
-                inner.addView(et)
-                exprEdit = et
+
+                // 取色 / 取图入口需回写输入框，故保留一个引用
+                val et = (0 until inner.childCount)
+                    .mapNotNull { inner.getChildAt(it) as? android.widget.EditText }
+                    .firstOrNull()
 
                 // 取色 / 取图入口：这两个条件此前只能手填色值和路径，
                 // 用户无从得知目标色的准确值、也生成不了模板图，等于用不起来。
@@ -196,7 +241,7 @@ object ConditionDialog {
                     commit(); rebuild()
                 }
                 .positive("确定") {
-                    exprEdit?.text?.toString()?.trim()?.let { c.value = it }
+                    readers.forEach { runCatching { it() } }
                     commit(); rebuild(); true
                 }.show()
         }
@@ -218,6 +263,16 @@ object ConditionDialog {
             ActionCondition.Kind.COLOR -> "颜色 ${c.value}$tail"
             ActionCondition.Kind.TEXT -> "文字「${c.value}」"
             ActionCondition.Kind.IMAGE -> "图片匹配 ${c.sim}%"
+            ActionCondition.Kind.NODE -> {
+                val sp = c.nodeSpec
+                val what = sp?.text ?: sp?.id ?: sp?.desc ?: sp?.className ?: "未设置"
+                "节点「$what」"
+            }
+            ActionCondition.Kind.VAR -> {
+                val n = c.value.trimStart('$')
+                if (c.cmp == ActionCondition.Cmp.EXISTS) "变量 $n 已定义"
+                else "变量 $n ${c.cmp.symbol} ${c.cmpValue}"
+            }
         }
     }
 

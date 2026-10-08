@@ -27,7 +27,15 @@ class ScriptStore(private val ctx: Context) {
     @Volatile
     private var cache: MutableList<Script>? = null
 
-    /** 读缓存副本；调用方可自由修改，不影响缓存 */
+    /**
+     * 返回列表副本；但**列表里的 Script 对象与缓存共享引用**（不是深拷贝）。
+     *
+     * 调用方不要原地修改这些对象——那会直接改到缓存，导致：
+     * 1. 未保存的改动被其它页面读到，杀进程后又丢失，表现不一致；
+     * 2. save() 里 `list[idx] === s`，"保存前快照"拍到的是改后的新状态，
+     *    回滚功能失效（v1.28 修）。
+     * 需要改就先 [Script.copy]，或改完走 save()。
+     */
     fun all(): MutableList<Script> = synchronized(lock) {
         val c = cache
         if (c != null) {
@@ -59,8 +67,11 @@ class ScriptStore(private val ctx: Context) {
         val list = all()
         val idx = list.indexOfFirst { it.id == s.id }
         s.updatedAt = System.currentTimeMillis()
-        // 快照必须在覆盖**之前**留——存的是能被回退到的旧版本
-        if (idx >= 0) runCatching { SnapshotStore.snapshot(list[idx]) }
+        // 快照必须在覆盖**之前**留——存的是能被回退到的旧版本。
+        // 前提是 s 与 list[idx] 不是同一个对象：若调用方原地修改了
+        // all() 返回的共享实例，这里拍到的就是新状态，快照将失去意义。
+        // 编辑页/JS 页已在 bind() 里持有副本，故此处成立。
+        if (idx >= 0 && list[idx] !== s) runCatching { SnapshotStore.snapshot(list[idx]) }
         if (idx >= 0) list[idx] = s else list.add(s)
         writeAll(list)
     }

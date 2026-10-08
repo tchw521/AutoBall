@@ -17,6 +17,14 @@ enum class ActionType(
     CLICK_TEXT("点击文字", setOf(Cap.POINTER_CLICK), setOf(Cap.NODE_QUERY, Cap.OCR)),
     CLICK_COLOR("点击颜色", setOf(Cap.POINTER_CLICK, Cap.SCREENSHOT)),
     CLICK_NODE("点击节点", setOf(Cap.NODE_QUERY, Cap.POINTER_CLICK)),
+    /**
+     * 区域随机点击（R-117）。
+     *
+     * 与「点击 + 抖动」的差别：抖动是在**已有坐标上做偏移**（仍围绕一个固定点），
+     * 这里是**在指定区域内随机取点**（x,y 为左上、x2,y2 为右下，均为百分比）。
+     * 适合"这个按钮大概在这块区域、具体位置每次不同"的场景。
+     */
+    CLICK_AREA("区域随机点击", setOf(Cap.POINTER_CLICK)),
     AI_CLICK("AI点击", setOf(Cap.POINTER_CLICK, Cap.SCREENSHOT), setOf(Cap.AI_VISION)),
     GESTURE_SINGLE("单指手势", setOf(Cap.SINGLE_SWIPE)),
     GESTURE_MULTI("多指手势", setOf(Cap.MULTI_POINTER)),
@@ -39,13 +47,15 @@ enum class ActionType(
      * 做抖动没有意义，反而会打乱时序。
      */
     val hasCoord: Boolean
-        get() = fieldGroups.contains(FieldGroup.POINT)
+        get() = fieldGroups.contains(FieldGroup.POINT) ||
+                fieldGroups.contains(FieldGroup.AREA)
 
     /** 该类型表单需要展示哪些字段组（驱动 UI 动态表单） */
     val fieldGroups: Set<FieldGroup>
         get() = when (this) {
             CLICK, CLICK_IMAGE, CLICK_TEXT, CLICK_COLOR, CLICK_NODE, AI_CLICK ->
                 setOf(FieldGroup.POINT, FieldGroup.PRESS_DURATION)
+            CLICK_AREA -> setOf(FieldGroup.AREA, FieldGroup.PRESS_DURATION)
             SWIPE, GESTURE_SINGLE, GESTURE_MULTI ->
                 setOf(FieldGroup.POINT, FieldGroup.POINT_END, FieldGroup.DURATION)
             INPUT_TEXT -> setOf(FieldGroup.TEXT)
@@ -71,7 +81,9 @@ enum class ActionType(
 
 enum class FieldGroup {
     POINT, POINT_END, PRESS_DURATION, DURATION, TEXT, PACKAGE, URL,
-    KEYCODE, SCRIPT_REF, CODE, SUB_ACTIONS, CONTROL, VAR_NAME
+    KEYCODE, SCRIPT_REF, CODE, SUB_ACTIONS, CONTROL, VAR_NAME,
+    /** 区域（左上 x,y + 右下 x2,y2，百分比）——区域随机点击用 */
+    AREA
 }
 
 /** 控制运行动作的子类型 */

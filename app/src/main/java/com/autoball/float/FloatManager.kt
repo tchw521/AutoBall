@@ -106,7 +106,9 @@ object FloatManager {
             val skinName = AB.store.getString("panel_skin", FloatPanelView.Skin.DEFAULT.name)
             val skin = try { FloatPanelView.Skin.valueOf(skinName) }
                        catch (e: Exception) { FloatPanelView.Skin.DEFAULT }
-            view.apply(skin, AB.store.getFloat("panel_button_dp", 40f))
+            // 自定义布局启用时按用户配置的列数排布（R-118）
+            val cols = AB.store.getInt("panel_cols", 1).coerceIn(1, 4)
+            view.apply(skin, AB.store.getFloat("panel_button_dp", 40f), cols)
 
             val p = WindowManager.LayoutParams(
                 WindowManager.LayoutParams.WRAP_CONTENT,
@@ -126,6 +128,22 @@ object FloatManager {
     /** 运行时更新悬浮窗上的步骤名；传 null 表示清空 */
     fun setStep(text: String?) {
         handler.post { panel?.setStep(text) }
+    }
+
+    /**
+     * 重建悬浮窗（配置变更后让用户立刻看到效果）。
+     *
+     * 只在**已经显示**时重建：没显示却去 showPanel 会凭空弹出一个窗口，
+     * 用户只是在设置页改配置，不该被强行弹窗打扰。
+     */
+    fun refresh() {
+        handler.post {
+            val v = panel ?: return@post
+            runCatching { wm?.removeView(v) }
+            panel = null
+            val c = lastCtx ?: return@post
+            showPanel(c)
+        }
     }
 
     fun hidePanel() {
@@ -242,6 +260,17 @@ object FloatManager {
         override fun onStop() = ScriptLauncher.stop()
         override fun onCollapse() = hidePanel()
         override fun onRecord() { AB.log.info("float", "请在主界面「制作」中开始录制") }
+
+        /** 自定义按键里「绑定脚本」：直接跑目标脚本（R-118） */
+        override fun onRunScript(scriptId: String) {
+            val sc = runCatching { AB.store.get(scriptId) }.getOrNull()
+            if (sc == null) {
+                AB.log.warn("float", "按键绑定的脚本不存在，可能已被删除")
+                Ui_toast("该按键绑定的脚本已删除")
+                return
+            }
+            ScriptLauncher.launch(com.autoball.App.get(), sc)
+        }
     }
 
     private fun globalKey(code: Int) {

@@ -20,11 +20,36 @@ class ActionCondition {
         IMAGE("图片存在", "截屏后在指定区域内找图，相似度达标才执行"),
         TEXT("文字存在", "在节点树或 OCR 结果里能找到指定文字才执行"),
         COLOR("颜色存在", "指定点或区域内出现目标颜色才执行"),
+        NODE("节点存在", "无障碍控件树里能找到指定控件才执行（比找色/找图更稳）"),
+        VAR("变量判断", "指定变量满足比较条件才执行（可用 $ok / $last / $stepN）"),
         JS("JS 表达式", "脚本返回 true 才执行"),
         ;
         companion object {
             fun byName(s: String?): Kind =
                 values().firstOrNull { it.name.equals(s?.trim(), true) } ?: NONE
+        }
+    }
+
+    /**
+     * 变量比较符（R-116）。
+     *
+     * 自动精灵的条件菜单里有「变量」一类，我们能读变量（`$ok` / `$last` /
+     * `$stepN` 等运行时变量已注入）却没做成条件类型，只能绕道写 JS 表达式。
+     * 补上后普通用户不必碰 JS。
+     */
+    enum class Cmp(val label: String, val symbol: String) {
+        EXISTS("已定义", "存在"),
+        EQ("等于", "=="),
+        NE("不等于", "!="),
+        GT("大于", ">"),
+        GE("大于等于", ">="),
+        LT("小于", "<"),
+        LE("小于等于", "<="),
+        CONTAINS("包含", "包含"),
+        ;
+        companion object {
+            fun byName(s: String?): Cmp =
+                values().firstOrNull { it.name.equals(s?.trim(), true) } ?: EXISTS
         }
     }
 
@@ -51,6 +76,12 @@ class ActionCondition {
     }
 
     var kind: Kind = Kind.NONE
+    /**
+     * 主值。按 kind 语义不同：
+     * - IMAGE：模板图 id；TEXT：要找的文字；COLOR：#RRGGBB
+     * - VAR：**变量名**（可带 `$` 前缀，如 `ok` / `$ok`）
+     * - NODE：不用（用 [nodeSpec]）；JS：表达式
+     */
     var value: String = ""
     var sim: Int = 90
     /** 颜色容差 0–255 */
@@ -59,6 +90,13 @@ class ActionCondition {
     var region: FloatArray? = null
     /** 周围条件（多点找色）：全部满足才算定位成功 */
     val probes: MutableList<Probe> = ArrayList()
+
+    /** 节点选择器（kind=NODE）。复用 [NodeSpec]，不另造一套字段 */
+    var nodeSpec: NodeSpec? = null
+    /** 变量比较符（kind=VAR） */
+    var cmp: Cmp = Cmp.EXISTS
+    /** 变量比较的右值（kind=VAR；EXISTS 时不用） */
+    var cmpValue: String = ""
 
     fun toJson(): JSONObject = JSONObject().apply {
         put("k", kind.name)
@@ -70,6 +108,11 @@ class ActionCondition {
         }
         if (probes.isNotEmpty()) {
             put("p", JSONArray().apply { probes.forEach { put(it.toJson()) } })
+        }
+        nodeSpec?.let { put("ns", it.toJson()) }
+        if (kind == Kind.VAR) {
+            put("cmp", cmp.name)
+            put("cv", cmpValue)
         }
     }
 
@@ -98,6 +141,9 @@ class ActionCondition {
                         .getOrNull()?.let { probes.add(it) }
                 }
             }
+            nodeSpec = o.optJSONObject("ns")?.let { runCatching { NodeSpec.fromJson(it) }.getOrNull() }
+            cmp = Cmp.byName(o.optString("cmp"))
+            cmpValue = o.optString("cv", "")
         }
     }
 }

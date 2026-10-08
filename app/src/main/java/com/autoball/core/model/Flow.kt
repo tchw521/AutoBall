@@ -90,6 +90,33 @@ class Flow {
      */
     var morph: String = ""
 
+    /**
+     * 深拷贝。配合 [Script.copy] 使用——编辑页要持有自己的副本，
+     * 否则原地修改会污染 ScriptStore 的缓存（连带让快照失效）。
+     *
+     * actions / vars / hooks 里的元素都要逐个拷：
+     * Action 与 VarDef 都是可变对象，浅拷贝会共享引用。
+     */
+    fun copy(): Flow {
+        val c = Flow()
+        c.version = version
+        c.id = id
+        c.name = name
+        c.actions = ArrayList(actions.map { it.copy(newId = false) })
+        c.vars = ArrayList(vars.map { it.copy() })
+        c.display = display
+        c.loop = loop
+        c.loopCount = loopCount
+        c.speed = speed
+        c.hooks = LinkedHashMap(hooks.mapValues { (_, v) -> ArrayList(v.map { it.copy(newId = false) }) })
+        c.failStop = failStop
+        c.retryOnce = retryOnce
+        c.defaultWaitMs = defaultWaitMs
+        c.waitUnit = waitUnit
+        c.morph = morph
+        return c
+    }
+
     /** 已挂载监听动作的时机数与动作总数，用于编辑页摘要 */
     fun hookSummary(): Pair<Int, Int> {
         var stages = 0

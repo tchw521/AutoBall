@@ -309,6 +309,18 @@ class FlowRunner(
             jsEval?.let { fn -> runCatching { fn(expr, ctx) }.getOrNull() }
 
         /**
+         * 节点存在（R-116）。无障碍**独有**能力——Shizuku 后端直接返回 null
+         * 表示无法判定，绝不返回 false（那会让条件在 Shizuku 下恒不成立）。
+         */
+        override fun findNode(spec: com.autoball.core.model.NodeSpec?): Boolean? {
+            if (!router.accessibility.isAvailable()) {
+                log.warn(ctx.runId, "条件「节点存在」需要无障碍通道，当前不可用")
+                return null
+            }
+            return runCatching { router.accessibility.hasNode(spec) }.getOrNull()
+        }
+
+        /**
          * 位置周围条件：以**最近一次颜色匹配的命中点**为基准偏移。
          *
          * 基准点由 [matchColorWithPos] 写入 [lastMatchPos]——先在主区域找到
@@ -378,7 +390,18 @@ class FlowRunner(
                 if (fn == null) { log.warn(ctx.runId, "无法运行子脚本"); false } else fn(sid)
             }
             else -> {
-                val target = CoordMapper.applyTo(morphAction(jitterAction(a)), scale)
+                // 区域随机点击：先在区域内随机取点，再当作普通点击下发（R-117）。
+                // 后端不认识 CLICK_AREA 类型，必须在这一层转换。
+                val eff = if (a.type == ActionType.CLICK_AREA) {
+                    val rx = a.x + Math.random().toFloat() * (a.x2 - a.x)
+                    val ry = a.y + Math.random().toFloat() * (a.y2 - a.y)
+                    Action().apply {
+                        id = a.id; type = ActionType.CLICK
+                        x = rx; y = ry
+                        durationMs = a.durationMs
+                    }
+                } else a
+                val target = CoordMapper.applyTo(morphAction(jitterAction(eff)), scale)
                 val r = router.execute(target, ctx)
                 log.add(ctx.runId,
                     if (r.ok) RunLog.Level.OK else RunLog.Level.ERROR,

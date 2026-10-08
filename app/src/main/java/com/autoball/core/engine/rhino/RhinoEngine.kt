@@ -66,7 +66,7 @@ class RhinoEngine : JsEngine {
                 java.lang.Object::class.java
             )
 
-            val prelude = BRIDGE
+            val prelude = JsBridge.PRELUDE
             evalStr.invoke(cx, scope, prelude, "<bridge>", 1, null)
 
             val t0 = System.currentTimeMillis()
@@ -122,30 +122,5 @@ class RhinoEngine : JsEngine {
     }
 
     companion object {
-        /** 与 QuickJS 侧完全一致的 API 表面 */
-        private const val BRIDGE = """
-function __call(name){var a=[];for(var i=1;i<arguments.length;i++){a.push(arguments[i]);}
-  var r=__host(name, JSON.stringify(a));
-  var o=eval('('+r+')');
-  if(!o.ok){throw new Error(o.error||'host error');}
-  return o.value;}
-function click(x,y){return __call('click',x,y);}
-function press(x,y,d){return __call('press',x,y,d);}
-function longClick(x,y,d){return __call('longClick',x,y,d==undefined?600:d);}
-function swipe(x1,y1,x2,y2,d){return __call('swipe',x1,y1,x2,y2,d==undefined?300:d);}
-function sleep(ms){return __call('sleep',ms);}
-function globalAction(n){return __call('globalAction',n);}
-function key(c){return __call('key',c);}
-function input(t){return __call('input',t);}
-function openApp(p){return __call('openApp',p);}
-function toast(t){return __call('toast',t);}
-function screenshot(){return __call('screenshot');}
-function findNode(t){return __call('findNode',t);}
-function clickText(t){return __call('clickText',t);}
-function setVar(k,v){return __call('setVar',k,v);}
-function getVar(k){return __call('getVar',k);}
-function log(m){return __call('log',m);}
-function stop(){return __call('stop');}
-"""
     }
 }

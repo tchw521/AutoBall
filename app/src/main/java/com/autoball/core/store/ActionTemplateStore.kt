@@ -82,34 +82,14 @@ object ActionTemplateStore {
 
     fun delete(id: String) { save(all().filter { it.id != id }) }
 
-    /** 插入用拷贝：重新分配 id，避免插入后编辑影响原模板 */
-    fun clone(a: Action): Action = Action().apply {
-        id = Action.newId()
-        type = a.type
-        optionLabel = a.optionLabel
-        enabled = a.enabled
-        desc = a.desc
-        x = a.x; y = a.y; x2 = a.x2; y2 = a.y2
-        durationMs = a.durationMs
-        preDelayMs = a.preDelayMs
-        waitMs = a.waitMs
-        repeat = a.repeat
-        repeatIntervalMs = a.repeatIntervalMs
-        condition = a.condition
-        keyCode = a.keyCode
-        text = a.text
-        pkg = a.pkg
-        url = a.url
-        code = a.code
-        scriptId = a.scriptId
-        varName = a.varName
-        varValue = a.varValue
-        controlOp = a.controlOp
-        matchThreshold = a.matchThreshold
-        colorTolerance = a.colorTolerance
-        listeners = LinkedHashMap(a.listeners)
-        subActions = ArrayList(a.subActions.map { clone(it) })
-    }
+    /**
+     * 插入用拷贝：重新分配 id，避免插入后编辑影响原模板。
+     *
+     * 原先与 EditPage 的复制/粘贴各自手写一份逐字段拷贝（R-001 三次法则），
+     * 三处都漏掉过 colorHex / nodeSpec / imageRef / failOp 等字段，
+     * 且嵌套结构是浅拷贝。现统一走 [Action.copy]。
+     */
+    fun clone(a: Action): Action = a.copy(newId = true)
 
     /** 内置模板：覆盖最常见的组合，用户可直接用也可自建 */
     val BUILT_IN: List<Template> = listOf(

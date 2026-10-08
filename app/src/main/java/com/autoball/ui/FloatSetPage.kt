@@ -307,6 +307,21 @@ class FloatSetPage(context: Context, private val host: PageHost) : FrameLayout(c
             AB.store.putFloat("panel_alpha", it)
         })
 
+        // 自定义按键布局（R-118）：固定皮肤只能选预设，这里可增删按键
+        winPane.addView(Kit.section(context, "按键布局"))
+        val keyCnt = com.autoball.core.store.PanelKeyStore.all().size
+        winPane.addView(Kit.valueRow(context, "自定义按键",
+            if (com.autoball.core.store.PanelKeyStore.enabled())
+                "已启用 · $keyCnt 个按键" else "未启用（沿用皮肤预设）",
+            "⌨", Theme.pri()) {
+            val act = context as? android.app.Activity ?: return@valueRow
+            PanelKeyDialog.show(act) {
+                renderWin()
+                // 变了布局要重建悬浮窗，否则用户看不到效果
+                com.autoball.float.FloatManager.refresh()
+            }
+        })
+
         winPane.addView(Kit.section(context, "行为"))
         winPane.addView(Kit.switchRow(context, "运行时自动显示", "脚本开始即弹出", "▷", Theme.ok(),
             AB.store.getBool("panel_auto", true)) {

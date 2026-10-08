@@ -69,6 +69,44 @@ class Script {
     var updatedAt: Long = createdAt
     var runCount: Int = 0
 
+    /**
+     * 深拷贝（R-001：编辑页/JS 页必须持有**自己的副本**）。
+     *
+     * 背景：`ScriptStore.all()` 只浅拷贝列表、共享 Script 对象。
+     * 编辑页此前直接原地修改这个共享对象，导致 save() 里
+     * `list[idx] === s`——保存前留的快照拍到的是**已改后**的新状态，
+     * 回滚等于没效果。让编辑页持有副本即可同时解决"污染缓存"与"快照失效"。
+     */
+    fun copy(): Script {
+        val c = Script()
+        c.id = id
+        c.name = name
+        c.kind = kind
+        c.groupId = groupId
+        c.targetPkg = targetPkg
+        c.slot = slot
+        c.jsCode = jsCode
+        c.flow = flow?.copy()
+        c.tags = ArrayList(tags)
+        c.enabled = enabled
+        c.isDefault = isDefault
+        c.scheduleEnabled = scheduleEnabled
+        c.scheduleMinute = scheduleMinute
+        c.scheduleDays = scheduleDays
+        c.scheduleOnBoot = scheduleOnBoot
+        c.lastFiredDay = lastFiredDay
+        c.loopCount = loopCount
+        c.loopIntervalMs = loopIntervalMs
+        c.sharePass = sharePass
+        c.notifyEnabled = notifyEnabled
+        c.notifyPkg = notifyPkg
+        c.notifyKeyword = notifyKeyword
+        c.createdAt = createdAt
+        c.updatedAt = updatedAt
+        c.runCount = runCount
+        return c
+    }
+
     fun toJson(): JSONObject = JSONObject().apply {
         put("id", id)
         put("name", name)
@@ -91,6 +129,9 @@ class Script {
         put("loopCount", loopCount)
         put("loopIntervalMs", loopIntervalMs)
         if (sharePass.isNotEmpty()) put("sharePass", sharePass)
+        // 定时去重的"当天已触发"标记必须持久化。
+        // 此前只在内存里：应用进程被回收后归零，到点脚本当天会**重复触发一次**。
+        put("lastFiredDay", lastFiredDay)
         put("notifyEnabled", notifyEnabled)
         put("notifyPkg", notifyPkg)
         put("notifyKeyword", notifyKeyword)
@@ -128,7 +169,8 @@ class Script {
             s.loopCount = o.optInt("loopCount", 0)
             s.loopIntervalMs = o.optLong("loopIntervalMs", 0L)
             s.sharePass = o.optStringOrNull("sharePass") ?: ""
-            s.notifyEnabled = o.optBoolean("notifyEnabled", false)
+            s.lastFiredDay = o.optInt("lastFiredDay", 0)
+        notifyEnabled = o.optBoolean("notifyEnabled", false)
             s.notifyPkg = o.optStringOrNull("notifyPkg") ?: ""
             s.notifyKeyword = o.optStringOrNull("notifyKeyword") ?: ""
             return s

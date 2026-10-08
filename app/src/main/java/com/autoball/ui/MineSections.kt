@@ -211,6 +211,16 @@ object MineSections {
             "📊", Theme.pri2()) { host.openSubPage("stat") })
         b.addView(Kit.settingCard(ctx, g2))
 
+        // 定时计划总览（R-119）：逐个脚本进菜单看不到全局，也发现不了撞车
+        b.addView(Kit.groupHead(ctx, "定时计划"))
+        val g25 = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
+        val cnt = com.autoball.AB.store.all()
+            .count { it.scheduleEnabled && it.scheduleMinute >= 0 }
+        g25.addView(Kit.valueRow(ctx, "计划日历",
+            if (cnt == 0) "未设置定时任务" else "$cnt 个定时任务",
+            "📅", Theme.warn()) { host.openSubPage("schedule") })
+        b.addView(Kit.settingCard(ctx, g25))
+
         b.addView(Kit.groupHead(ctx, "标签"))
         val g3 = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
         g3.addView(Kit.note(ctx,

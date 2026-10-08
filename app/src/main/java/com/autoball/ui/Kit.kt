@@ -2,6 +2,7 @@ package com.autoball.ui
 
 import android.content.Context
 import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
 import android.graphics.Typeface
 import android.os.Build
 import android.view.Gravity
@@ -631,6 +632,33 @@ object Kit {
     }
 
     /** 胶囊按钮（v3 .pill） */
+    /**
+     * 圆形色点（可选中）。
+     *
+     * 抽出来的原因：分组配色、标签配色、悬浮按键配色三处都要"一排色点选一个"，
+     * 各写一遍就会有三种不同的选中标记与尺寸（R-001 三次法则）。
+     */
+    fun colorDot(ctx: Context, color: Int, selected: Boolean,
+                 sizeDp: Float = 30f, onClick: () -> Unit): TextView =
+        TextView(ctx).apply {
+            text = if (selected) "✓" else ""
+            textSize = 11f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(Color.WHITE)
+            gravity = Gravity.CENTER
+            val d = Display.dpInt(ctx, sizeDp)
+            layoutParams = LinearLayout.LayoutParams(d, d).apply {
+                marginStart = Display.dpInt(ctx, 4f)
+                marginEnd = Display.dpInt(ctx, 4f)
+            }
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(color)
+                if (selected) setStroke(Display.dpInt(ctx, 2f), Theme.textPri())
+            }
+            setOnClickListener { onClick() }
+        }
+
     fun pill(ctx: Context, text: String, onClick: () -> Unit): TextView =
         TextView(ctx).apply {
             this.text = text

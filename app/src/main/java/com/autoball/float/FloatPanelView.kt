@@ -8,6 +8,7 @@ import android.view.View
 import android.widget.LinearLayout
 import android.widget.TextView
 import com.autoball.core.util.Display
+import com.autoball.ui.Theme
 
 /**
  * 悬浮窗（UI 设计方案 v3 · 六套皮肤）。
@@ -38,6 +39,8 @@ class FloatPanelView(context: Context, private val listener: Listener) : LinearL
         fun onStop()
         fun onCollapse()
         fun onRecord()
+        /** 自定义按键里「绑定脚本」类型的点击；默认按 SLOT_A 处理（兼容旧实现） */
+        fun onRunScript(scriptId: String) { onRunSlot(SlotAction.SLOT_A) }
     }
 
     enum class SlotAction(val label: String, val glyph: String) {
@@ -50,7 +53,7 @@ class FloatPanelView(context: Context, private val listener: Listener) : LinearL
     private val stepTv: TextView = TextView(context).apply {
         textSize = 10.5f
         setTypeface(null, android.graphics.Typeface.BOLD)
-        setTextColor(Color.parseColor("#B9B2D6"))
+        setTextColor(Theme.textSec())
         gravity = Gravity.CENTER
         setSingleLine(true)
         ellipsize = android.text.TextUtils.TruncateAt.END
@@ -67,10 +70,20 @@ class FloatPanelView(context: Context, private val listener: Listener) : LinearL
         apply(Skin.DEFAULT, 40f)
     }
 
-    fun apply(skin: Skin, buttonDp: Float) {
+    /**
+     * @param cols 自定义布局的列数（1=纵向，>1 为网格）；仅自定义布局生效
+     */
+    fun apply(skin: Skin, buttonDp: Float, cols: Int = 1) {
         this.skin = skin
         this.buttonDp = buttonDp
         removeAllViews()
+        // 自定义布局优先（R-118）：启用后皮肤只作为"初始模板"，不再限制按键
+        if (com.autoball.core.store.PanelKeyStore.enabled()) {
+            buildCustom(cols)
+            addBottomBar()
+            addView(stepTv)
+            return
+        }
         when (skin) {
             Skin.SKIN_2020 -> buildGrid(3, listOf(
                 SlotAction.SLOT_A, SlotAction.SLOT_B, SlotAction.SLOT_C,
@@ -88,16 +101,20 @@ class FloatPanelView(context: Context, private val listener: Listener) : LinearL
                 SlotAction.SLOT_A, SlotAction.BACK, SlotAction.HOME))
             Skin.ULTRA -> buildVertical(listOf(SlotAction.SLOT_A))
         }
-        // 通用操作条
+        addBottomBar()
+        addView(stepTv)
+    }
+
+    /** 底部操作条：停止 / 录制 / 收起。三条路径共用一份（R-001） */
+    private fun addBottomBar() {
         val bar = LinearLayout(context).apply {
             orientation = HORIZONTAL
             gravity = Gravity.CENTER
             setPadding(0, Display.dpInt(context, 5f), 0, 0)
         }
-        bar.addView(smallButton("停止", Color.parseColor("#FF5B6E")) { listener.onStop() })
-        bar.addView(smallButton("录制", Color.parseColor("#7C3AED")) { listener.onRecord() })
-        bar.addView(smallButton("收起", Color.parseColor("#4A9EFF")) { listener.onCollapse() })
-        addView(stepTv)
+        bar.addView(smallButton("停止", Theme.danger()) { listener.onStop() })
+        bar.addView(smallButton("录制", Theme.pri()) { listener.onRecord() })
+        bar.addView(smallButton("收起", Theme.pri2()) { listener.onCollapse() })
         addView(bar)
     }
 
@@ -151,6 +168,70 @@ class FloatPanelView(context: Context, private val listener: Listener) : LinearL
         }
     }
 
+    /** 自定义按键布局（R-118）：按用户配置的列表与列数排布 */
+    private fun buildCustom(cols: Int) {
+        val keys = com.autoball.core.store.PanelKeyStore.all()
+            .take(com.autoball.core.store.PanelKeyStore.MAX)
+        if (keys.isEmpty()) return
+        val c = cols.coerceIn(1, 4)
+        if (c == 1) {
+            keys.forEach { addView(customKey(it)) }
+        } else {
+            keys.chunked(c).forEachIndexed { ri, rowKeys ->
+                val row = LinearLayout(context).apply {
+                    orientation = HORIZONTAL
+                    gravity = Gravity.CENTER
+                }
+                rowKeys.forEachIndexed { ci, k ->
+                    row.addView(customKey(k), LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                        if (ci > 0) marginStart = Display.dpInt(context, 4f)
+                    })
+                }
+                addView(row, LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                    if (ri > 0) topMargin = Display.dpInt(context, 4f)
+                })
+            }
+        }
+    }
+
+    /** 自定义按键：与内置按键同一套外观，只是动作与颜色取自配置 */
+    private fun customKey(k: com.autoball.core.store.PanelKeyStore.Key): TextView =
+        TextView(context).apply {
+            text = com.autoball.core.store.PanelKeyStore.labelOf(k).take(2)
+            textSize = (buttonDp * 0.30f)
+            setTypeface(null, android.graphics.Typeface.BOLD)
+            setTextColor(Color.WHITE)
+            gravity = Gravity.CENTER
+            val s = Display.dpInt(context, buttonDp)
+            layoutParams = LinearLayout.LayoutParams(s, s).apply {
+                bottomMargin = Display.dpInt(context, 4f)
+            }
+            val base = Theme.G[k.color.coerceIn(0, Theme.G.size - 1)]
+            background = GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                intArrayOf(base, shade(base, -0.28f))).apply {
+                shape = GradientDrawable.OVAL
+                setStroke(Display.dpInt(context, 1f), Theme.C_KEY_EDGE)
+            }
+            elevation = Display.dp(context, 4f)
+            contentDescription = com.autoball.core.store.PanelKeyStore.labelOf(k)
+            setOnClickListener {
+                // 绑定脚本的键不走 SlotAction，直接跑目标脚本
+                if (k.action == "SCRIPT" && k.scriptId.isNotBlank()) {
+                    listener.onRunScript(k.scriptId)
+                } else {
+                    listener.onRunSlot(slotOf(k.action))
+                }
+            }
+        }
+
+    private fun slotOf(action: String): SlotAction =
+        SlotAction.values().firstOrNull { it.name == action } ?: SlotAction.SLOT_A
+
     // ---------- 按键 ----------
 
     /** 主按键：圆形渐变，带内高光与投影 */
@@ -168,7 +249,7 @@ class FloatPanelView(context: Context, private val listener: Listener) : LinearL
             GradientDrawable.Orientation.TL_BR,
             intArrayOf(colorOf(a), shade(colorOf(a), -0.28f))).apply {
             shape = GradientDrawable.OVAL
-            setStroke(Display.dpInt(context, 1f), Color.parseColor("#33FFFFFF"))
+            setStroke(Display.dpInt(context, 1f), Theme.C_KEY_EDGE)
         }
         elevation = Display.dp(context, 4f)
         setOnClickListener { listener.onRunSlot(a) }
@@ -199,13 +280,15 @@ class FloatPanelView(context: Context, private val listener: Listener) : LinearL
         }
 
     private fun colorOf(a: SlotAction): Int = when (a) {
-        SlotAction.SLOT_A -> Color.parseColor("#7C3AED")
-        SlotAction.SLOT_B -> Color.parseColor("#2F6BFF")
-        SlotAction.SLOT_C -> Color.parseColor("#12B76A")
-        SlotAction.BACK -> Color.parseColor("#F79009")
-        SlotAction.HOME -> Color.parseColor("#0EA5E9")
-        SlotAction.RECENTS -> Color.parseColor("#6B7280")
-        SlotAction.SHOT -> Color.parseColor("#EC4899")
+        // 复用 Theme.G 分组调色板（7 色，深浅各一套）——不另造一个色表，
+        // 否则改主题时要同时维护两处（T-02 / R-001）
+        SlotAction.SLOT_A -> Theme.G[0]
+        SlotAction.SLOT_B -> Theme.G[1]
+        SlotAction.SLOT_C -> Theme.G[2]
+        SlotAction.BACK -> Theme.G[3]
+        SlotAction.HOME -> Theme.G[5]
+        SlotAction.RECENTS -> Theme.G[6]
+        SlotAction.SHOT -> Theme.G[4]
     }
 
     /** 压暗（amount 为负）或提亮 */
@@ -218,9 +301,9 @@ class FloatPanelView(context: Context, private val listener: Listener) : LinearL
 
     private fun setBackgroundCompat() {
         background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
-            intArrayOf(Color.parseColor("#F21E1836"), Color.parseColor("#F2141022"))).apply {
+            Theme.floatStops()).apply {
             cornerRadius = Display.dp(context, 16f)
-            setStroke(Display.dpInt(context, 1f), Color.parseColor("#26FFFFFF"))
+            setStroke(Display.dpInt(context, 1f), Theme.floatEdge())
         }
         elevation = Display.dp(context, 10f)
     }
@@ -228,10 +311,10 @@ class FloatPanelView(context: Context, private val listener: Listener) : LinearL
     /** 运行时高亮：整块描边改主色 */
     fun setRunning(running: Boolean) {
         val bg = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
-            intArrayOf(Color.parseColor("#F21E1836"), Color.parseColor("#F2141022"))).apply {
+            Theme.floatStops()).apply {
             cornerRadius = Display.dp(context, 16f)
             setStroke(Display.dpInt(context, 1.6f),
-                if (running) Color.parseColor("#C87C3AED") else Color.parseColor("#26FFFFFF"))
+                if (running) Theme.runEdge() else Theme.floatEdge())
         }
         background = bg
     }

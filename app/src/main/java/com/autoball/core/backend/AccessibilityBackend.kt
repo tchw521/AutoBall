@@ -251,15 +251,58 @@ class AccessibilityBackend : InputBackend {
         return ActionResult.ok(id, 0, null)
     }
 
+    /**
+     * 识别屏幕（R-120）。
+     *
+     * 此前只截个图记条日志就返回"识别完成"——**结果不落任何地方**，
+     * 后续动作与条件根本拿不到识别结果，这个动作等于摆设。
+     *
+     * 现在把结果写进变量：
+     * - 指定 varName → 写该变量；未指定 → 写默认变量 `$screen`
+     * - 内容优先取**无障碍节点树**的文本（无需 OCR，本地即得）；
+     *   拿不到节点树时退化为屏幕尺寸等基本信息，并如实说明降级原因
+     */
     private fun recognize(action: Action, ctx: ExecContext): ActionResult {
         val sr = screenshot(ctx)
         return when (sr) {
             is ScreenResult.Ok -> {
-                ctx.log("识别屏幕完成 ${sr.width}x${sr.height}")
-                ActionResult.ok(id, 0, "识别完成")
+                val text = dumpScreenText(action)
+                val name = action.varName?.takeIf { it.isNotBlank() } ?: "screen"
+                ctx.setVar(name, text)
+                ctx.setVar(name + "_w", sr.width.toString())
+                ctx.setVar(name + "_h", sr.height.toString())
+                ctx.log("识别屏幕：${sr.width}x${sr.height}，${text.length} 字符 → \$$name")
+                ActionResult.ok(id, 0, "识别完成 ${text.length} 字符")
             }
             is ScreenResult.Unavailable -> ActionResult.fail(id, 0, sr.reason)
         }
+    }
+
+    /**
+     * 抓当前屏幕的可读文本。
+     *
+     * 走无障碍节点树：本地、无需 OCR 模块、拿到的就是界面真实文案。
+     * 节点树不可用时**如实返回降级说明**，绝不返回空串冒充"识别成功"。
+     */
+    private fun dumpScreenText(action: Action): String {
+        val svc = AutoBallAccessibilityService.instance ?: return "(无障碍未开启，无法读取屏幕文本)"
+        val root = svc.rootInActiveWindow ?: return "(当前窗口无控件树)"
+        val sb = StringBuilder()
+        val max = 200          // 上限：节点很多时全量抓会拖慢脚本
+        var n = 0
+        walk(root) { node ->
+            if (n >= max) return@walk
+            val t = node.text?.toString()?.trim()
+            val d = node.contentDescription?.toString()?.trim()
+            val piece = when {
+                !t.isNullOrEmpty() -> t
+                !d.isNullOrEmpty() -> d
+                else -> null
+            }
+            if (piece != null) { sb.append(piece).append('\n'); n++ }
+        }
+        root.recycle()
+        return if (sb.isEmpty()) "(屏幕上没有可读文字)" else sb.toString().trimEnd()
     }
 
     // ---------- 节点 ----------
@@ -306,6 +349,26 @@ class AccessibilityBackend : InputBackend {
             walk(c, visitor)
             c.recycle()
         }
+    }
+
+    /**
+     * 仅判断节点是否存在（R-116：运行条件「节点存在」）。
+     *
+     * 与 [nodeCenter] 的区别：不取坐标、不关心是否可点击——只回答"在不在"。
+     *
+     * 返回 null 表示**无法判定**（无障碍未开启，或选择器为空），
+     * 调用方应按 UNKNOWN 处理，不能当成"不存在"。
+     */
+    fun hasNode(spec: NodeSpec?): Boolean? {
+        val s = spec ?: return null
+        // 空选择器：无法判定。若当成"不存在"，用户忘了填就会让条件恒不成立
+        if (s.id.isNullOrBlank() && s.text.isNullOrBlank() &&
+            s.desc.isNullOrBlank() && s.className.isNullOrBlank()) return null
+        val svc = AutoBallAccessibilityService.instance ?: return null
+        val node = findNode(svc, Action().apply { nodeSpec = s })
+        if (node == null) return false
+        node.recycle()
+        return true
     }
 
     /** 对外暴露的节点定位：只算坐标，不产生点击副作用 */

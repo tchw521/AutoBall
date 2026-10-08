@@ -284,6 +284,16 @@ class MainActivity : Activity(), PageHost, com.autoball.NotifyHost {
                 "data" -> MineSections.data(this, this)
                 "about" -> MineSections.about(this, this)
                 "log" -> LogPage(this, this)
+                // 定时计划日历（R-119）
+                "schedule" -> ScheduleBoard(this) { sc ->
+                    // sc 是 store 缓存里的共享对象；编辑前必须取副本，
+                    // 否则原地修改会污染缓存并让 save() 的"保存前快照"失效（见 v1.28）
+                    val fresh = com.autoball.AB.store.get(sc.id)?.copy() ?: return@ScheduleBoard
+                    ScheduleDialog.show(this@MainActivity, fresh) {
+                        com.autoball.AB.store.save(fresh)
+                        showPage(0)
+                    }
+                }
                 "stat" -> StatPage(this, this)
                 "set" -> SetPage(this, this)
                 "js" -> {

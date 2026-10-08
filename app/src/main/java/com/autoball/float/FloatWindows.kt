@@ -29,7 +29,7 @@ import com.autoball.core.util.Display
  */
 object FloatWindows {
 
-    private data class Entry(val view: View, val params: WindowManager.LayoutParams)
+    private data class Entry(val view: View, var params: WindowManager.LayoutParams)
 
     private val handler = Handler(Looper.getMainLooper())
     private val stack = ArrayList<Entry>()
@@ -102,8 +102,14 @@ object FloatWindows {
         if (!Display.canDrawOverlay(ctx)) return false
         val m = manager(ctx)
         if (stack.any { it.view === view }) return true
-        stack.add(Entry(view, params))
-        return runCatching { m.addView(view, params); true }.getOrDefault(false)
+        val e = Entry(view, params)
+        stack.add(e)
+        // 失败必须回滚：否则 stack 里留下一个"没真正挂上"的幽灵条目，
+        // hideAll/restore 会去 removeView 一个根本没 attach 的 View，
+        // 后续 add 的层叠顺序也会被污染。
+        val ok = runCatching { m.addView(view, params); true }.getOrDefault(false)
+        if (!ok) stack.remove(e)
+        return ok
     }
 
     fun remove(view: View?) {
@@ -116,7 +122,10 @@ object FloatWindows {
     fun update(view: View?, params: WindowManager.LayoutParams?) {
         val v = view ?: return
         val p = params ?: return
-        stack.firstOrNull { it.view === v }?.let { it.view.layoutParams }
+        // 必须把新参数写回栈里的条目：
+        // 原写法 `?.let { it.view.layoutParams }` 只是取值、无任何副作用，
+        // 于是拖动窗口后 hideAll→restore 会把窗口弹回旧位置。
+        stack.firstOrNull { it.view === v }?.params = p
         runCatching { wm?.updateViewLayout(v, p) }
     }
 

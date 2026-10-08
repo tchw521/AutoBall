@@ -94,10 +94,15 @@ static void appendJsValueAsJson(JSContext *ctx, std::string &out, JSValueConst v
     }
 }
 
+// 通用转发入口：JS 侧的 __host('click', ...) 走这里。
+// 具体 API 名称与包装全部定义在 Kotlin 的 JsBridge.PRELUDE——
+// 新增 API 不必再改本文件（此前每个 API 都要在这里加一个字符串）。
+// "host" 放末尾便于阅读；magic 由数组下标自动推导，位置无要求。
 static const char *kHostApis[] = {
         "click", "press", "longClick", "swipe", "sleep", "globalAction",
         "key", "input", "openApp", "toast", "screenshot", "findNode",
-        "clickText", "setVar", "getVar", "log", "stop", "isCanceled", "backend"
+        "clickText", "setVar", "getVar", "log", "stop", "isCanceled", "backend",
+        "host"
 };
 
 static JSValue js_dispatch(JSContext *ctx, JSValueConst this_val, int argc,

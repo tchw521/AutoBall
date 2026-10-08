@@ -182,7 +182,8 @@ key(4);
     }
 
     fun bind(s: Script) {
-        script = s
+        // 同 EditPage：持有副本，避免原地修改污染缓存与快照
+        script = s.copy()
         nameEt.setText(s.name)
         codeEt.setText(s.jsCode.ifBlank { SAMPLE })
     }

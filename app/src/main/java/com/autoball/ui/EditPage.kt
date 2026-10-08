@@ -716,7 +716,10 @@ class EditPage(context: Context, private val host: PageHost) : FrameLayout(conte
     // ---------- 数据操作 ----------
 
     fun bind(s: Script) {
-        script = s
+        // 持有副本，绝不共享 ScriptStore 缓存里的对象：
+        // 原地修改共享对象会污染缓存，并让 save() 的"保存前快照"拍到
+        // 已经改过的新状态（list[idx] === s），回滚形同虚设。
+        script = s.copy()
         nameEd.setText(s.name)
         loop = s.flow?.loop == true
         syncLoop()
@@ -762,56 +765,10 @@ class EditPage(context: Context, private val host: PageHost) : FrameLayout(conte
         val acts = script?.flow?.actions ?: return
         if (i !in acts.indices) return
         val src = acts[i]
-        clipboard = com.autoball.core.model.Action().apply {
-            // 逐字段拷贝——避免粘贴出来的动作与原动作共享 id
-            id = com.autoball.core.model.Action.newId()
-            type = src.type
-            optionLabel = src.optionLabel
-            enabled = src.enabled
-            desc = src.desc
-            x = src.x; y = src.y; x2 = src.x2; y2 = src.y2
-            durationMs = src.durationMs
-            preDelayMs = src.preDelayMs
-            waitMs = src.waitMs
-            repeat = src.repeat
-            repeatIntervalMs = src.repeatIntervalMs
-            condition = src.condition
-            keyCode = src.keyCode
-            text = src.text
-            pkg = src.pkg
-            url = src.url
-            code = src.code
-            scriptId = src.scriptId
-            varName = src.varName
-            varValue = src.varValue
-            controlOp = src.controlOp
-            matchThreshold = src.matchThreshold
-            colorTolerance = src.colorTolerance
-            listeners = LinkedHashMap(src.listeners.mapValues { (_, v) ->
-                com.autoball.core.model.Action().apply {
-                    id = com.autoball.core.model.Action.newId()
-                    type = v.type
-                    x = v.x; y = v.y; x2 = v.x2; y2 = v.y2
-                    durationMs = v.durationMs
-                    waitMs = v.waitMs
-                    keyCode = v.keyCode
-                    text = v.text
-                    code = v.code
-                }
-            })
-            subActions = ArrayList(src.subActions.map { sub ->
-                com.autoball.core.model.Action().apply {
-                    id = com.autoball.core.model.Action.newId()
-                    type = sub.type
-                    x = sub.x; y = sub.y; x2 = sub.x2; y2 = sub.y2
-                    durationMs = sub.durationMs
-                    waitMs = sub.waitMs
-                    keyCode = sub.keyCode
-                    text = sub.text
-                    code = sub.code
-                }
-            })
-        }
+        // 用 Action.copy(newId=true)：此前手工逐字段复制，漏掉了
+        // colorHex / nodeSpec / imageRef / failOp / jitterDp 等十余项，
+        // 且嵌套对象是浅拷贝——粘贴出来的"点击节点"会丢掉节点选择器。
+        clipboard = src.copy(newId = true)
         Ui.toast(context, "已复制第 ${i + 1} 步")
     }
 
@@ -825,33 +782,7 @@ class EditPage(context: Context, private val host: PageHost) : FrameLayout(conte
         val s = script ?: return
         if (s.flow == null) s.flow = com.autoball.core.model.Flow()
         val acts = s.flow!!.actions
-        val copy = com.autoball.core.model.Action().apply {
-            id = com.autoball.core.model.Action.newId()
-            type = c.type
-            optionLabel = c.optionLabel
-            enabled = c.enabled
-            desc = c.desc
-            x = c.x; y = c.y; x2 = c.x2; y2 = c.y2
-            durationMs = c.durationMs
-            preDelayMs = c.preDelayMs
-            waitMs = c.waitMs
-            repeat = c.repeat
-            repeatIntervalMs = c.repeatIntervalMs
-            condition = c.condition
-            keyCode = c.keyCode
-            text = c.text
-            pkg = c.pkg
-            url = c.url
-            code = c.code
-            scriptId = c.scriptId
-            varName = c.varName
-            varValue = c.varValue
-            controlOp = c.controlOp
-            matchThreshold = c.matchThreshold
-            colorTolerance = c.colorTolerance
-            listeners = LinkedHashMap(c.listeners)
-            subActions = ArrayList(c.subActions)
-        }
+        val copy = c.copy(newId = true)
         val at = if (i < 0) acts.size else (i + 1).coerceAtMost(acts.size)
         acts.add(at, copy)
         save(); renderSteps()

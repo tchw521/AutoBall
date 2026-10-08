@@ -81,9 +81,20 @@ class Action {
     var desc: String? = null
 
     /** 浅拷贝：供 morph 等场景在不改动原对象的前提下派生一份 */
-    fun copy(): Action {
+    /**
+     * 深拷贝。
+     *
+     * @param newId 是否生成新 id。**默认 false**：FlowRunner 的 morph 变换
+     *   需要一个"同一步动作的变体"，id 必须保持一致，否则 failJumpTo /
+     *   gotoId 定位不到目标。复制到剪贴板 / 粘贴时必须传 true——
+     *   两份动作共用 id 会让跳转目标产生歧义。
+     *
+     * 嵌套结构（nodeSpec / strokes / subActions / listeners）此前是**浅拷贝**：
+     * 改副本会把原动作一起改掉。NodeSpec 是可变 data class，影响最直接。
+     */
+    fun copy(newId: Boolean = false): Action {
         val c = Action()
-        c.id = id
+        c.id = if (newId) newId() else id
         c.type = type
         c.optionLabel = optionLabel
         c.enabled = enabled
@@ -109,15 +120,17 @@ class Action {
         c.scriptId = scriptId
         c.controlOp = controlOp
         c.gotoId = gotoId
-        c.nodeSpec = nodeSpec
+        c.nodeSpec = nodeSpec?.copy()
         c.colorHex = colorHex
         c.colorTolerance = colorTolerance
         c.imageRef = imageRef
         c.matchThreshold = matchThreshold
+        // Pt 是不可变 data class，浅拷贝即可；
+        // 但 strokes 是「列表的列表」、subActions/listeners 含 Action，必须逐层深拷
         c.path = ArrayList(path)
-        c.strokes = ArrayList(strokes)
-        c.subActions = ArrayList(subActions)
-        c.listeners = LinkedHashMap(listeners)
+        c.strokes = ArrayList(strokes.map { ArrayList(it) })
+        c.subActions = ArrayList(subActions.map { it.copy(newId) })
+        c.listeners = LinkedHashMap(listeners.mapValues { it.value.copy(newId) })
         c.timeoutMs = timeoutMs
         return c
     }
@@ -275,6 +288,9 @@ class Action {
             val a = Action()
             a.id = o.optStringOrNull("id") ?: newId()
             a.type = ActionType.fromName(o.optStringOrNull("type")) ?: ActionType.CLICK
+            // optionLabel 此前只写不读：保存再打开就丢，界面回退成动作类型名，
+            // 用户分不清当初选的是「长按」还是「点击」（两者都是 CLICK 类型）。
+            a.optionLabel = o.optStringOrNull("optionLabel")
             a.comment = o.optStringOrNull("comment")
             a.enabled = o.optBoolean("enabled", true)
             a.desc = o.optStringOrNull("desc")

@@ -146,6 +146,33 @@ object Theme {
         Color.parseColor("#6B7280")
     )
 
+    /**
+     * 悬浮层专用底色（T-02）。
+     *
+     * 此前 `FloatPanelView` 把 `#F21E1836` / `#F2141022` 写死在代码里——
+     * 这是**深色调**，切到浅色主题时浮层仍是深色块，与整体割裂（真 bug）。
+     * 预解析同样是为了不在每帧 onDraw 里解析字符串。
+     */
+    private val C_D_FLOAT = intArrayOf(
+        Color.parseColor("#F21E1836"), Color.parseColor("#F2141022"))
+    private val C_L_FLOAT = intArrayOf(
+        Color.parseColor("#F5FFFFFF"), Color.parseColor("#F0EFF6FA"))
+
+    fun floatStops(): IntArray = if (isDark()) C_D_FLOAT else C_L_FLOAT
+
+    /** 浮层描边：深浅都需要一层淡边把浮层与背景分开 */
+    private val C_D_FLOAT_EDGE = Color.parseColor("#26FFFFFF")
+    private val C_L_FLOAT_EDGE = Color.parseColor("#33000000")
+    fun floatEdge(): Int = if (isDark()) C_D_FLOAT_EDGE else C_L_FLOAT_EDGE
+
+    /** 圆形按键的白色内描边（渐变球上的高光，两主题一致） */
+    val C_KEY_EDGE = Color.parseColor("#33FFFFFF")
+
+    /** 运行中高亮描边 */
+    private val C_D_RUN_EDGE = Color.parseColor("#C87C3AED")
+    private val C_L_RUN_EDGE = Color.parseColor("#CC7C3AED")
+    fun runEdge(): Int = if (isDark()) C_D_RUN_EDGE else C_L_RUN_EDGE
+
     fun gInk(i: Int): Int {
         val k = i % G.size
         return if (isDark()) G_INK_D[k] else G_INK_L[k]

@@ -60,6 +60,60 @@ object ActionEditor {
     // 摘要
     // =====================================================================
 
+    /**
+     * 像素 → 百分比。
+     *
+     * 取点/取区控件回调的是**像素**，而 [Action] 的坐标字段一律存百分比
+     * （换机型、转屏都不会点偏）。每次用到回调值都要过这一层，
+     * 直接存像素会出现 "612%" 这种荒谬值。
+     */
+    /**
+     * 识别屏幕的实时预览（R-120）。
+     *
+     * 该动作此前只有参数、没有任何反馈——用户配完不知道会识别出什么，
+     * 只能跑一遍脚本再看日志。这里直接调后端跑一次并弹窗展示。
+     *
+     * 走后台线程：识别涉及截图与遍历节点树，放主线程会卡住界面。
+     */
+    private fun previewRecognize(ctx: android.content.Context, a: Action) {
+        Ui.toast(ctx, "正在识别当前屏幕…")
+        Thread {
+            val text = try {
+                val be = com.autoball.core.backend.AccessibilityBackend()
+                val ectx = com.autoball.core.backend.ExecContext()
+                val r = be.execute(a, ectx)
+                if (r.ok) {
+                    ectx.getVar(a.varName ?: "screen")?.takeIf { it.isNotBlank() }
+                        ?: r.message ?: "(识别完成，但没有拿到文本)"
+                } else {
+                    // ActionResult 的失败原因是 cause（不是 reason）
+                    "(识别失败：${r.cause ?: r.message ?: "未知原因"})"
+                }
+            } catch (e: Throwable) { "(预览失败：${e.message ?: "未知"})" }
+            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                Ui.dialog(ctx, "识别结果")
+                    .body(android.widget.TextView(ctx).apply {
+                        this.text = text
+                        setTextIsSelectable(true)
+                        textSize = 12.5f
+                        setTextColor(Theme.textPri())
+                        setPadding(Display.dpInt(ctx, 12f), Display.dpInt(ctx, 10f),
+                            Display.dpInt(ctx, 12f), Display.dpInt(ctx, 10f))
+                    })
+                    .maxHeight(0.7f)
+                    .positive("关闭") { true }
+                    .show()
+            }
+        }.start()
+    }
+
+    private fun pctOf(px: Float, py: Float): Pair<Float, Float> {
+        val sz = com.autoball.core.util.Display.screenSize(com.autoball.App.get())
+        val w = sz.x.toFloat().coerceAtLeast(1f)
+        val h = sz.y.toFloat().coerceAtLeast(1f)
+        return (px / w * 100f).coerceIn(0f, 100f) to (py / h * 100f).coerceIn(0f, 100f)
+    }
+
     /** 一行摘要：用于步骤列表与日志（百分比坐标，与自动精灵一致） */
     fun describe(a: Action): String {
         val p = { v: Float -> "%.1f%%".format(v) }
@@ -67,6 +121,8 @@ object ActionEditor {
             ActionType.CLICK, ActionType.CLICK_IMAGE, ActionType.CLICK_TEXT,
             ActionType.CLICK_COLOR, ActionType.CLICK_NODE, ActionType.AI_CLICK ->
                 "${a.optionLabel ?: "点击"}(${p(a.x)}, ${p(a.y)})"
+            ActionType.CLICK_AREA ->
+                "区域随机(${p(a.x)}, ${p(a.y)})~(${p(a.x2)}, ${p(a.y2)})"
             ActionType.SWIPE, ActionType.GESTURE_SINGLE, ActionType.GESTURE_MULTI ->
                 "滑动(${p(a.x)}, ${p(a.y)})→(${p(a.x2)}, ${p(a.y2)})"
             ActionType.INPUT_TEXT -> "输入「${a.text ?: ""}」"
@@ -247,10 +303,31 @@ object ActionEditor {
                     null,
                     pick = {
                         RegionPicker.pick(ctx, ctx as? Activity, dialog) { l, t, r, b ->
-                            a.x = l; a.y = t; a.x2 = l + r; a.y2 = t + b; rebuild()
+                            // RegionPicker 回调的是**像素**，而 Action 存的是百分比。
+                            // 此前直接存像素，于是出现了 "点击(612.0%, 1344.0%)" 这种值，
+                            // 且 `l + r` 把右边界当宽度相加——两个错误叠加。
+                            val (px, py) = pctOf(l, t)
+                            val (qx, qy) = pctOf(r, b)
+                            a.x = px; a.y = py; a.x2 = qx; a.y2 = qy; rebuild()
                         }
                     },
                     help = "框选终点区域：一次填满起点与终点两个坐标。"))
+            }
+
+            if (g.contains(com.autoball.core.model.FieldGroup.AREA)) {
+                box.addView(zsRow(ctx, "随机区域",
+                    valueView(ctx, "(${pct(a.x)}, ${pct(a.y)})~(${pct(a.x2)}, ${pct(a.y2)})",
+                        a.x2 > a.x || a.y2 > a.y),
+                    null,
+                    pick = {
+                        RegionPicker.pick(ctx, ctx as? Activity, dialog) { l, t, r, b ->
+                            val (px, py) = pctOf(l, t)
+                            val (qx, qy) = pctOf(r, b)
+                            a.x = px; a.y = py; a.x2 = qx; a.y2 = qy; rebuild()
+                        }
+                    },
+                    help = "框选一块区域，每次运行都在区域内**随机取一点**点击。\n" +
+                        "与「坐标随机微调」不同：那个是围绕固定点抖动，这个是整块区域任意落点。"))
             }
 
             // ---- 数值字段：一律「选填」，不给默认值 ----
@@ -299,6 +376,23 @@ object ActionEditor {
                     if (a.type == ActionType.CLICK_TEXT) "目标文字" else "输入内容",
                     et, null, null,
                     help = "留空则运行时提示输入。"))
+            }
+            // 识别屏幕：结果要存进变量，否则后续动作拿不到（R-120）
+            if (a.type == ActionType.RECOGNIZE_SCREEN) {
+                val et = textField(ctx, a.varName ?: "", "screen")
+                readers["varName"] = { a.varName = et.text.toString().trim().ifEmpty { null } }
+                box.addView(zsRow(ctx, "存到变量", et, null, null,
+                    help = "识别结果写入该变量，后续可用运行条件判断。\n" +
+                        "同时写入 \${变量名}_w / _h 两个尺寸变量。"))
+                // 实时预览：这个动作此前只有参数、没有反馈，
+                // 用户无法确认"到底识别出了什么"，等于盲配
+                // pick 必须显式命名：zsRow 的尾随 lambda 会绑到 pick 参数，
+                // 但这里已经传了 null 占位，再跟尾随 lambda 会编译失败
+                box.addView(zsRow(ctx, "预览识别结果",
+                    valueView(ctx, "点此立即试一次", false), null,
+                    pick = { previewRecognize(ctx, a) },
+                    help = "按当前配置立刻识别一次并显示结果（不保存到脚本）。\n" +
+                        "会隐藏本应用界面并回到桌面，所以请在目标界面上先摆好再点。"))
             }
             if (g.contains(com.autoball.core.model.FieldGroup.PACKAGE)) {
                 val et = textField(ctx, a.pkg ?: "", "选填")

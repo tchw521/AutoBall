@@ -62,7 +62,9 @@ class QuickJsEngine : JsEngine {
             val adapter = object : HostCb {
                 override fun call(name: String, argsJson: String): String = host.call(name, argsJson)
             }
-            val raw = nativeEval(h, code, adapter, timeoutMs)
+            // 统一 prelude：API 表面只在一处定义，两个引擎共用（R-121）。
+            // 加 "\n" 而非空串，避免用户代码首行是 // 注释时被拼接吞掉。
+            val raw = nativeEval(h, JsBridge.PRELUDE + "\n" + code, adapter, timeoutMs)
             val o = JSONObject(raw)
             JsOutcome(
                 ok = o.optBoolean("ok", false),

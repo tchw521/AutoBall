@@ -62,6 +62,12 @@ data class ActionPreset(
             // 这里只标记类型，避免同一份配置散在两个地方
             ActionPreset("随机点击", G_TOUCH, ActionType.CLICK,
                 { it.durationMs = 60 }, "点击位置带随机偏移，降低被识别的风险"),
+            // 区域随机点击（R-117）：默认给屏幕中央一块 20%×20% 的区域，
+            // 用户再去框选；给默认值是为了避免"选了却因为区域为空而点不动"
+            ActionPreset("区域随机点击", G_TOUCH, ActionType.CLICK_AREA, {
+                it.durationMs = 60
+                it.x = 40f; it.y = 40f; it.x2 = 60f; it.y2 = 60f
+            }, "每次在框选区域内随机落点，位置不固定"),
             ActionPreset("滑动", G_TOUCH, ActionType.SWIPE,
                 { it.durationMs = 500; it.x2 = 50f; it.y2 = 20f }, "从一个位置滑到另一个位置"),
             ActionPreset("单指手势", G_TOUCH, ActionType.GESTURE_SINGLE,
