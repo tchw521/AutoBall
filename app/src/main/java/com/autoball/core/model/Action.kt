@@ -77,6 +77,9 @@ class Action {
     var comment: String? = null
     var enabled: Boolean = true
 
+    /** 动作描述（备注，不影响执行） */
+    var desc: String? = null
+
     /** 浅拷贝：供 morph 等场景在不改动原对象的前提下派生一份 */
     fun copy(): Action {
         val c = Action()
@@ -84,6 +87,7 @@ class Action {
         c.type = type
         c.optionLabel = optionLabel
         c.enabled = enabled
+        c.desc = desc
         c.comment = comment
         c.repeat = repeat
         c.repeatIntervalMs = repeatIntervalMs
@@ -175,6 +179,7 @@ class Action {
         put("type", type.name)
         comment?.let { put("comment", it) }
         put("enabled", enabled)
+        desc?.let { put("desc", it) }
         put("waitMs", waitMs)
         put("preDelayMs", preDelayMs)
         put("repeat", repeat)
@@ -252,6 +257,7 @@ class Action {
             a.type = ActionType.fromName(o.optStringOrNull("type")) ?: ActionType.CLICK
             a.comment = o.optStringOrNull("comment")
             a.enabled = o.optBoolean("enabled", true)
+            a.desc = o.optStringOrNull("desc")
             a.waitMs = o.optLong("waitMs", 300)
             a.preDelayMs = o.optLong("preDelayMs", 0)
             a.repeat = o.optInt("repeat", 1).coerceAtLeast(1)

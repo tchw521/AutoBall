@@ -194,8 +194,7 @@ object GlobalSettingsDialog {
                 false
             } else {
                 flow.morph = v
-                val w = waitEt.text.toString().trim().toFloatOrNull()
-                flow.defaultWaitMs = if (w == null || w <= 0f) 0L else (w * 1000).toLong()
+                // 默认等待由 DurationField 直接回写 flow.defaultWaitMs，这里不再二次读取
                 val r = repeatEt.text.toString().trim().toIntOrNull()
                 flow.loopCount = r ?: 0
                 true

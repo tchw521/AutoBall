@@ -7,6 +7,7 @@ import android.os.Build
 import com.autoball.core.backend.BackendRouter
 import com.autoball.core.log.CrashGuard
 import com.autoball.core.log.RunLog
+import com.autoball.core.model.Script
 import com.autoball.core.store.ScriptStore
 import com.autoball.service.ShizukuClient
 

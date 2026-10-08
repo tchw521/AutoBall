@@ -22,17 +22,17 @@ import com.autoball.core.util.Display
  */
 object DurationField {
 
-    enum class Unit(val label: String, val factor: Long) {
+    enum class DurationUnit(val label: String, val factor: Long) {
         MS("毫秒", 1L),
         SEC("秒", 1000L),
         MIN("分钟", 60_000L);
 
         companion object {
             /** 按数值大小自动挑一个读起来最自然的单位 */
-            fun fit(ms: Long): Unit = when {
+            fun fit(ms: Long): DurationUnit = when {
                 ms <= 0 -> SEC
-                ms % MIN.factor == 0L && ms >= MIN.factor -> MIN
-                ms % SEC.factor == 0L && ms >= SEC.factor -> SEC
+                ms % DurationUnit.MIN.factor == 0L && ms >= DurationUnit.MIN.factor -> MIN
+                ms % DurationUnit.SEC.factor == 0L && ms >= DurationUnit.SEC.factor -> SEC
                 else -> MS
             }
 
@@ -51,7 +51,7 @@ object DurationField {
         help: String? = null,
         onChange: (Long) -> Unit
     ): LinearLayout {
-        var unit = Unit.fit(valueMs0)
+        var unit = DurationUnit.fit(valueMs0)
         var valueMs = valueMs0
 
         val row = LinearLayout(ctx).apply {
@@ -107,8 +107,8 @@ object DurationField {
             setPadding(Display.dpInt(ctx, 7f), Display.dpInt(ctx, 4f),
                 Display.dpInt(ctx, 7f), Display.dpInt(ctx, 4f))
             setOnClickListener {
-                Ui.popMenu(this, Unit.LABELS, unit.ordinal) { i ->
-                    val nu = Unit.values()[i]
+                Ui.popMenu(this, DurationUnit.LABELS, unit.ordinal) { i ->
+                    val nu = DurationUnit.values()[i]
                     // 换单位时把已填数值按旧单位换算过去——
                     // 否则「500 毫秒」切到「秒」会变成「500 秒」
                     val cur = et.text.toString().trim().toDoubleOrNull()
@@ -144,7 +144,7 @@ object DurationField {
     }
 
     /** 按单位格式化显示值；整数不带小数点 */
-    private fun show(ms: Long, u: Unit): String {
+    private fun show(ms: Long, u: DurationUnit): String {
         val v = ms.toDouble() / u.factor
         return if (v % 1.0 == 0.0) v.toLong().toString() else "%.2f".format(v)
     }

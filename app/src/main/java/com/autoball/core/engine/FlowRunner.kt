@@ -201,10 +201,10 @@ class FlowRunner(
      * 绝不假装判定成功。
      */
     private fun probe(): ConditionEval.Probe = object : ConditionEval.Probe {
-        override fun screen(): com.autoball.core.backend.ScreenResult? =
-            runCatching { router.screenshot(ctx) }
-                .getOrElse { null }
-                ?.let { if (it is com.autoball.core.backend.ScreenResult.Ok) it else null }
+        override fun screen(): com.autoball.core.backend.ScreenResult.Ok? {
+            val sr = runCatching { router.screenshot(ctx) }.getOrNull() ?: return null
+            return sr as? com.autoball.core.backend.ScreenResult.Ok
+        }
 
         override fun findColor(hex: String, tol: Int, region: FloatArray?): Boolean? {
             val sr = screen() ?: return null
