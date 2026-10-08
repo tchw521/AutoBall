@@ -18,6 +18,7 @@ import android.widget.ScrollView
 import android.widget.TextView
 import com.autoball.AB
 import com.autoball.core.model.Script
+import com.autoball.core.recorder.RecordController
 import com.autoball.core.util.Display
 import com.autoball.ui.ActionEditor
 import com.autoball.ui.Theme
@@ -25,42 +26,48 @@ import com.autoball.ui.Theme
 /**
  * 录制 / 添加动作悬浮窗（统一组件）——**一比一复刻自动精灵**。
  *
- * 自动精灵的录制小窗形态：
+ * 自动精灵的录制小窗形态（**本应用只保留这一个窗口**）：
  * ```
  * ┌───────────────────────────┐
  * │ 未命名脚本              ✕ │   标题栏，可拖动
  * ├───────────────────────────┤
  * │ 1. 点击(63.6%, 49.7%)     │   动作列表，百分比坐标
- * │ 2. 点击(65.4%, 55.2%)     │
- * │ 3. 长按(51.8%, 58.9%)     │
+ * │ 2. 长按(65.4%, 55.2%)     │
  * │    空态：脚本为空 请先添加一个动作 │
  * ├───────────────────────────┤
  * │ [运行] [录制] [⋯]         │   底部三键
  * └───────────────────────────┘
  * ```
- * 「⋯」展开更多：添加动作 / 保存脚本 / 清空动作 / 开启日志 / 查看变量 / 全局设置。
  *
- * 之所以必须是悬浮窗：录制与添加动作都要操作**别的应用**，
- * 应用内弹窗占住屏幕，用户根本切不过去。
+ * 录制中底部三键切换为录制控制条（自动精灵同为原地切换，不再另开浮层）：
+ * `[暂停/继续] [撤销] [等待1s] [停止]`
+ *
+ * **融合说明**：早前录制时另有一个白色小窗（RecChrome）与独立提示条，
+ * 两者与本窗口叠在一起，既遮挡目标应用又互相挡住按钮。
+ * 现全部并入本窗口，录制期间屏幕上只有这一个窗口。
+ *
+ * **录制时让出屏幕**：[enterStealth] 把本窗口也一并隐藏，
+ * 只留一枚贴边胶囊显示步数——这样采集层采到的是真实的目标应用操作。
  */
 object FloatWorkWindow {
 
     interface Callback {
-        /** 运行当前脚本 */
         fun onRun(script: Script)
-        /** 开始 / 停止录制（isRecording 表示操作后的状态） */
+        /** willRecord 表示操作**后**的状态 */
         fun onRecord(script: Script, willRecord: Boolean)
-        /** 手动添加一个动作 */
         fun onAddAction(script: Script)
         fun onSave(script: Script)
         fun onClear(script: Script)
-        /** 开启 / 关闭运行日志 */
         fun onToggleLog(script: Script)
-        /** 打开「更多工具」快捷动作面板（自动精灵同款） */
+        /** 打开「更多工具」快捷动作面板 */
         fun onTools(script: Script)
-        /** 查看脚本变量 */
         fun onVars(script: Script)
         fun onSettings(script: Script)
+        /** 录制控制：暂停/继续、撤销、插入等待、停止 */
+        fun onPause(script: Script, willPause: Boolean)
+        fun onUndo(script: Script)
+        fun onInsertWait(script: Script, ms: Long)
+        fun onStopRecord(script: Script)
     }
 
     private val handler = Handler(Looper.getMainLooper())
@@ -68,15 +75,20 @@ object FloatWorkWindow {
     private var params: WindowManager.LayoutParams? = null
     private var wm: WindowManager? = null
     private var recording = false
+    private var paused = false
+    private var stealth = false
 
-    // 用稳定常量做 view 标识；setTag(int) 的 key 需为资源 id，
-    // 这里改用持有引用的方式（见 Holder），避免兼容风险
+    /** 录制时贴边的迷你胶囊（让出屏幕后唯一可见的本应用界面） */
+    private var capView: View? = null
+    private var capParams: WindowManager.LayoutParams? = null
+
     private class Holder(
         val list: LinearLayout,
         val more: LinearLayout,
         val dot: TextView,
-        val recBtn: TextView,
-        val title: TextView
+        val title: TextView,
+        val mainBar: LinearLayout,
+        val recBar: LinearLayout
     )
 
     private var holder: Holder? = null
@@ -116,12 +128,55 @@ object FloatWorkWindow {
             view = null
             params = null
             holder = null
+            removeCap()
+            stealth = false
         }
     }
 
     fun setRecording(on: Boolean) {
         recording = on
+        paused = false
         handler.post { refreshState() }
+    }
+
+    fun setPaused(on: Boolean) {
+        paused = on
+        handler.post { refreshState() }
+    }
+
+    /**
+     * 录制时让出屏幕：隐藏主窗口，只留贴边胶囊。
+     *
+     * 这是自动精灵的做法——录制期间屏幕上不能盖着一块大浮层，
+     * 否则既遮挡目标应用，采集层也容易把点击判为不可信遮挡。
+     */
+    fun enterStealth(ctx: Context) {
+        handler.post {
+            if (stealth) return@post
+            stealth = true
+            val v = view
+            // 只从窗口摘下，**保留 view 引用**——否则 exitStealth 拿不回原窗口，
+            // 只能重建，已填的表单和滚动位置都会丢
+            if (v != null) FloatWindows.remove(v)
+            showCap(ctx)
+        }
+    }
+
+    /** 退出让出屏幕：收回胶囊，恢复主窗口 */
+    fun exitStealth(ctx: Context) {
+        handler.post {
+            if (!stealth) return@post
+            stealth = false
+            removeCap()
+            val v = view
+            val p = params
+            if (v != null && p != null) FloatWindows.add(ctx, v, p)
+        }
+    }
+
+    /** 动作列表变化后刷新 */
+    fun refresh(script: Script) {
+        handler.post { fillList(script); refreshCap() }
     }
 
     /** 转屏后重算窗口宽度（横屏收窄到屏宽 1/4） */
@@ -130,12 +185,11 @@ object FloatWorkWindow {
             val p = params ?: return@post
             p.width = Display.dpInt(ctx, FloatWindows.widthDp(ctx))
             FloatWindows.update(view, p)
+            capParams?.let { cp ->
+                cp.y = 0
+                capView?.let { FloatWindows.update(it, cp) }
+            }
         }
-    }
-
-    /** 动作列表变化后刷新 */
-    fun refresh(script: Script) {
-        handler.post { fillList(script) }
     }
 
     // ================= 构建 =================
@@ -147,7 +201,7 @@ object FloatWorkWindow {
             elevation = Display.dp(ctx, 10f)
         }
 
-        // ---- 标题栏：脚本名 + 状态点 + ✕ ----
+        // ---- 标题栏：状态点 + 脚本名 + ✕ ----
         val head = FrameLayout(ctx).apply {
             setPadding(Display.dpInt(ctx, 12f), Display.dpInt(ctx, 10f),
                 Display.dpInt(ctx, 8f), Display.dpInt(ctx, 8f))
@@ -193,51 +247,82 @@ object FloatWorkWindow {
                 LinearLayout.LayoutParams.MATCH_PARENT, 1)
         })
 
-        // ---- 动作列表 ----
+        // ---- 动作列表（限高，动作多时内部滚动）----
         val scroll = ScrollView(ctx).apply {
             isFillViewport = false
             overScrollMode = View.OVER_SCROLL_NEVER
-            // 动作多时列表内部滚动，窗口高度封顶，不会顶满屏幕。
-            // ScrollView 没有 maxHeight 属性，用固定高度（屏高一半）夹紧
-            val lp = LinearLayout.LayoutParams(
+            // ScrollView 没有 maxHeight 属性，用固定高度（屏高一半）夹紧，
+            // 窗口不会越滚越长顶满屏幕
+            layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 FloatWindows.maxHeightPx(ctx) / 2)
-            layoutParams = lp
         }
         val list = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
         scroll.addView(list, ViewGroup.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.WRAP_CONTENT))
         root.addView(scroll, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT))
 
-        // ---- 底部三键：运行 / 录制 / 更多 ----
-        val bar = LinearLayout(ctx).apply {
+        // ---- 底部主条：运行 / 录制 / 更多 ----
+        val mainBar = LinearLayout(ctx).apply {
             orientation = LinearLayout.HORIZONTAL
             setPadding(Display.dpInt(ctx, 10f), Display.dpInt(ctx, 8f),
                 Display.dpInt(ctx, 10f), Display.dpInt(ctx, 10f))
         }
-        bar.addView(flatBtn(ctx, "运行", Theme.pri()) { cb.onRun(script) },
+        mainBar.addView(flatBtn(ctx, "运行", Theme.pri()) { cb.onRun(script) },
             LinearLayout.LayoutParams(0,
                 LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
                 marginEnd = Display.dpInt(ctx, 4f)
             })
-        val recBtn = flatBtn(ctx, "录制", Theme.ok()) {
+        mainBar.addView(flatBtn(ctx, "录制", Theme.ok()) {
             cb.onRecord(script, !recording)
-        }
-        bar.addView(recBtn, LinearLayout.LayoutParams(0,
+        }, LinearLayout.LayoutParams(0,
             LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
             marginStart = Display.dpInt(ctx, 2f)
             marginEnd = Display.dpInt(ctx, 2f)
         })
-        // 三键等分：早前「⋯」用固定 40dp，窄屏时把「运行」「录制」挤出可视区，
-        // 看起来就像只剩一个按钮
-        bar.addView(flatBtn(ctx, "⋯", Theme.textSec()) { toggleMore() },
+        // 三键等分：早前「⋯」用固定 40dp，窄屏时会把「运行」「录制」挤出可视区
+        mainBar.addView(flatBtn(ctx, "⋯", Theme.textSec()) { toggleMore() },
             LinearLayout.LayoutParams(0,
                 LinearLayout.LayoutParams.WRAP_CONTENT, 0.7f).apply {
                 marginStart = Display.dpInt(ctx, 2f)
             })
-        root.addView(bar)
+        root.addView(mainBar)
+
+        // ---- 录制控制条（录制中显示，替换主条）----
+        val recBar = LinearLayout(ctx).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(Display.dpInt(ctx, 10f), Display.dpInt(ctx, 8f),
+                Display.dpInt(ctx, 10f), Display.dpInt(ctx, 10f))
+            visibility = View.GONE
+        }
+        recBar.addView(flatBtn(ctx, "暂停", Theme.warn()) {
+            cb.onPause(script, !paused)
+        }, LinearLayout.LayoutParams(0,
+            LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+            marginEnd = Display.dpInt(ctx, 3f)
+        })
+        recBar.addView(flatBtn(ctx, "撤销", Theme.textSec()) { cb.onUndo(script) },
+            LinearLayout.LayoutParams(0,
+                LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                marginStart = Display.dpInt(ctx, 3f)
+                marginEnd = Display.dpInt(ctx, 3f)
+            })
+        recBar.addView(flatBtn(ctx, "等待1s", Theme.textSec()) {
+            cb.onInsertWait(script, 1000)
+        }, LinearLayout.LayoutParams(0,
+            LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+            marginStart = Display.dpInt(ctx, 3f)
+            marginEnd = Display.dpInt(ctx, 3f)
+        })
+        recBar.addView(flatBtn(ctx, "停止", Theme.danger()) { cb.onStopRecord(script) },
+            LinearLayout.LayoutParams(0,
+                LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                marginStart = Display.dpInt(ctx, 3f)
+            })
+        root.addView(recBar)
 
         // ---- 更多（默认收起）----
         val more = LinearLayout(ctx).apply {
@@ -246,8 +331,6 @@ object FloatWorkWindow {
             setPadding(Display.dpInt(ctx, 10f), 0,
                 Display.dpInt(ctx, 10f), Display.dpInt(ctx, 10f))
         }
-        // 与自动精灵「更多」一致：添加动作 / 更多工具 / 保存脚本 / 清空动作 /
-        // 开启日志 / 查看变量 / 全局设置
         more.addView(moreRow(ctx, "添加动作") { cb.onAddAction(script) })
         more.addView(moreRow(ctx, "更多工具") { cb.onTools(script) })
         more.addView(moreRow(ctx, "保存脚本") { cb.onSave(script) })
@@ -257,8 +340,9 @@ object FloatWorkWindow {
         more.addView(moreRow(ctx, "全局设置") { cb.onSettings(script) })
         root.addView(more)
 
-        holder = Holder(list, more, dot, recBtn, title)
+        holder = Holder(list, more, dot, title, mainBar, recBar)
         fillList(script)
+        refreshState()
         root.layoutParams = FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT,
             FrameLayout.LayoutParams.WRAP_CONTENT)
@@ -304,11 +388,21 @@ object FloatWorkWindow {
 
     private fun refreshState() {
         val h = holder ?: return
-        h.dot.setTextColor(if (recording) Theme.danger() else Theme.ok())
-        if (recording) startBlink(h.dot) else {
+        h.dot.setTextColor(when {
+            recording && paused -> Theme.warn()
+            recording -> Theme.danger()
+            else -> Theme.ok()
+        })
+        if (recording && !paused) startBlink(h.dot) else {
             h.dot.clearAnimation(); h.dot.alpha = 1f
         }
-        h.recBtn.text = if (recording) "停止" else "录制"
+        // 录制中显示控制条，否则显示主条——自动精灵同为原地切换
+        h.mainBar.visibility = if (recording) View.GONE else View.VISIBLE
+        h.recBar.visibility = if (recording) View.VISIBLE else View.GONE
+        if (recording) {
+            val pb = h.recBar.getChildAt(0) as? TextView
+            pb?.text = if (paused) "继续" else "暂停"
+        }
         runCatching { wm?.updateViewLayout(view, params) }
     }
 
@@ -316,7 +410,7 @@ object FloatWorkWindow {
         tv.animate().alpha(0.25f).setDuration(500)
             .withEndAction {
                 tv.animate().alpha(1f).setDuration(500)
-                    .withEndAction { if (recording) startBlink(tv) }.start()
+                    .withEndAction { if (recording && !paused) startBlink(tv) }.start()
             }.start()
     }
 
@@ -325,6 +419,70 @@ object FloatWorkWindow {
         h.more.visibility = if (h.more.visibility == View.VISIBLE) View.GONE else View.VISIBLE
         runCatching { wm?.updateViewLayout(view, params) }
     }
+
+    // ================= 录制胶囊（让出屏幕时的唯一界面） =================
+
+    private fun showCap(ctx: Context) {
+        val steps = currentSteps()
+        val v = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            background = GradientDrawable().apply {
+                setColor(Theme.surface())
+                cornerRadius = Display.dp(ctx, 20f)
+                setStroke(Display.dpInt(ctx, 1f), Theme.line())
+            }
+            elevation = Display.dp(ctx, 6f)
+            addView(TextView(ctx).apply {
+                text = "●"
+                textSize = 9f
+                setTextColor(Theme.danger())
+                gravity = Gravity.CENTER
+            })
+            addView(TextView(ctx).apply {
+                text = "$steps"
+                textSize = 12f
+                setTypeface(null, android.graphics.Typeface.BOLD)
+                setTextColor(Theme.textPri())
+                gravity = Gravity.CENTER
+                setTag(1, this)
+            })
+            val sz = Display.dpInt(ctx, 54f)
+            // 点一下恢复主窗口（可继续暂停/停止）
+            setOnClickListener { exitStealth(ctx) }
+            layoutParams = FrameLayout.LayoutParams(sz, Display.dpInt(ctx, 62f))
+        }
+        val p = WindowManager.LayoutParams(
+            Display.dpInt(ctx, 54f), Display.dpInt(ctx, 62f),
+            FloatWindows.overlayType(),
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+            PixelFormat.TRANSLUCENT
+        )
+        p.gravity = Gravity.END or Gravity.CENTER_VERTICAL
+        p.x = 0
+        capView = v
+        capParams = p
+        FloatWindows.add(ctx, v, p)
+    }
+
+    private fun removeCap() {
+        val v = capView ?: return
+        FloatWindows.remove(v)
+        capView = null
+        capParams = null
+    }
+
+    private fun refreshCap() {
+        val v = capView ?: return
+        (v.findViewWithTag<TextView>(1))?.text = currentSteps().toString()
+    }
+
+    private var stepsRef: (() -> Int)? = null
+
+    /** 由宿主注入当前脚本步数，供胶囊显示 */
+    fun bindSteps(src: () -> Int) { stepsRef = src }
+
+    private fun currentSteps(): Int = runCatching { stepsRef?.invoke() ?: 0 }.getOrDefault(0)
 
     // ================= 复用件 =================
 
@@ -409,11 +567,4 @@ object FloatWorkWindow {
             })
         }
     }
-
-    private fun overlayType(): Int =
-        if (Build.VERSION.SDK_INT >= 26) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-        else {
-            @Suppress("DEPRECATION")
-            WindowManager.LayoutParams.TYPE_PHONE
-        }
 }

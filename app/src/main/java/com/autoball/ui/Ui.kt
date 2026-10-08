@@ -294,6 +294,18 @@ object Ui {
         private var widthDp = 302f
         private var maxHeightRatio = 0.76f
 
+        /**
+         * 弹窗就绪回调：(弹窗, 内容容器, 标题控件)。
+         *
+         * 用途：需要在**同一个弹窗内换页**的场景（如「编辑动作」→「选择动作类型」）。
+         * 早前这类二级选择是另开一个 Dialog，两个 Dialog 争同一窗口层级，
+         * 内层常被外层遮住——就地换页彻底避开这个问题，也保留了外层已填的表单内容。
+         */
+        private var onReady: ((AlertDialog, LinearLayout, TextView) -> Unit)? = null
+
+        fun onReady(cb: (AlertDialog, LinearLayout, TextView) -> Unit) =
+            apply { onReady = cb }
+
         fun body(v: View) = apply { body = v }
         fun positive(text: String, onClick: (() -> Boolean)? = null) =
             apply { positive = text to onClick; positiveColor = 0 }
@@ -313,14 +325,15 @@ object Ui {
             }
 
             // 头
-            box.addView(TextView(ctx).apply {
+            val titleTv = TextView(ctx).apply {
                 text = title
                 textSize = 15f
                 setTypeface(null, Typeface.BOLD)
                 setTextColor(Theme.textPri())
                 setPadding(Display.dpInt(ctx, 16f), Display.dpInt(ctx, 14f),
                     Display.dpInt(ctx, 16f), Display.dpInt(ctx, 12f))
-            })
+            }
+            box.addView(titleTv)
             box.addView(View(ctx).apply {
                 setBackgroundColor(Theme.line())
                 layoutParams = LinearLayout.LayoutParams(
@@ -332,6 +345,10 @@ object Ui {
                 isFillViewport = false
                 overScrollMode = View.OVER_SCROLL_NEVER
             }
+            // 横屏可用高度小，弹窗要更保守，否则底部按钮被挤出屏幕
+            val sz = Display.screenSize(ctx)
+            val ratio = if (sz.x > sz.y) kotlin.math.min(maxHeightRatio, 0.62f)
+                        else maxHeightRatio
             body?.let {
                 it.setPadding(Display.dpInt(ctx, 6f), Display.dpInt(ctx, 4f),
                     Display.dpInt(ctx, 6f), Display.dpInt(ctx, 6f))
@@ -393,8 +410,11 @@ object Ui {
             box.animate().scaleX(1f).scaleY(1f).alpha(1f).translationY(0f)
                 .setDuration(240).setStartDelay(0).start()
 
-            // 限制最大高度
-            val maxH = (ctx.resources.displayMetrics.heightPixels * maxHeightRatio).toInt()
+            // 就绪回调：交给调用方做「就地换页」等后续操作
+            onReady?.invoke(d!!, scroll, titleTv)
+
+            // 限制最大高度（横屏已收紧比例，见上方 ratio）
+            val maxH = (ctx.resources.displayMetrics.heightPixels * ratio).toInt()
             scroll.post {
                 if (box.height > maxH) d?.window?.setLayout(w, maxH)
             }

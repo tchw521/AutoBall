@@ -35,13 +35,41 @@ object ScriptWorkDialog {
                     // 让录制控制器能把新增动作同步回本窗口的列表
                     CreatePage.currentScript = s
                     host.startRecording()
+                    // 录制时让出屏幕：隐藏主窗口，只留贴边胶囊显示步数。
+                    // 自动精灵如此——否则浮层盖住目标应用，采集层也易判为不可信遮挡
+                    FloatWorkWindow.bindSteps { s.flow?.actions?.size ?: 0 }
+                    FloatWorkWindow.enterStealth(activity)
                 } else {
                     FloatWorkWindow.setRecording(false)
+                    FloatWorkWindow.exitStealth(activity)
                     // 控制器没有 stop()：interrupt 会触发 onInterrupted 回调，
                     // 由 CreatePage 弹出「放弃 / 继续 / 保存」三选一并结束录制
                     CreatePage.controller?.interrupt("用户停止")
                     FloatWorkWindow.refresh(s)
                 }
+            }
+
+            override fun onPause(s: Script, willPause: Boolean) {
+                val c = CreatePage.controller ?: return
+                if (willPause) c.pause() else c.resume()
+                FloatWorkWindow.setPaused(willPause)
+            }
+
+            override fun onUndo(s: Script) {
+                CreatePage.controller?.undo()
+                FloatWorkWindow.refresh(s)
+            }
+
+            override fun onInsertWait(s: Script, ms: Long) {
+                CreatePage.controller?.insertWait(ms)
+                FloatWorkWindow.refresh(s)
+            }
+
+            override fun onStopRecord(s: Script) {
+                FloatWorkWindow.setRecording(false)
+                FloatWorkWindow.exitStealth(activity)
+                CreatePage.controller?.interrupt("用户停止")
+                FloatWorkWindow.refresh(s)
             }
 
             override fun onAddAction(s: Script) {

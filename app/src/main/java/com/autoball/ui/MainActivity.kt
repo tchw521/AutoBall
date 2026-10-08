@@ -94,7 +94,7 @@ class MainActivity : Activity(), PageHost {
         root.addView(navWrap)
 
         // 底部版本条（v3 .verbar）：点一下看更新日志
-        root.addView(Ui.versionBar(this, "v1.14.0", "查看更新日志") {
+        root.addView(Ui.versionBar(this, "v1.15.0", "查看更新日志") {
             ChangeLog.show(this)
         })
 

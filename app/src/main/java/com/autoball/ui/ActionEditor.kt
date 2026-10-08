@@ -8,6 +8,7 @@ import android.graphics.Typeface
 import android.text.InputType
 import android.view.Gravity
 import android.view.View
+import android.view.ViewGroup
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -130,6 +131,7 @@ object ActionEditor {
     @Volatile
     private var gridDlg: Dialog? = null
 
+
     @Volatile
     private var flowRef: com.autoball.core.model.Flow? = null
 
@@ -187,18 +189,56 @@ object ActionEditor {
 
     private fun showForm(activity: Activity, a: Action, onSave: (Action) -> Unit) {
         val (box, submit) = buildForm(activity, a)
+        // 当前显示哪一屏：表单 或 类型列表（就地换页，共用同一个 Dialog）
+        var page = 0
+        var dlg: Dialog? = null
+        var host: LinearLayout? = null
+        var titleTv: TextView? = null
+
+        fun showFormPage() {
+            page = 0
+            titleTv?.text = "编辑动作"
+            host?.removeAllViews()
+            host?.addView(box, ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT))
+        }
+        fun showTypePage() {
+            page = 1
+            val h = host ?: return
+            val t = titleTv ?: return
+            showTypeList(activity, a, h, t) { showFormPage() }
+        }
+        // 表单里点「动作类型」→ 切到类型列表页
+        onPickType = { showTypePage() }
+
         Ui.dialog(activity, "编辑动作")
             .body(box)
             .width(Theme.DIALOG_W + 24f)
             .maxHeight(0.78f)
             .negative("取消") { }
             .positive("确定") {
-                submit()
-                if (a.type == ActionType.CLICK && a.durationMs <= 0L) a.durationMs = 60L
-                onSave(a)
-                true
-            }.show()
+                // 停在类型列表页时「确定」当作返回表单，避免误把未确认的类型写回
+                if (page != 0) {
+                    showFormPage()
+                    false
+                } else {
+                    submit()
+                    if (a.type == ActionType.CLICK && a.durationMs <= 0L) a.durationMs = 60L
+                    onSave(a)
+                    true
+                }
+            }
+            .onReady { d, content, tv ->
+                dlg = d
+                host = content
+                titleTv = tv
+            }
+            .show()
     }
+
+    /** 由表单注入：点「动作类型」时切页（避免表单持有弹窗引用） */
+    private var onPickType: (() -> Unit)? = null
 
     /**
      * 构建表单，返回 (视图, 提交回调)。
@@ -221,9 +261,7 @@ object ActionEditor {
             box.addView(zsRow(ctx, "动作类型",
                 valueView(ctx, opt.label, opt.label != "未设置"),
                 null,
-                pick = {
-                    showTypeList(ctx, a) { rebuild() }
-                },
+                pick = { onPickType?.invoke() },
                 help = "共 ${OPTIONS.size} 种动作，按 基础触摸 / 识别定位 / 系统操作 / 高级 分组；\n" +
                     "选中即套用预设参数（如长按 700ms、返回键 code 4）。"))
 
@@ -370,7 +408,9 @@ object ActionEditor {
      * 早前用宫格，22 项挤在 3 列里，每项只剩两个字，说明文字全被砍掉；
      * 列表能同时显示图标、名称与用途，选错的概率更低。
      */
-    private fun showTypeList(ctx: android.content.Context, a: Action, onChange: () -> Unit) {
+    private fun showTypeList(ctx: android.content.Context, a: Action,
+                             host: LinearLayout, titleTv: TextView,
+                             onChange: () -> Unit) {
         val box = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
         val groups = OPTIONS.map { it.group }.distinct()
         var cur = groups.indexOf(optionOf(a).group).takeIf { it >= 0 } ?: 0
@@ -384,7 +424,6 @@ object ActionEditor {
                     a.type = opt.type
                     a.optionLabel = opt.label
                     opt.preset(a)
-                    gridDlg?.dismiss()
                     onChange()
                 })
             }
@@ -403,14 +442,25 @@ object ActionEditor {
             setTextColor(Theme.textTer())
             setPadding(0, Display.dpInt(ctx, 6f), 0, Display.dpInt(ctx, 4f))
         })
+        box.addView(TextView(ctx).apply {
+            text = "返回"
+            textSize = 12.5f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(Theme.textSec())
+            gravity = Gravity.CENTER
+            background = Theme.rect(Theme.surface2(), 10f, ctx, Theme.line())
+            setPadding(Display.dpInt(ctx, 10f), Display.dpInt(ctx, 9f),
+                Display.dpInt(ctx, 10f), Display.dpInt(ctx, 9f))
+            setOnClickListener { onChange() }
+        })
 
-        val act0 = ctx as? Activity ?: return
-        gridDlg = Ui.dialog(act0, "选择动作类型")
-            .body(box)
-            .width(Theme.DIALOG_W + 40f)
-            .maxHeight(0.72f)
-            .negative("取消") { }
-            .show()
+        // 就地换页：把外层「编辑动作」的内容容器换成类型列表。
+        // 另开 Dialog 会与外层争同一窗口层级而被遮住，这里从根上避开。
+        host.removeAllViews()
+        host.addView(box, ViewGroup.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT))
+        titleTv.text = "选择动作类型"
     }
 
     /** 列表项：图标 + 名称 + 说明 + 右侧选中标记 */

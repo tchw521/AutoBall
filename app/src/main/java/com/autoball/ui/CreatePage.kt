@@ -16,10 +16,10 @@ import android.widget.TextView
 import com.autoball.AB
 import com.autoball.core.model.Script
 import com.autoball.core.recorder.RecordController
-import com.autoball.core.recorder.RecChrome
 import com.autoball.core.recorder.RecordOverlay
 import com.autoball.core.store.ShareCode
 import com.autoball.core.util.Display
+import com.autoball.float.FloatDialog
 import com.autoball.float.FloatManager
 import com.autoball.service.FloatingService
 
@@ -55,7 +55,6 @@ class CreatePage(context: Context, @Suppress("unused") private val host: PageHos
                     if (state == RecordController.State.RECORDING) {
                         FloatManager.setRecording(true)
                         RecordOverlay.show(activity, c)
-                        RecChrome.show(activity, c, "未命名脚本")
                         // 录的是别的应用上的操作：开始录制后让出屏幕回到桌面，
                         // 用户再打开目标应用，否则采集层只能采到本应用自己的界面
                         Handler(Looper.getMainLooper()).postDelayed({
@@ -69,7 +68,6 @@ class CreatePage(context: Context, @Suppress("unused") private val host: PageHos
                     } else if (state == RecordController.State.IDLE) {
                         FloatManager.setRecording(false)
                         RecordOverlay.hide()
-                    RecChrome.hide()
                     }
                 }
                 override fun onActionAdded(action: com.autoball.core.model.Action, count: Int) {
@@ -84,7 +82,6 @@ class CreatePage(context: Context, @Suppress("unused") private val host: PageHos
                 }
                 override fun onInterrupted(reason: String, count: Int, estimatedMs: Long) {
                     RecordOverlay.hide()
-                    RecChrome.hide()
                     showEndDialog(activity, reason, count, estimatedMs)
                 }
             }
@@ -92,11 +89,52 @@ class CreatePage(context: Context, @Suppress("unused") private val host: PageHos
             AB.log.info("record", "采集层已显示，请在采集窗内操作")
         }
 
-        /** 结束/中断弹窗：显示动作数、预计时长、完成度 */
+        /**
+         * 结束/中断弹窗：显示动作数、预计时长、完成度。
+         *
+         * 走悬浮窗层（[com.autoball.float.FloatDialog]）而非应用内 AlertDialog——
+         * 录制时用户正在别的应用里操作，弹应用内对话框会把目标应用切走，
+         * 也和"录制期间不打扰"相矛盾。无悬浮窗权限时回退。
+         */
         fun showEndDialog(activity: Activity, reason: String, count: Int, estimatedMs: Long) {
             val c = controller
             val msg = "原因：$reason\n\n动作数：$count\n预计时长：${estimatedMs}ms\n（完成度可在编辑页继续调整）"
-            AlertDialog.Builder(activity)
+
+            val box = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
+            box.addView(TextView(activity).apply {
+                text = msg
+                textSize = 12.5f
+                setTextColor(Theme.textSec())
+                setLineSpacing(Display.dp(activity, 2f), 1.5f)
+                setPadding(Display.dpInt(activity, 14f), Display.dpInt(activity, 10f),
+                    Display.dpInt(activity, 14f), Display.dpInt(activity, 6f))
+            })
+
+            val d = FloatDialog.show(activity, "录制结束")
+                .body(box)
+                .negative("放弃") {
+                    c?.discard()
+                    RecordOverlay.hide()
+                    FloatManager.setRecording(false)
+                    ScriptWorkDialog.stopRecording()
+                }
+                .positive("保存") {
+                    val flow = c?.save()
+                    if (flow != null) {
+                        val s = Script.blank("录制 ${count} 步")
+                        s.kind = com.autoball.core.model.ScriptKind.FLOW
+                        s.flow = flow
+                        AB.store.save(s)
+                        RecordOverlay.hide()
+                        FloatManager.setRecording(false)
+                        ScriptWorkDialog.stopRecording()
+                        AB.log.info("record", "已保存为脚本「${s.name}」")
+                    }
+                    true
+                }
+            if (!d.show()) {
+                // 无悬浮窗权限：回退到应用内弹窗
+                AlertDialog.Builder(activity)
                 .setTitle("录制结束")
                 .setMessage(msg)
                 .setPositiveButton("保存") { d, _ ->
@@ -107,7 +145,6 @@ class CreatePage(context: Context, @Suppress("unused") private val host: PageHos
                         s.flow = flow
                         AB.store.save(s)
                         RecordOverlay.hide()
-                    RecChrome.hide()
                         FloatManager.setRecording(false)
                         AB.log.info("record", "已保存为脚本「${s.name}」")
                     }
@@ -116,18 +153,17 @@ class CreatePage(context: Context, @Suppress("unused") private val host: PageHos
                 .setNeutralButton("继续录制") { d, _ ->
                     c?.resume()
                     RecordOverlay.show(activity, c!!)
-                    RecChrome.show(activity, c, "未命名脚本")
                     d.dismiss()
                 }
                 .setNegativeButton("放弃") { d, _ ->
                     c?.discard()
                     RecordOverlay.hide()
-                    RecChrome.hide()
                     FloatManager.setRecording(false)
                     d.dismiss()
                 }
                 .setCancelable(false)
                 .show()
+            }
         }
     }
 
