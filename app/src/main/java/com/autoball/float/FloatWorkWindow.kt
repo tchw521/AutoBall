@@ -197,8 +197,12 @@ object FloatWorkWindow {
         val scroll = ScrollView(ctx).apply {
             isFillViewport = false
             overScrollMode = View.OVER_SCROLL_NEVER
-            // 动作多时列表内部滚动，窗口高度封顶，不会顶满屏幕
-            maxHeight = FloatWindows.maxHeightPx(ctx) / 2
+            // 动作多时列表内部滚动，窗口高度封顶，不会顶满屏幕。
+            // ScrollView 没有 maxHeight 属性，用固定高度（屏高一半）夹紧
+            val lp = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                FloatWindows.maxHeightPx(ctx) / 2)
+            layoutParams = lp
         }
         val list = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
         scroll.addView(list, ViewGroup.LayoutParams(
