@@ -13,6 +13,7 @@ import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
 import com.autoball.core.model.Action
+import com.autoball.core.model.ActionPreset
 import com.autoball.core.model.ActionType
 import com.autoball.core.model.ControlOp
 import com.autoball.core.util.Display
@@ -46,55 +47,12 @@ object ActionEditor {
     // 动作选项（自动精灵分组 + 预设参数）
     // =====================================================================
 
-    private data class ActionOption(
-        val label: String,
-        val group: String,
-        val type: ActionType,
-        /** 选中后套用的预设参数，省去手工填按键码等 */
-        val preset: (Action) -> Unit = {}
-    )
-
-    private val OPTIONS = listOf(
-        // ---- 基础触摸 ----
-        ActionOption("点击", "基础触摸", ActionType.CLICK) { it.durationMs = 60 },
-        ActionOption("长按", "基础触摸", ActionType.CLICK) { it.durationMs = 700 },
-        ActionOption("连续点击", "基础触摸", ActionType.CLICK) {
-            it.durationMs = 60; it.repeat = 5; it.repeatIntervalMs = 200
-        },
-        // 随机点击：坐标抖动由「脚本全局设置 → 全局手势变形」统一控制，
-        // 这里只标记类型，避免同一份配置散在两个地方
-        ActionOption("随机点击", "基础触摸", ActionType.CLICK) { it.durationMs = 60 },
-        ActionOption("定长滑动", "基础触摸", ActionType.SWIPE) { it.durationMs = 500 },
-        ActionOption("多指手势", "基础触摸", ActionType.GESTURE_MULTI) { it.durationMs = 400 },
-        // ---- 识别定位 ----
-        ActionOption("图像匹配", "识别定位", ActionType.CLICK_IMAGE) { it.matchThreshold = 0.9f },
-        ActionOption("节点匹配", "识别定位", ActionType.CLICK_NODE),
-        ActionOption("颜色匹配", "识别定位", ActionType.CLICK_COLOR) { it.colorTolerance = 10 },
-        ActionOption("文字匹配", "识别定位", ActionType.CLICK_TEXT),
-        ActionOption("AI 识别", "识别定位", ActionType.AI_CLICK),
-        ActionOption("识别屏幕", "识别定位", ActionType.RECOGNIZE_SCREEN),
-        // ---- 系统操作 ----
-        ActionOption("返回键", "系统操作", ActionType.KEY) { it.keyCode = 4 },
-        ActionOption("返回桌面", "系统操作", ActionType.KEY) { it.keyCode = 3 },
-        ActionOption("最近任务", "系统操作", ActionType.KEY) { it.keyCode = 187 },
-        ActionOption("下拉状态栏", "系统操作", ActionType.KEY) { it.keyCode = 1001 },
-        ActionOption("屏幕截屏", "系统操作", ActionType.RECOGNIZE_SCREEN),
-        ActionOption("打开应用", "系统操作", ActionType.OPEN_APP),
-        ActionOption("输入文字", "系统操作", ActionType.INPUT_TEXT),
-        // ---- 高级 ----
-        ActionOption("控制运行", "高级", ActionType.CONTROL_FLOW),
-        ActionOption("设置变量", "高级", ActionType.SET_VAR),
-        ActionOption("运行 JS", "高级", ActionType.RUN_JS),
-        ActionOption("运行脚本", "高级", ActionType.RUN_SCRIPT),
-        ActionOption("系统提示", "高级", ActionType.TOAST)
-    )
-
-    private fun optionOf(a: Action): ActionOption {
-        // 优先按 label 精确匹配（预设项），否则退回同类型的第一项
-        return OPTIONS.firstOrNull { it.label == a.optionLabel }
-            ?: OPTIONS.firstOrNull { it.type == a.type }
-            ?: OPTIONS[0]
-    }
+    /**
+     * 回显用预设。动作预设已统一到 [com.autoball.core.model.ActionPreset]——
+     * 早前本文件与 ToolPanel 各存一份，按键码硬编码两处，改一处就会漏另一处。
+     */
+    private fun optionOf(a: Action): ActionPreset =
+        ActionPreset.byLabel(a)
 
     // =====================================================================
     // 摘要
@@ -262,7 +220,8 @@ object ActionEditor {
                 valueView(ctx, opt.label, opt.label != "未设置"),
                 null,
                 pick = { onPickType?.invoke() },
-                help = "共 ${OPTIONS.size} 种动作，按 基础触摸 / 识别定位 / 系统操作 / 高级 分组；\n" +
+                help = "共 ${ActionPreset.ALL.size} 种动作，按 " +
+                    ActionPreset.GROUPS.joinToString(" / ") + " 分组；\n" +
                     "选中即套用预设参数（如长按 700ms、返回键 code 4）。"))
 
             // ---- 坐标类字段 ----
@@ -357,7 +316,10 @@ object ActionEditor {
                 val et = numField(ctx, a.keyCode.takeIf { it != 0 }?.toString() ?: "", "选填")
                 readers["key"] = { a.keyCode = et.text.toString().trim().toIntOrNull() ?: 0 }
                 box.addView(zsRow(ctx, "按键码", et, null, null,
-                    help = "3=HOME  4=返回  187=最近任务  1001=下拉状态栏\n" +
+                    help = "常用：${ActionPreset.KeyCode.HOME}=HOME  " +
+                        "${ActionPreset.KeyCode.BACK}=返回  " +
+                        "${ActionPreset.KeyCode.RECENTS}=最近任务  " +
+                        "${ActionPreset.KeyCode.EXPAND_STATUS}=下拉状态栏\n" +
                         "选预设动作时会自动填好，一般无需手工输入。"))
             }
             if (g.contains(com.autoball.core.model.FieldGroup.CODE)) {
@@ -434,13 +396,13 @@ object ActionEditor {
                              host: android.widget.ScrollView, titleTv: TextView,
                              onChange: () -> Unit) {
         val box = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
-        val groups = OPTIONS.map { it.group }.distinct()
+        val groups = ActionPreset.GROUPS
         var cur = groups.indexOf(optionOf(a).group).takeIf { it >= 0 } ?: 0
         val listBox = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
 
         fun fill() {
             listBox.removeAllViews()
-            OPTIONS.filter { it.group == groups[cur] }.forEach { opt ->
+            ActionPreset.ofGroup(groups[cur]).forEach { opt ->
                 listBox.addView(listItem(ctx, opt.label, opt.type.label,
                     opt.label == optionOf(a).label) {
                     a.type = opt.type

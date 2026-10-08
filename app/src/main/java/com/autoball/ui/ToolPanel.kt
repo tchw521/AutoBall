@@ -5,7 +5,7 @@ import android.view.Gravity
 import android.widget.LinearLayout
 import android.widget.TextView
 import com.autoball.core.model.Action
-import com.autoball.core.model.ActionType
+import com.autoball.core.model.ActionPreset
 import com.autoball.core.model.Script
 import com.autoball.core.util.Display
 import com.autoball.float.FloatDialog
@@ -26,44 +26,16 @@ import com.autoball.float.FloatWindows
  */
 object ToolPanel {
 
-    private data class Tool(
-        val label: String,
-        val type: ActionType,
-        /** 缺省参数：新动作落在屏幕中心，避免用户还得先选点 */
-        val preset: (Action) -> Unit = {}
-    )
-
-    private val TOOLS = listOf(
-        Tool("返回键", ActionType.KEY) { it.keyCode = 4; it.optionLabel = "返回键" },
-        Tool("返回桌面", ActionType.KEY) { it.keyCode = 3; it.optionLabel = "返回桌面" },
-        Tool("最近任务", ActionType.KEY) { it.keyCode = 187; it.optionLabel = "最近任务" },
-        Tool("屏幕截屏", ActionType.RECOGNIZE_SCREEN) { it.optionLabel = "屏幕截屏" },
-        Tool("下拉状态栏", ActionType.KEY) { it.keyCode = 1001; it.optionLabel = "下拉状态栏" },
-        Tool("打开App", ActionType.OPEN_APP) { it.optionLabel = "打开应用" },
-        Tool("图像匹配", ActionType.CLICK_IMAGE) {
-            it.optionLabel = "图像匹配"; it.matchThreshold = 0.9f
-        },
-        Tool("节点匹配", ActionType.CLICK_NODE) { it.optionLabel = "节点匹配" },
-        Tool("颜色匹配", ActionType.CLICK_COLOR) {
-            it.optionLabel = "颜色匹配"; it.colorTolerance = 10
-        },
-        Tool("文字输入", ActionType.INPUT_TEXT) { it.optionLabel = "输入文字" },
-        Tool("文字匹配", ActionType.CLICK_TEXT) { it.optionLabel = "文字匹配" },
-        Tool("连续点击", ActionType.CLICK) {
-            it.optionLabel = "连续点击"; it.durationMs = 60
-            it.repeat = 5; it.repeatIntervalMs = 200
-        },
-        Tool("随机点击", ActionType.CLICK) {
-            it.optionLabel = "随机点击"; it.durationMs = 60
-        },
-        Tool("覆盖点击", ActionType.CLICK) {
-            it.optionLabel = "点击"; it.durationMs = 60
-        },
-        Tool("定长滑动", ActionType.SWIPE) {
-            it.optionLabel = "定长滑动"; it.durationMs = 500
-            it.x2 = 50f; it.y2 = 20f
-        }
-    )
+    /**
+     * 快捷工具直接引用 [ActionPreset.ALL] 的子集。
+     *
+     * 早前本文件自存一份 TOOLS，按键码（187/1001 等）与 ActionEditor 各写一遍。
+     */
+    private val QUICK: List<ActionPreset> = listOf(
+        "返回键", "返回桌面", "最近任务", "屏幕截屏", "下拉状态栏", "打开应用",
+        "图像匹配", "节点匹配", "颜色匹配", "输入文字", "文字匹配",
+        "连续点击", "随机点击", "点击", "定长滑动"
+    ).mapNotNull { lb -> ActionPreset.ALL.firstOrNull { it.label == lb } }
 
     fun show(ctx: Context, script: Script, onAdded: (Action) -> Unit) {
         val flow = script.flow
@@ -74,18 +46,13 @@ object ToolPanel {
         val box = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
 
         var row: LinearLayout? = null
-        TOOLS.forEachIndexed { i, t ->
+        QUICK.forEachIndexed { i, t ->
             if (i % 3 == 0) {
                 row = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL }
                 box.addView(row)
             }
             row!!.addView(cell(ctx, t.label) {
-                val a = Action().apply {
-                    id = Action.newId()
-                    type = t.type
-                    x = 50f; y = 50f
-                    t.preset(this)
-                }
+                val a = t.newAction()
                 flow.actions.add(a)
                 onAdded(a)
                 Ui.toast(ctx, "已添加：${t.label}")
