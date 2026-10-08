@@ -19,7 +19,7 @@ object Display {
     @Volatile
     private var densityCache: Float = 0f
 
-    private fun density(ctx: Context): Float {
+    fun density(ctx: Context): Float {
         val d = densityCache
         if (d > 0f) return d
         val v = ctx.resources.displayMetrics.density

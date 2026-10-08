@@ -79,6 +79,14 @@ object ScriptWorkDialog {
                 Ui.toast(activity, if (on) "运行日志已开启" else "运行日志已关闭")
             }
 
+            override fun onTools(s: Script) {
+                // 自动精灵同款「更多工具」：高频动作一点即插入
+                ToolPanel.show(activity, s) {
+                    com.autoball.AB.store.save(s)
+                    FloatWorkWindow.refresh(s)
+                }
+            }
+
             override fun onVars(s: Script) {
                 VarsDialog.show(activity, s)
             }

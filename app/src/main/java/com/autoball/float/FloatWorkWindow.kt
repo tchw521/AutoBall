@@ -56,6 +56,8 @@ object FloatWorkWindow {
         fun onClear(script: Script)
         /** 开启 / 关闭运行日志 */
         fun onToggleLog(script: Script)
+        /** 打开「更多工具」快捷动作面板（自动精灵同款） */
+        fun onTools(script: Script)
         /** 查看脚本变量 */
         fun onVars(script: Script)
         fun onSettings(script: Script)
@@ -195,6 +197,8 @@ object FloatWorkWindow {
         val scroll = ScrollView(ctx).apply {
             isFillViewport = false
             overScrollMode = View.OVER_SCROLL_NEVER
+            // 动作多时列表内部滚动，窗口高度封顶，不会顶满屏幕
+            maxHeight = FloatWindows.maxHeightPx(ctx) / 2
         }
         val list = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
         scroll.addView(list, ViewGroup.LayoutParams(
@@ -222,9 +226,13 @@ object FloatWorkWindow {
             marginStart = Display.dpInt(ctx, 2f)
             marginEnd = Display.dpInt(ctx, 2f)
         })
+        // 三键等分：早前「⋯」用固定 40dp，窄屏时把「运行」「录制」挤出可视区，
+        // 看起来就像只剩一个按钮
         bar.addView(flatBtn(ctx, "⋯", Theme.textSec()) { toggleMore() },
-            LinearLayout.LayoutParams(Display.dpInt(ctx, 40f),
-                LinearLayout.LayoutParams.WRAP_CONTENT))
+            LinearLayout.LayoutParams(0,
+                LinearLayout.LayoutParams.WRAP_CONTENT, 0.7f).apply {
+                marginStart = Display.dpInt(ctx, 2f)
+            })
         root.addView(bar)
 
         // ---- 更多（默认收起）----
@@ -234,7 +242,10 @@ object FloatWorkWindow {
             setPadding(Display.dpInt(ctx, 10f), 0,
                 Display.dpInt(ctx, 10f), Display.dpInt(ctx, 10f))
         }
+        // 与自动精灵「更多」一致：添加动作 / 更多工具 / 保存脚本 / 清空动作 /
+        // 开启日志 / 查看变量 / 全局设置
         more.addView(moreRow(ctx, "添加动作") { cb.onAddAction(script) })
+        more.addView(moreRow(ctx, "更多工具") { cb.onTools(script) })
         more.addView(moreRow(ctx, "保存脚本") { cb.onSave(script) })
         more.addView(moreRow(ctx, "清空动作") { cb.onClear(script) })
         more.addView(moreRow(ctx, "开启日志") { cb.onToggleLog(script) })

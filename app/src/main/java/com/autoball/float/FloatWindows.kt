@@ -46,14 +46,24 @@ object FloatWindows {
 
     /**
      * 窗口宽度（dp）。
-     * 竖屏：屏宽 1/2；横屏：屏宽 1/4。
-     * 有下界 240dp，避免大屏横屏时窄到放不下内容。
+     *
+     * 竖屏：屏宽 1/2；横屏：屏宽 1/4（横屏时竖屏尺寸会顶满高度）。
+     *
+     * **注意单位**：[Display.screenSize] 返回的是**像素**，而 WindowManager.LayoutParams
+     * 的宽高也是像素——但这里对外承诺的是 dp，调用方会用 [Display.dpInt] 再乘密度。
+     * 上一版直接拿像素当 dp 用，等于把窗口放大了一个密度倍数（约 2.6 倍），
+     * 结果窗口比屏幕还宽，底部按钮被裁到屏幕外——这正是「只剩一个按钮」的原因。
+     * 这里先按密度换算回 dp 再取比例。
      */
     fun widthDp(ctx: Context): Float {
         val sz = Display.screenSize(ctx)
+        val den = Display.density(ctx).takeIf { it > 0f } ?: 1f
+        val wDp = sz.x / den
+        val hDp = sz.y / den
         val landscape = sz.x > sz.y
-        val w = sz.x / if (landscape) 4f else 2f
-        return w.coerceAtLeast(240f)
+        val w = wDp / if (landscape) 4f else 2f
+        // 下界保证内容放得下；上界保证窗口不会顶满屏幕
+        return w.coerceIn(240f, (if (landscape) hDp else wDp) - 24f)
     }
 
     /**
@@ -68,6 +78,12 @@ object FloatWindows {
     fun isLandscape(ctx: Context): Boolean {
         val sz = Display.screenSize(ctx)
         return sz.x > sz.y
+    }
+
+    /** 内容区最大高度（px）：竖屏 78%，横屏 70%——横屏可用高度小，要更保守 */
+    fun maxHeightPx(ctx: Context): Int {
+        val sz = Display.screenSize(ctx)
+        return (sz.y * if (sz.x > sz.y) 0.70f else 0.78f).toInt()
     }
 
     /** 加入一个窗口；返回 false 表示已有同名窗口或没有权限 */
