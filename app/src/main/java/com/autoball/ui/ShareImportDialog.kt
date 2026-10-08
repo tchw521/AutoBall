@@ -27,11 +27,20 @@ object ShareImportDialog {
             minLines = 3
             gravity = Gravity.TOP
         }
+        val passEt = android.widget.EditText(act).apply {
+            hint = "口令（加密分享码才需要）"
+            setTextColor(Theme.textPri())
+            setHintTextColor(Theme.textSec())
+            setSingleLine(true)
+        }
         val box = LinearLayout(act).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(Display.dpInt(act, 20f), Display.dpInt(act, 12f),
                 Display.dpInt(act, 20f), 0)
             addView(et)
+            // 加密分享码需要口令；普通码留空即可
+            addView(passEt)
+            addView(Kit.note(act, "若分享码设置了口令，请在此输入；否则留空。", 6f))
         }
         AlertDialog.Builder(act).setTitle("导入分享码").setView(box)
             .setPositiveButton("导入") { d, _ ->
@@ -52,10 +61,10 @@ object ShareImportDialog {
                         host.refreshAll()
                     }
                 } else {
-                    val s = ShareCode.decode(code)
+                    val s = ShareCode.decode(code, passEt.text.toString().trim())
                     if (s == null) {
-                        AB.log.error("import", "分享码格式不正确或已损坏")
-                        Ui.toast(act, "分享码格式不正确或已损坏")
+                        AB.log.error("import", "分享码格式不正确、已损坏或口令错误")
+                        Ui.toast(act, "分享码格式不正确、已损坏或口令错误")
                     } else {
                         s.id = Script.newId()
                         AB.store.save(s)

@@ -94,7 +94,7 @@ class MainActivity : Activity(), PageHost {
         root.addView(navWrap)
 
         // 底部版本条（v3 .verbar）：点一下看更新日志
-        root.addView(Ui.versionBar(this, "v1.16.0", "查看更新日志") {
+        root.addView(Ui.versionBar(this, "v1.17.0", "查看更新日志") {
             ChangeLog.show(this)
         })
 
@@ -250,8 +250,28 @@ class MainActivity : Activity(), PageHost {
         com.autoball.float.FloatManager.onConfigChanged(this)
     }
 
+    /**
+     * 定时补触发：进入应用时检查有没有"到点了但当天还没跑"的脚本。
+     *
+     * 不做后台常驻——那需要保活、耗电，还常被系统回收，与本工具
+     * 「用户手动启动、随时可停」的定位冲突。到点后首次进入应用时补跑一次。
+     */
+    private fun checkScheduled() {
+        val today = AB.store.all().filter {
+            com.autoball.ui.ScheduleDialog.shouldFire(it)
+        }
+        if (today.isEmpty()) return
+        today.forEach { s ->
+            com.autoball.ui.ScheduleDialog.markFired(s)
+            AB.store.save(s)
+            AB.log.info("schedule", "定时任务到点，补触发：${s.name}")
+            runScript(s)
+        }
+    }
+
     override fun onResume() {
         super.onResume()
+        checkScheduled()
         if (com.autoball.AB.store.getBool("float_persistent", true)
             && Display.canDrawOverlay(this)) {
             runCatching { FloatManager.showBall(this) }

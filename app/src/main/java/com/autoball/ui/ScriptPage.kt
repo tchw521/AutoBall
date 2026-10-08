@@ -546,6 +546,7 @@ class ScriptPage(
             setOnClickListener {
                 Ui.menu(context, this,
                     listOf("编辑" to false, "运行" to false, "生成分享码" to false,
+                           "加密分享码" to false, "定时与循环" to false,
                            "绑定手势" to false, "重命名" to false, "删除" to true)) { i ->
                     when (i) {
                         0 -> host.openScript(s)
@@ -555,9 +556,15 @@ class ScriptPage(
                             if (act != null) ShareImportDialog.showCopy(
                                 act, s.name, com.autoball.core.store.ShareCode.encode(s))
                         }
-                        3 -> host.openSubPage("float")
-                        4 -> renameDialog(s)
-                        5 -> { AB.store.delete(setOf(s.id)); renderList() }
+                        3 -> askPassThenShare(
+                            context as? android.app.Activity ?: return@setOnClickListener, s)
+                        4 -> ScheduleDialog.show(
+                            context as? android.app.Activity ?: return@setOnClickListener, s) {
+                            AB.store.save(s); renderList()
+                        }
+                        5 -> host.openSubPage("float")
+                        6 -> renameDialog(s)
+                        7 -> { AB.store.delete(setOf(s.id)); renderList() }
                     }
                 }
             }
@@ -850,4 +857,35 @@ class ScriptPage(
 
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(event: MotionEvent): Boolean = true
+    /**
+     * 加密分享（自动精灵同款）。
+     * 口令不随码传输，导入方须手动输入相同口令。
+     */
+    private fun askPassThenShare(act: android.app.Activity, s: com.autoball.core.model.Script) {
+        val ed = android.widget.EditText(act).apply {
+            hint = "口令（导入时需输入相同口令）"
+            setText(s.sharePass)
+            setSingleLine(true)
+            textSize = 13f
+            setPadding(Display.dpInt(act, 12f), Display.dpInt(act, 10f),
+                Display.dpInt(act, 12f), Display.dpInt(act, 10f))
+        }
+        val box = LinearLayout(act).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(ed)
+            addView(Kit.note(act, "留空则生成普通分享码（不加密）。", 6f))
+        }
+        Ui.dialog(act, "加密分享")
+            .body(box)
+            .negative("取消") { }
+            .positive("生成") {
+                val pass = ed.text.toString().trim()
+                s.sharePass = pass
+                com.autoball.AB.store.save(s)
+                ShareImportDialog.showCopy(act, s.name,
+                    com.autoball.core.store.ShareCode.encode(s, pass))
+                true
+            }.show()
+    }
+
 }

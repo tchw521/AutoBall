@@ -21,14 +21,19 @@ object ShareCode {
     private const val MAX_CODE_LEN = 512 * 1024   // 防止超大脚本拖垮导入
     private const val MAX_SCRIPT_LEN = 2 * 1024 * 1024
 
-    fun encode(script: Script): String {
-        val json = script.toJson()
-        val bytes = json.toString().toByteArray(Charsets.UTF_8)
+    fun encode(script: Script): String = encode(script, script.sharePass)
+
+    /**
+     * @param pass 口令；非空时对明文做 AES 加密（自动精灵同款「加密分享」）。
+     *             口令不随码传输，导入方必须手动输入同样的口令。
+     */
+    fun encode(script: Script, pass: String): String {
+        var bytes = script.toJson().toString().toByteArray(Charsets.UTF_8)
+        if (pass.isNotEmpty()) bytes = CipherBox.encrypt(bytes, pass)
         val crc = crc32(bytes)
         val bos = ByteArrayOutputStream()
         GZIPOutputStream(bos).use { it.write(bytes) }
-        val packed = bos.toByteArray()
-        val body = Base64.encodeToString(packed, Base64.NO_WRAP)
+        val body = Base64.encodeToString(bos.toByteArray(), Base64.NO_WRAP)
         return PREFIX + crc.toString(16) + ":" + body
     }
 
@@ -81,7 +86,10 @@ object ShareCode {
     fun isBatch(code: String): Boolean = code.trim().startsWith(PREFIX_ALL)
 
     /** @return 解析出的脚本；格式错误或校验失败返回 null */
-    fun decode(code: String): Script? {
+    fun decode(code: String): Script? = decode(code, "")
+
+    /** @param pass 口令；码是加密的而口令为空/错误时返回 null */
+    fun decode(code: String, pass: String): Script? {
         return try {
             val c = code.trim()
             if (!c.startsWith(PREFIX)) return null
@@ -95,7 +103,14 @@ object ShareCode {
             val bytes = GUNZIP(packed)
             if (bytes.size > MAX_SCRIPT_LEN) return null
             if (crc32(bytes).toString(16) != crcHex) return null
-            val o = JSONObject(String(bytes, Charsets.UTF_8))
+            // 加密码：先按口令解密
+            val plain = if (pass.isNotEmpty()) {
+                runCatching { CipherBox.decrypt(bytes, pass) }.getOrNull() ?: return null
+            } else if (CipherBox.looksEncrypted(bytes)) {
+                // 没给口令但内容是密文——直接返回 null，避免解析出乱码
+                return null
+            } else bytes
+            val o = JSONObject(String(plain, Charsets.UTF_8))
             Script.fromJson(o)
         } catch (e: Exception) {
             null

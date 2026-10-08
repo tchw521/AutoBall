@@ -29,6 +29,26 @@ class Script {
 
     var enabled: Boolean = true
     var isDefault: Boolean = false
+
+    // ---------- 自动精灵：定时触发 / 循环运行 ----------
+    /** 定时触发开关 */
+    var scheduleEnabled: Boolean = false
+    /** 触发时刻：一天内的分钟数（0–1439），如 8*60+30 = 08:30 */
+    var scheduleMinute: Int = -1
+    /** 每周重复位掩码：bit0=周日 … bit6=周六；0 表示每天 */
+    var scheduleDays: Int = 0
+    /** 重启手机后也触发一次 */
+    var scheduleOnBoot: Boolean = false
+    /** 上次触发的日期（yyyyMMdd），避免同一天重复触发 */
+    var lastFiredDay: Int = 0
+
+    /** 循环运行：0 表示不循环（跑一次），n>0 表示循环 n 次，-1 表示无限 */
+    var loopCount: Int = 0
+    /** 每次循环之间的间隔（ms） */
+    var loopIntervalMs: Long = 0L
+
+    /** 分享码加密口令；空表示不加密 */
+    var sharePass: String = ""
     var createdAt: Long = System.currentTimeMillis()
     var updatedAt: Long = createdAt
     var runCount: Int = 0
@@ -47,6 +67,13 @@ class Script {
         put("createdAt", createdAt)
         put("updatedAt", updatedAt)
         put("runCount", runCount)
+        put("scheduleEnabled", scheduleEnabled)
+        put("scheduleMinute", scheduleMinute)
+        put("scheduleDays", scheduleDays)
+        put("scheduleOnBoot", scheduleOnBoot)
+        put("loopCount", loopCount)
+        put("loopIntervalMs", loopIntervalMs)
+        if (sharePass.isNotEmpty()) put("sharePass", sharePass)
     }
 
     companion object {
@@ -70,6 +97,13 @@ class Script {
             s.createdAt = o.optLong("createdAt", System.currentTimeMillis())
             s.updatedAt = o.optLong("updatedAt", s.createdAt)
             s.runCount = o.optInt("runCount", 0)
+            s.scheduleEnabled = o.optBoolean("scheduleEnabled", false)
+            s.scheduleMinute = o.optInt("scheduleMinute", -1)
+            s.scheduleDays = o.optInt("scheduleDays", 0)
+            s.scheduleOnBoot = o.optBoolean("scheduleOnBoot", false)
+            s.loopCount = o.optInt("loopCount", 0)
+            s.loopIntervalMs = o.optLong("loopIntervalMs", 0L)
+            s.sharePass = o.optStringOrNull("sharePass") ?: ""
             return s
         }
 

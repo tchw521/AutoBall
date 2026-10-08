@@ -105,6 +105,14 @@ class FlowRunner(
                     }
                 }
                 onProgress?.invoke(-1, total, a)
+                // 自动精灵：运行条件可引用前序动作的执行状态。
+                // 写入三个变量供后续动作的「运行条件」表达式使用：
+                //   $ok    全局：截至目前是否全部成功
+                //   $last  上一个动作是否成功（1/0）
+                //   $stepN 第 N 个动作是否成功（如 $step3）
+                runCatching { ctx.vars["last"] = if (okAll) "1" else "0" }
+                runCatching { ctx.vars["ok"] = if (failed == 0) "1" else "0" }
+                runCatching { ctx.vars["step${executed - failed}"] = if (okAll) "1" else "0" }
                 fire("ba")        // 每个动作运行后
                 if (!okAll && a.type != ActionType.RUN_JS) {
                     // 「有动作失败立即暂停」：防止后续动作在错误界面上乱点

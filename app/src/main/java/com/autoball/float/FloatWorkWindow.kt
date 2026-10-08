@@ -92,6 +92,8 @@ object FloatWorkWindow {
     )
 
     private var holder: Holder? = null
+    /** 当前回调，供空态窗口的两个入口按钮使用 */
+    private var cbRef: Callback? = null
 
     fun isShown(): Boolean = view != null
 
@@ -106,14 +108,17 @@ object FloatWorkWindow {
             val ctx = context.applicationContext
             val manager = ctx.getSystemService(Context.WINDOW_SERVICE) as WindowManager
             wm = manager
+            // 先存回调再构建：buildView 内会渲染空态按钮，
+            // 那些按钮点击时要用 cbRef（延迟执行，此处赋值即可）
+            cbRef = cb
+            curScript = script
+            curCb = cb
             val v = buildView(ctx, script, cb)
             // 宽度走统一规则：竖屏屏宽 1/2、横屏 1/4，避免横屏顶满屏幕
             val p = FloatWindows.params(ctx, FloatWindows.widthDp(ctx))
             p.y = Display.screenSize(ctx).y / 6
             view = v
             params = p
-            curScript = script
-            curCb = cb
             // 走统一栈：新窗口后入栈，天然压在旧窗口之上
             if (!FloatWindows.add(ctx, v, p)) {
                 view = null
@@ -132,6 +137,7 @@ object FloatWorkWindow {
             holder = null
             curScript = null
             curCb = null
+            cbRef = null
             removeCap()
             stealth = false
         }
@@ -257,11 +263,21 @@ object FloatWorkWindow {
         titleBox.addView(dot)
         titleBox.addView(title)
         head.addView(titleBox)
-        head.addView(roundBtn(ctx, "✕") { hide() }, FrameLayout.LayoutParams(
-            FrameLayout.LayoutParams.WRAP_CONTENT,
-            FrameLayout.LayoutParams.WRAP_CONTENT).apply {
-            gravity = Gravity.END or Gravity.CENTER_VERTICAL
-        })
+        // 右上：设置图标（脚本全局设置）+ 竖三点菜单 + 关闭
+        // 设置做成独立图标按钮，不再藏进「⋯」菜单里——它是高频入口
+        val rightBox = LinearLayout(ctx).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT).apply {
+                gravity = Gravity.END or Gravity.CENTER_VERTICAL
+            }
+        }
+        rightBox.addView(roundBtn(ctx, "⚙") { cb.onSettings(script) })
+        rightBox.addView(roundBtn(ctx, "⋮") { toggleMore() })
+        rightBox.addView(roundBtn(ctx, "✕") { hide() })
+        head.addView(rightBox)
         dragAttach(head)
         root.addView(head)
 
@@ -295,23 +311,24 @@ object FloatWorkWindow {
             setPadding(Display.dpInt(ctx, 10f), Display.dpInt(ctx, 8f),
                 Display.dpInt(ctx, 10f), Display.dpInt(ctx, 10f))
         }
+        // 运行 / 录制 收窄（0.8 权重），腾出位置给「添加动作」——它是最常用入口，
+        // 藏在菜单里每次都要多点两下
         mainBar.addView(flatBtn(ctx, "运行", Theme.pri()) { cb.onRun(script) },
             LinearLayout.LayoutParams(0,
-                LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
-                marginEnd = Display.dpInt(ctx, 4f)
+                LinearLayout.LayoutParams.WRAP_CONTENT, 0.8f).apply {
+                marginEnd = Display.dpInt(ctx, 3f)
             })
         mainBar.addView(flatBtn(ctx, "录制", Theme.ok()) {
             cb.onRecord(script, !recording)
         }, LinearLayout.LayoutParams(0,
-            LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
-            marginStart = Display.dpInt(ctx, 2f)
-            marginEnd = Display.dpInt(ctx, 2f)
+            LinearLayout.LayoutParams.WRAP_CONTENT, 0.8f).apply {
+            marginStart = Display.dpInt(ctx, 3f)
+            marginEnd = Display.dpInt(ctx, 3f)
         })
-        // 三键等分：早前「⋯」用固定 40dp，窄屏时会把「运行」「录制」挤出可视区
-        mainBar.addView(flatBtn(ctx, "⋯", Theme.textSec()) { toggleMore() },
+        mainBar.addView(flatBtn(ctx, "添加动作", Theme.pri2()) { cb.onAddAction(script) },
             LinearLayout.LayoutParams(0,
-                LinearLayout.LayoutParams.WRAP_CONTENT, 0.7f).apply {
-                marginStart = Display.dpInt(ctx, 2f)
+                LinearLayout.LayoutParams.WRAP_CONTENT, 1.3f).apply {
+                marginStart = Display.dpInt(ctx, 3f)
             })
         root.addView(mainBar)
 
@@ -325,7 +342,7 @@ object FloatWorkWindow {
         recBar.addView(flatBtn(ctx, "暂停", Theme.warn()) {
             cb.onPause(script, !paused)
         }, LinearLayout.LayoutParams(0,
-            LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+            LinearLayout.LayoutParams.WRAP_CONTENT, 0.8f).apply {
             marginEnd = Display.dpInt(ctx, 3f)
         })
         recBar.addView(flatBtn(ctx, "撤销", Theme.textSec()) { cb.onUndo(script) },
@@ -381,16 +398,37 @@ object FloatWorkWindow {
         h.list.removeAllViews()
         val acts = script.flow?.actions ?: emptyList()
         if (acts.isEmpty()) {
+            // 空态窗口：与有动作的窗口**分成两个形态**。
+            // 空态不能运行、也没有列表可看，给「运行」按钮只会让人点了报错；
+            // 这里直接换成两个入口按钮，与自动精灵空态一致。
             h.list.addView(TextView(h.list.context).apply {
                 text = "脚本为空  请先添加一个动作"
                 textSize = 12.5f
                 setTextColor(Theme.textSec())
                 gravity = Gravity.CENTER
                 setPadding(Display.dpInt(context, 12f),
-                    Display.dpInt(context, 20f),
+                    Display.dpInt(context, 14f),
                     Display.dpInt(context, 12f),
-                    Display.dpInt(context, 20f))
+                    Display.dpInt(context, 10f))
             })
+            val row = LinearLayout(h.list.context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                setPadding(Display.dpInt(context, 12f), 0,
+                    Display.dpInt(context, 12f), Display.dpInt(context, 12f))
+            }
+            row.addView(bigBtn(h.list.context, "开始录制", Theme.ok()) {
+                cbRef?.onRecord(script, true)
+            }, LinearLayout.LayoutParams(0,
+                LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                marginEnd = Display.dpInt(context, 5f)
+            })
+            row.addView(bigBtn(h.list.context, "添加动作", Theme.pri()) {
+                cbRef?.onAddAction(script)
+            }, LinearLayout.LayoutParams(0,
+                LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                marginStart = Display.dpInt(context, 5f)
+            })
+            h.list.addView(row)
             return
         }
         acts.forEachIndexed { i, a ->
@@ -421,7 +459,8 @@ object FloatWorkWindow {
             h.dot.clearAnimation(); h.dot.alpha = 1f
         }
         // 录制中显示控制条，否则显示主条——自动精灵同为原地切换
-        h.mainBar.visibility = if (recording) View.GONE else View.VISIBLE
+        val empty = (curScript?.flow?.actions?.size ?: 0) == 0
+        h.mainBar.visibility = if (recording || empty) View.GONE else View.VISIBLE
         h.recBar.visibility = if (recording) View.VISIBLE else View.GONE
         if (recording) {
             val pb = h.recBar.getChildAt(0) as? TextView
@@ -542,6 +581,21 @@ object FloatWorkWindow {
             background = Theme.rect(Theme.surface2(), 12f, ctx, Theme.line())
             setPadding(Display.dpInt(ctx, 8f), Display.dpInt(ctx, 11f),
                 Display.dpInt(ctx, 8f), Display.dpInt(ctx, 11f))
+            setOnClickListener { onClick() }
+        }
+
+    /** 空态入口大按钮（比 flatBtn 更高，突出"从哪开始"） */
+    private fun bigBtn(ctx: Context, text: String, color: Int,
+                       onClick: () -> Unit): TextView =
+        TextView(ctx).apply {
+            this.text = text
+            textSize = 13f
+            setTypeface(null, android.graphics.Typeface.BOLD)
+            setTextColor(color)
+            gravity = Gravity.CENTER
+            background = Theme.rect(Theme.surface2(), 12f, ctx, Theme.line())
+            setPadding(Display.dpInt(ctx, 10f), Display.dpInt(ctx, 13f),
+                Display.dpInt(ctx, 10f), Display.dpInt(ctx, 13f))
             setOnClickListener { onClick() }
         }
 
