@@ -171,7 +171,8 @@ class FloatSetPage(context: Context, private val host: PageHost) : FrameLayout(c
             layoutParams = LinearLayout.LayoutParams(
                 Display.dpInt(context, 29f), Display.dpInt(context, 29f))
         })
-        row.addView(Kit.twoLine(context, slot.label, bound?.name ?: "未绑定"))
+        row.addView(Kit.twoLine(context, slot.label,
+            com.autoball.core.store.GestureBinding.summary(slot)))
         row.addView(TextView(context).apply {
             text = "选择"
             textSize = 10.5f
@@ -185,6 +186,12 @@ class FloatSetPage(context: Context, private val host: PageHost) : FrameLayout(c
         return row
     }
 
+    /**
+     * 手势绑定（R-106）：一个手势可绑多个脚本，**按勾选顺序**依次执行。
+     *
+     * 原实现是单选（一个手势只能绑一个），想"双击先跑 A 再跑 B"就只能
+     * 把两者合成一个大脚本，那样 A 又没法单独复用了。
+     */
     private fun pickScript(slot: BallSlot) {
         val act = context as? Activity ?: return
         val items = AB.store.all()
@@ -192,21 +199,57 @@ class FloatSetPage(context: Context, private val host: PageHost) : FrameLayout(c
             Ui.toast(act, "还没有脚本可绑定")
             return
         }
+        val bound = com.autoball.core.store.GestureBinding.ids(slot).toMutableList()
         val box = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
-        items.forEach { s ->
-            box.addView(Ui.sheetOption(act, "▶", Theme.pri2(), s.name,
-                "绑定到${slot.label}") {
-                clearSlot(slot)
-                s.slot = slot
-                AB.store.save(s)
-                renderBall()
-            })
+
+        fun fill() {
+            box.removeAllViews()
+            box.addView(Kit.note(act,
+                "可多选，按**勾选顺序**依次执行。取消勾选会从序列中移除。"))
+            items.forEach { s ->
+                val idx = bound.indexOf(s.id)
+                box.addView(Kit.switchRow(act, s.name,
+                    if (idx >= 0) "第 ${idx + 1} 个执行" else "未绑定",
+                    "▶", Theme.pri2(), idx >= 0) { on ->
+                    if (on) {
+                        if (s.id !in bound) bound.add(s.id)
+                    } else bound.remove(s.id)
+                    fill()
+                })
+            }
+            if (bound.size > 1) {
+                // 顺序调整：上下移动
+                box.addView(Kit.section(act, "执行顺序"))
+                bound.forEachIndexed { i, id ->
+                    val s2 = items.firstOrNull { it.id == id } ?: return@forEachIndexed
+                    box.addView(Kit.rowCard(act).apply {
+                        addView(Kit.twoLine(act, "${i + 1}. ${s2.name}", null))
+                        addView(Kit.miniBtn(act, "↑") {
+                            if (i > 0) {
+                                bound.removeAt(i); bound.add(i - 1, id); fill()
+                            }
+                        })
+                        addView(Kit.miniBtn(act, "↓") {
+                            if (i < bound.size - 1) {
+                                bound.removeAt(i); bound.add(i + 1, id); fill()
+                            }
+                        })
+                    })
+                }
+            }
         }
-        box.addView(Ui.sheetOption(act, "✕", Theme.danger(), "取消绑定", "清空该手势") {
-            clearSlot(slot)
-            renderBall()
-        })
-        Ui.sheet(act, "${slot.label} 绑定的脚本").body(box).show()
+        fill()
+
+        Ui.dialog(act, "${slot.label} 绑定的脚本").body(box)
+            .width(Theme.DIALOG_W + 10f).maxHeight(0.8f)
+            .negative("清空") {
+                com.autoball.core.store.GestureBinding.set(slot, emptyList())
+                renderBall()
+            }
+            .positive("确定") {
+                com.autoball.core.store.GestureBinding.set(slot, bound)
+                renderBall(); true
+            }.show()
     }
 
     private fun clearSlot(slot: BallSlot) {

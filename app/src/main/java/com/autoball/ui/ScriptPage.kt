@@ -547,7 +547,7 @@ class ScriptPage(
                 Ui.menu(context, this,
                     listOf("编辑" to false, "运行" to false, "生成分享码" to false,
                            "加密分享码" to false, "定时与循环" to false,
-                           "消息触发" to false, "标签" to false,
+                           "消息触发" to false, "标签" to false, "导出为文件" to false,
                            "绑定手势" to false, "重命名" to false, "删除" to true)) { i ->
                     when (i) {
                         0 -> host.openScript(s)
@@ -567,9 +567,12 @@ class ScriptPage(
                         6 -> (context as? android.app.Activity)?.let {
                             TagDialog.editFor(it, s) { renderList() }
                         }
-                        7 -> host.openSubPage("float")
-                        8 -> renameDialog(s)
-                        9 -> { AB.store.delete(setOf(s.id)); renderList() }
+                        7 -> host.exportScriptFile(s)
+                        8 -> host.openSubPage("float")
+                        9 -> renameDialog(s)
+                        10 -> { AB.store.delete(setOf(s.id))
+                            com.autoball.core.store.GestureBinding.prune(setOf(s.id))
+                            renderList() }
                     }
                 }
             }

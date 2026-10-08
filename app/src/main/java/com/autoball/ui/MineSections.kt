@@ -197,6 +197,10 @@ object MineSections {
         })
         g1.addView(Kit.valueRow(ctx, "导出全部", "把全部脚本导出为分享码",
             "⤒", Theme.pri2()) { exportAll(ctx) })
+        g1.addView(Kit.valueRow(ctx, "导出为文件", "保存 .aball 文件，可直接存网盘",
+            "💾", Theme.ok()) { host.exportFile() })
+        g1.addView(Kit.valueRow(ctx, "从文件导入", "打开本机 .aball 文件",
+            "📂", Theme.pri()) { host.importFile() })
         b.addView(Kit.settingCard(ctx, g1))
 
         b.addView(Kit.groupHead(ctx, "日志"))

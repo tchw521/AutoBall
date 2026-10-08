@@ -253,16 +253,50 @@ object FloatManager {
         AB.router.execute(a, ctx)
     }
 
+    /**
+     * 触发手势：支持一个手势按顺序绑多个脚本（R-106），串行依次执行。
+     *
+     * 串行而非并行是刻意的：两个脚本同时注入点击会互相干扰坐标，
+     * 结果不可预测。顺序执行也符合"手势触发一串动作"的直觉。
+     */
     private fun runSlot(slot: BallSlot) {
         val ctx = com.autoball.App.get()
-        val scripts = AB.store.all()
-        val s = scripts.firstOrNull { it.slot == slot && it.enabled }
-            ?: scripts.firstOrNull { it.isDefault }
-            ?: run {
-                AB.log.warn("float", "手势「${slot.label}」未绑定脚本")
-                return
+        val list = com.autoball.core.store.GestureBinding.scripts(slot)
+        if (list.isEmpty()) {
+            AB.log.warn("float", "手势「${slot.label}」未绑定脚本")
+            Ui_toast("手势「${slot.label}」还没绑定脚本")
+            return
+        }
+        if (list.size == 1) {
+            ScriptLauncher.launch(ctx, list[0])
+            return
+        }
+        // 多个脚本：后台串行执行，避免阻塞悬浮球的手势响应
+        AB.log.info("float", "手势「${slot.label}」依次运行 ${list.size} 个脚本")
+        Thread {
+            list.forEachIndexed { i, s ->
+                if (ScriptLauncher.isRunning() && i > 0) {
+                    // 上一个还没跑完——不叠加，记录后停止后续
+                    AB.log.warn("float", "「${s.name}」：上一个脚本仍在运行，已跳过")
+                    return@forEachIndexed
+                }
+                ScriptLauncher.launch(ctx, s)
+                waitUntilIdle()
             }
-        ScriptLauncher.launch(ctx, s)
+        }.apply { isDaemon = true }.start()
+    }
+
+    /** 等待当前脚本跑完（轮询，最多 30 分钟） */
+    private fun waitUntilIdle() {
+        val deadline = System.currentTimeMillis() + 30 * 60 * 1000L
+        while (ScriptLauncher.isRunning() && System.currentTimeMillis() < deadline) {
+            Thread.sleep(300)
+        }
+    }
+
+    private fun Ui_toast(msg: String) {
+        handler.post { android.widget.Toast.makeText(
+            com.autoball.App.get(), msg, android.widget.Toast.LENGTH_SHORT).show() }
     }
 
     private fun openSlotList() {

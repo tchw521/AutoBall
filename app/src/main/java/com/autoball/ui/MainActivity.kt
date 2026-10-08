@@ -35,9 +35,20 @@ interface PageHost {
     fun openSubPage(key: String)
     /** 重建整个界面（切换性能模式等影响全局绘制的设置时用） */
     fun recreateUi()
+    /** 导出脚本为 .aball 文件（系统「保存到…」选择器） */
+    fun exportFile()
+    /** 从 .aball 文件导入 */
+    fun importFile()
+    /** 导出单个脚本为 .aball 文件 */
+    fun exportScriptFile(script: Script)
 }
 
 class MainActivity : Activity(), PageHost, com.autoball.NotifyHost {
+
+    companion object {
+        private const val REQ_EXPORT = 9001
+        private const val REQ_IMPORT = 9002
+    }
 
     private lateinit var content: FrameLayout
     private lateinit var nav: LiquidNavView
@@ -153,6 +164,58 @@ class MainActivity : Activity(), PageHost, com.autoball.NotifyHost {
         val idx = current
         content.removeAllViews()
         showPage(idx)
+    }
+
+    // ---------- 脚本文件导入导出（R-105） ----------
+
+    private var pendingWrite: ((android.net.Uri) -> String?)? = null
+
+    override fun exportFile() {
+        val all = AB.store.all()
+        if (all.isEmpty()) { Ui.toast(this, "还没有脚本可导出"); return }
+        val (intent, writer) = com.autoball.core.store.ScriptFile.exportIntent(all)
+        pendingWrite = writer
+        runCatching { startActivityForResult(intent, REQ_EXPORT) }
+            .onFailure { Ui.toast(this, "无法打开文件选择器") }
+    }
+
+    override fun exportScriptFile(script: Script) {
+        val (intent, writer) =
+            com.autoball.core.store.ScriptFile.exportIntent(listOf(script))
+        pendingWrite = writer
+        runCatching { startActivityForResult(intent, REQ_EXPORT) }
+            .onFailure { Ui.toast(this, "无法打开文件选择器") }
+    }
+
+    override fun importFile() {
+        runCatching {
+            startActivityForResult(
+                com.autoball.core.store.ScriptFile.importIntent(), REQ_IMPORT)
+        }.onFailure { Ui.toast(this, "无法打开文件选择器") }
+    }
+
+    @Deprecated("不使用 androidx 的结果 API；沿用平台回调以保持零依赖")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (resultCode != RESULT_OK) { pendingWrite = null; return }
+        val uri = data?.data
+        if (uri == null) { pendingWrite = null; return }
+        when (requestCode) {
+            REQ_EXPORT -> {
+                val err = pendingWrite?.invoke(uri)
+                pendingWrite = null
+                Ui.toast(this, err ?: "已导出")
+            }
+            REQ_IMPORT -> {
+                val err = com.autoball.core.store.ScriptFile.import(this, uri) { list ->
+                    Ui.toast(this, "已导入 ${list.size} 个脚本")
+                    for (i in pages.indices) pages[i] = null
+                    content.removeAllViews()
+                    buildUi()
+                }
+                if (err != null) Ui.toast(this, err)
+            }
+        }
     }
 
     override fun recreateUi() {
