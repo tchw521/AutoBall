@@ -61,14 +61,8 @@ class LiquidNavView(
 
         private val HALO = Color.parseColor("#7A7DD3FC")
         val TABS = arrayOf("脚本", "编辑", "", "市场", "我的")
-        /** 导航图标（矢量路径，随选中态变色） */
-        private val ICONS = arrayOf(
-            "M4 6h16M4 12h16M4 18h10",                       // 脚本：列表
-            "M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z", // 编辑：铅笔
-            "",                                              // 中央：＋（已由 FAB 绘制）
-            "M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z",  // 市场：商店
-            "M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2M12 11a4 4 0 100-8 4 4 0 000 8z" // 我的：人
-        )
+        /** 导航图标类型；0=脚本 1=编辑 2=中央 3=市场 4=我的 */
+        private val ICONS = intArrayOf(0, 1, 2, 3, 4)
 
         /** 凝胶本体高度 */
         private const val BAR_DP = 64f
@@ -90,6 +84,7 @@ class LiquidNavView(
     private val halo = Paint(Paint.ANTI_ALIAS_FLAG)
 
     private val tabs = ArrayList<TextView>()
+    private val icons = ArrayList<IconView>()
     private var selected = 0
 
     /** 液态呼吸相位：v3 gelMorph 9s 周期。幅度极小（32↔34dp），不刺眼 */
@@ -157,8 +152,6 @@ class LiquidNavView(
         select(0)
         startMorph()
     }
-
-    private val icons = ArrayList<IconView>()
 
     fun select(index: Int) {
         selected = index
@@ -273,30 +266,54 @@ class LiquidNavView(
         })
     }
 
-    /** 导航图标：用 Path 矢量绘制，避免为 5 个图标引入图片资源 */
-    class IconView(context: Context, pathData: String) : View(context) {
-        private val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+    /**
+     * 导航图标：按类型直接自绘几何图形。
+     *
+     * 不引入图片资源（避免增包），也不用 `android.util.PathParser`
+     * （它属于 androidx，本工程零第三方依赖）——四个图标都是简单几何形，
+     * 直接画反而更可控。
+     */
+    class IconView(context: Context, private val kind: Int) : View(context) {
+        private val p = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
             style = android.graphics.Paint.Style.STROKE
             strokeWidth = Display.dp(context, 1.7f)
             strokeCap = android.graphics.Paint.Cap.ROUND
             strokeJoin = android.graphics.Paint.Join.ROUND
             color = Theme.textSec()
         }
-        private val path = if (pathData.isEmpty()) android.graphics.Path()
-        else runCatching { android.util.PathParser.createPathFromPathData(pathData) }
-            .getOrDefault(android.graphics.Path())
 
-        fun tint(c: Int) { paint.color = c; invalidate() }
+        fun tint(c: Int) { p.color = c; invalidate() }
 
         override fun onDraw(canvas: android.graphics.Canvas) {
             super.onDraw(canvas)
-            if (path.isEmpty) return
-            // 源坐标为 24×24，等比缩放填满本视图
-            val s = width / 24f
-            canvas.save()
-            canvas.scale(s, s)
-            canvas.drawPath(path, paint)
-            canvas.restore()
+            val u = width / 24f          // 24×24 逻辑画布
+            val px = { v: Float -> v * u }
+            when (kind) {
+                0 -> { // 脚本：列表三行
+                    for (k in 0..2) {
+                        val y = px(7f + k * 5f)
+                        canvas.drawLine(px(4f), y, px(20f - k * 5f), y, p)
+                    }
+                }
+                1 -> { // 编辑：铅笔
+                    canvas.drawLine(px(5f), px(19f), px(17f), px(7f), p)
+                    canvas.drawLine(px(15f), px(5f), px(19f), px(9f), p)
+                    canvas.drawLine(px(5f), px(19f), px(7f), px(21f), p)
+                }
+                3 -> { // 市场：商店（屋顶 + 屋身）
+                    canvas.drawLine(px(3f), px(10f), px(12f), px(3f), p)
+                    canvas.drawLine(px(12f), px(3f), px(21f), px(10f), p)
+                    canvas.drawLine(px(5f), px(10f), px(5f), px(20f), p)
+                    canvas.drawLine(px(19f), px(10f), px(19f), px(20f), p)
+                    canvas.drawLine(px(5f), px(20f), px(19f), px(20f), p)
+                }
+                4 -> { // 我的：人（头 + 肩）
+                    canvas.drawCircle(px(12f), px(8f), px(4f), p)
+                    canvas.drawLine(px(5f), px(20f), px(5f + 0f), px(20f), p)
+                    val r = android.graphics.RectF(px(4f), px(14f), px(20f), px(30f))
+                    canvas.drawArc(r, 180f, 180f, false, p)
+                }
+            }
         }
     }
 
