@@ -48,4 +48,20 @@ object AB {
     val router: BackendRouter = BackendRouter()
     val log: RunLog = RunLog()
     val store: ScriptStore by lazy { ScriptStore(App.get()) }
+
+    /**
+     * 消息触发的运行宿主。
+     *
+     * 通知回调发生在 NotifyService 进程里，那里没有 Activity，
+     * 直接弹 UI 会崩。由主界面在 onCreate/onResume 注册自己，
+     * 触发时把脚本与变量交给它执行。
+     */
+    @Volatile
+    var notifyHost: NotifyHost? = null
+}
+
+/** 消息触发的运行宿主：由主界面实现 */
+interface NotifyHost {
+    /** 带初始变量运行脚本（供触发来源 pkg / text 注入） */
+    fun runScriptWithVars(s: Script, vars: Map<String, String>)
 }

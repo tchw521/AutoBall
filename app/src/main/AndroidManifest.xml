@@ -58,6 +58,16 @@
             </intent-filter>
         </activity>
 
+        <!-- 消息触发：需用户在系统设置授予「通知使用权」后才会被绑定 -->
+        <service
+            android:name=".service.NotifyService"
+            android:exported="true"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
         <!-- 执行核心之一：无障碍服务后端 -->
         <service
             android:name=".service.AutoBallAccessibilityService"

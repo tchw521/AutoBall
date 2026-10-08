@@ -62,8 +62,10 @@ data class ActionPreset(
             // 这里只标记类型，避免同一份配置散在两个地方
             ActionPreset("随机点击", G_TOUCH, ActionType.CLICK,
                 { it.durationMs = 60 }, "点击位置带随机偏移，降低被识别的风险"),
-            ActionPreset("定长滑动", G_TOUCH, ActionType.SWIPE,
-                { it.durationMs = 500; it.x2 = 50f; it.y2 = 20f }, "固定长度的滑动"),
+            ActionPreset("滑动", G_TOUCH, ActionType.SWIPE,
+                { it.durationMs = 500; it.x2 = 50f; it.y2 = 20f }, "从一个位置滑到另一个位置"),
+            ActionPreset("单指手势", G_TOUCH, ActionType.GESTURE_SINGLE,
+                { it.durationMs = 400; it.x2 = 50f; it.y2 = 20f }, "自定义单指轨迹"),
             ActionPreset("多指手势", G_TOUCH, ActionType.GESTURE_MULTI,
                 { it.durationMs = 400 }, "双指缩放等，需 Shizuku 或 ROM 支持"),
 
@@ -94,6 +96,8 @@ data class ActionPreset(
                 hint = "截取当前屏幕"),
             ActionPreset("打开应用", G_SYSTEM, ActionType.OPEN_APP,
                 hint = "按包名启动应用"),
+            ActionPreset("打开链接", G_SYSTEM, ActionType.OPEN_URL,
+                hint = "用浏览器打开指定网址"),
             ActionPreset("输入文字", G_SYSTEM, ActionType.INPUT_TEXT,
                 hint = "在当前焦点输入框输入文本"),
 
@@ -106,6 +110,8 @@ data class ActionPreset(
                 hint = "执行一段 JS 代码"),
             ActionPreset("运行脚本", G_ADVANCE, ActionType.RUN_SCRIPT,
                 hint = "调用另一个脚本"),
+            ActionPreset("运行多个动作", G_ADVANCE, ActionType.RUN_ACTIONS,
+                hint = "内联执行一组子动作，不单独存为脚本"),
             ActionPreset("系统提示", G_ADVANCE, ActionType.TOAST,
                 hint = "弹出一条提示，便于调试")
         )

@@ -16,7 +16,12 @@ object ScriptLauncher {
 
     val coordinator: RunnerCoordinator = RunnerCoordinator()
 
-    fun launch(context: Context, script: Script) {
+    fun launch(context: Context, script: Script) = launch(context, script, emptyMap())
+
+    /**
+     * @param initVars 初始变量，供消息触发注入 $notifyPkg / $notifyText
+     */
+    fun launch(context: Context, script: Script, initVars: Map<String, String>) {
         val pair = coordinator.tryStart(script)
         if (pair == null) {
             AB.log.warn("launch", "已有脚本在运行，本次触发转为停止")
@@ -24,7 +29,8 @@ object ScriptLauncher {
         }
         val (runId, control) = pair
         lastScriptId = script.id
-        val ctx = coordinator.context(runId, control, HashMap())
+        val seed = HashMap<String, String>(initVars)
+        val ctx = coordinator.context(runId, control, seed)
         FloatManager.setRunning(true)
 
         val t = Thread {

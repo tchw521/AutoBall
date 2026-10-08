@@ -1,11 +1,13 @@
 package com.autoball.core.engine
 
+import com.autoball.AB
 import com.autoball.core.RunControl
 import com.autoball.core.backend.BackendRouter
 import com.autoball.core.backend.ExecContext
 import com.autoball.core.log.RunLog
 import com.autoball.core.model.*
 import com.autoball.core.util.Condition
+import com.autoball.core.util.ConditionEval
 import com.autoball.core.util.CoordMapper
 
 /**
@@ -78,9 +80,28 @@ class FlowRunner(
                 fire("br")        // 每个动作运行前
                 if (control.canceled) return Outcome(false, executed, failed, "已停止")
 
-                if (!Condition.eval(a.condition, ctx.vars)) {
-                    ctx.log("跳过 ${a.type.label}（条件不满足）")
-                    continue
+                // 运行条件：走 ConditionEval 按类型真实求值。
+                // 早前直接用 Condition.eval() 把整段 JSON 当字符串判空——
+                // 非空即真，等于所有识别类条件（图片/文字/颜色）**从不生效**，
+                // 而界面上还显示「已设置」。
+                if (a.condition != null) {
+                    val out = ConditionEval.eval(a.condition, ctx.vars, probe())
+                    when (out) {
+                        ConditionEval.Outcome.NOT_SATISFIED -> {
+                            ctx.log("跳过 ${a.type.label}（${ConditionEval.describe(a.condition)}）")
+                            continue
+                        }
+                        ConditionEval.Outcome.UNKNOWN -> {
+                            // 能力不足无法判定：明确记日志，按"不满足"处理。
+                            // 静默当作成立会导致脚本在错误界面上乱点。
+                            val why = ConditionEval.describe(a.condition)
+                            log.warn(ctx.runId, "条件无法判定（$why），按不满足跳过")
+                            AB.log.warn(ctx.runId,
+                                "运行条件需要对应能力：${howToFix(a.condition)}")
+                            continue
+                        }
+                        ConditionEval.Outcome.SATISFIED -> { /* 继续 */ }
+                    }
                 }
 
                 if (!control.sleep((a.preDelayMs / speed).toLong())) {
@@ -170,6 +191,52 @@ class FlowRunner(
         }
         if (a.durationMs > 0) out.durationMs = Morph.duration(p, a.durationMs)
         return out
+    }
+
+    /**
+     * 条件探测能力。
+     *
+     * 只实现**当前真实具备**的能力：颜色匹配直接用截图像素算。
+     * 图像 / 文字匹配依赖按需下载的识别模块，缺了就返回 null（→ UNKNOWN），
+     * 绝不假装判定成功。
+     */
+    private fun probe(): ConditionEval.Probe = object : ConditionEval.Probe {
+        override fun screen(): com.autoball.core.backend.ScreenResult? =
+            runCatching { router.screenshot(ctx) }
+                .getOrElse { null }
+                ?.let { if (it is com.autoball.core.backend.ScreenResult.Ok) it else null }
+
+        override fun findColor(hex: String, tol: Int, region: FloatArray?): Boolean? {
+            val sr = screen() ?: return null
+            return ConditionEval.matchColor(sr, hex, tol, region)
+        }
+
+        override fun findText(text: String, region: FloatArray?): Boolean? {
+            // 需要 OCR 或节点树——两者都是按需能力，未安装时无法判定
+            return null
+        }
+
+        override fun findImage(path: String, threshold: Float, region: FloatArray?): Boolean? {
+            // 需要图像匹配模块（按需下载，不进初始包）
+            return null
+        }
+
+        override fun evalJs(expr: String): Boolean? =
+            jsEval?.let { fn -> runCatching { fn(expr, ctx) }.getOrNull() }
+    }
+
+    /** 无法判定时的修复指引，写进日志帮用户定位 */
+    private fun howToFix(raw: String?): String {
+        val k = runCatching {
+            org.json.JSONObject(raw ?: return "").optString("k", "")
+        }.getOrDefault("")
+        return when (k) {
+            "IMG" -> "图片匹配模块未安装（市场 → 扩展模块）"
+            "TEXT" -> "文字识别需要 OCR 模块或无障碍节点通道"
+            "COLOR" -> "需要截图能力：请开启无障碍或 Shizuku 任一授权"
+            "JS" -> "JS 引擎不可用"
+            else -> "未知条件类型"
+        }
     }
 
     private fun execOne(a: Action): Boolean {

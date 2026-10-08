@@ -254,31 +254,23 @@ object ActionEditor {
             // ---- 数值字段：一律「选填」，不给默认值 ----
             if (g.contains(com.autoball.core.model.FieldGroup.PRESS_DURATION) ||
                 g.contains(com.autoball.core.model.FieldGroup.DURATION)) {
-                val unit = if (a.type == ActionType.SWIPE ||
+                val lbl = if (a.type == ActionType.SWIPE ||
                     a.type == ActionType.GESTURE_SINGLE ||
-                    a.type == ActionType.GESTURE_MULTI) "毫秒(时长)" else "毫秒"
-                val et = numField(ctx, a.durationMs.takeIf { it > 0 }?.toString() ?: "", "选填")
-                readers["duration"] = {
-                    a.durationMs = et.text.toString().trim().toLongOrNull() ?: 0L
-                }
-                box.addView(zsRow(ctx, if (a.type == ActionType.SWIPE ||
-                    a.type == ActionType.GESTURE_SINGLE ||
-                    a.type == ActionType.GESTURE_MULTI) "滑动时长" else "按下时间",
-                    et, unit, null,
-                    help = "留空则用脚本全局设置的默认时长。\n" +
-                        "长按建议 500～800 毫秒，滑动建议 300～600 毫秒。"))
+                    a.type == ActionType.GESTURE_MULTI) "滑动时长" else "按下时间"
+                // 统一时长组件：数值 + 单位下拉（毫秒/秒/分钟），内部按毫秒存
+                box.addView(DurationField.row(ctx, lbl, a.durationMs,
+                    "留空则用脚本全局设置的默认时长。\n" +
+                    "长按建议 500～800 毫秒，滑动建议 300～600 毫秒。") { ms ->
+                        a.durationMs = ms
+                    })
             }
 
-            // 运行等待（自动精灵：选填 秒）
-            val waitEt = numField(ctx,
-                a.waitMs.takeIf { it > 0 }?.let { (it / 1000f).toString() } ?: "", "选填")
-            readers["wait"] = {
-                val v = waitEt.text.toString().trim().toFloatOrNull()
-                a.waitMs = if (v == null || v <= 0f) 0L else (v * 1000).toLong()
-            }
-            box.addView(zsRow(ctx, "运行等待", waitEt, "秒", null,
-                help = "该动作执行完后再等待多久才继续下一个。\n" +
-                    "单位秒，可填小数（如 0.5）。留空表示不额外等待。"))
+            // 运行等待：自动精灵带单位下拉，此前固定按秒——想等 2 分钟得填 120
+            box.addView(DurationField.row(ctx, "运行等待", a.waitMs,
+                "该动作执行完后再等待多久才继续下一个。\n" +
+                "单位可在右侧切换（毫秒 / 秒 / 分钟）。留空表示不额外等待。") { ms ->
+                    a.waitMs = ms
+                })
 
             // 重复次数
             val repEt = numField(ctx, a.repeat.takeIf { it > 0 }?.toString() ?: "", "选填")
@@ -311,6 +303,48 @@ object ActionEditor {
                 readers["pkg"] = { a.pkg = et.text.toString() }
                 box.addView(zsRow(ctx, "目标应用", et, null, null,
                     help = "包名，如 com.tencent.mm。留空则打开当前应用。"))
+            }
+            if (g.contains(com.autoball.core.model.FieldGroup.SCRIPT_REF)) {
+                val names = com.autoball.AB.store.all().associateBy { it.id }
+                box.addView(zsRow(ctx, "目标脚本",
+                    valueView(ctx,
+                        a.scriptId?.let { names[it]?.name } ?: "未选择",
+                        a.scriptId != null),
+                    null,
+                    pick = {
+                        val list = com.autoball.AB.store.all()
+                        if (list.isEmpty()) {
+                            Ui.toast(ctx, "还没有可调用的脚本")
+                        } else {
+                            Ui.popMenu(ctx, box, list.map { it.name },
+                                list.indexOfFirst { it.id == a.scriptId }.coerceAtLeast(0)) { i ->
+                                a.scriptId = list[i].id
+                                rebuild()
+                            }
+                        }
+                    },
+                    help = "选择要调用的本机脚本。\n" +
+                        "被调用脚本结束后回到本动作继续执行。"))
+            }
+            if (g.contains(com.autoball.core.model.FieldGroup.URL)) {
+                val et = textField(ctx, a.url ?: "", "https://…")
+                readers["url"] = { a.url = et.text.toString().trim() }
+                box.addView(zsRow(ctx, "链接地址", et, null, null,
+                    help = "以 http:// 或 https:// 开头，用浏览器打开。"))
+            }
+            if (g.contains(com.autoball.core.model.FieldGroup.SUB_ACTIONS)) {
+                // 子动作不在这里逐条编辑——那需要一个完整的子列表编辑器。
+                // 这里只显示数量与入口，编辑走编辑页的步骤列表。
+                box.addView(zsRow(ctx, "子动作",
+                    valueView(ctx,
+                        if (a.subActions.isEmpty()) "未添加" else "${a.subActions.size} 个",
+                        a.subActions.isNotEmpty()),
+                    null,
+                    pick = {
+                        Ui.toast(ctx, "子动作请在编辑页的步骤列表中管理")
+                    },
+                    help = "内联执行的一组动作，共用同一个执行上下文。\n" +
+                        "适合把「点+等+点」打包成一个可复用的步骤。"))
             }
             if (g.contains(com.autoball.core.model.FieldGroup.KEYCODE)) {
                 val et = numField(ctx, a.keyCode.takeIf { it != 0 }?.toString() ?: "", "选填")

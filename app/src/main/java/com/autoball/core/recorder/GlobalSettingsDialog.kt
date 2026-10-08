@@ -97,12 +97,13 @@ object GlobalSettingsDialog {
     private fun buildBody(ctx: Context, flow: Flow, box: LinearLayout): () -> Boolean {
 
         // 默认值：重复次数 0 显示为 1 次（0 = 无限），这里按设计稿「选填」留空
-        val waitSec = if (flow.defaultWaitMs > 0) (flow.defaultWaitMs / 1000f).toString() else ""
         val repeat = if (flow.loopCount > 0) flow.loopCount.toString() else ""
 
         // ---- 默认等待 ----
-        val waitEt = numInput(ctx, waitSec, "选填")
-        box.addView(fieldRow(ctx, "默认等待", waitEt, unitView(ctx, "秒"), H_WAIT))
+        // 统一时长组件：数值 + 单位下拉（毫秒/秒/分钟），内部按毫秒存。
+        // 此前固定按秒——想默认等 2 分钟得填 120，还得自己换算。
+        box.addView(com.autoball.ui.DurationField.row(ctx, "默认等待",
+            flow.defaultWaitMs, H_WAIT) { ms -> flow.defaultWaitMs = ms })
 
         // ---- 重复次数 ----
         val repeatEt = numInput(ctx, repeat, "选填")
