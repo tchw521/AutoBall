@@ -85,6 +85,7 @@ object FloatWorkWindow {
     private class Holder(
         val list: LinearLayout,
         val more: LinearLayout,
+        val moreWrap: android.widget.ScrollView,
         val dot: TextView,
         val title: TextView,
         val mainBar: LinearLayout,
@@ -367,9 +368,15 @@ object FloatWorkWindow {
         root.addView(recBar)
 
         // ---- 更多（默认收起）----
+        // 包一层 ScrollView：菜单项多时窗口会被撑高，触发上面的最大高度限制后，
+        // 没有滚动容器的话多出来的项就点不到了。
+        val moreWrap = android.widget.ScrollView(ctx).apply {
+            visibility = View.GONE
+            isFillViewport = false
+            overScrollMode = View.OVER_SCROLL_NEVER
+        }
         val more = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
-            visibility = View.GONE
             setPadding(Display.dpInt(ctx, 10f), 0,
                 Display.dpInt(ctx, 10f), Display.dpInt(ctx, 10f))
         }
@@ -380,14 +387,33 @@ object FloatWorkWindow {
         more.addView(moreRow(ctx, "开启日志") { cb.onToggleLog(script) })
         more.addView(moreRow(ctx, "查看变量") { cb.onVars(script) })
         more.addView(moreRow(ctx, "全局设置") { cb.onSettings(script) })
-        root.addView(more)
+        moreWrap.addView(more, ViewGroup.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT))
+        root.addView(moreWrap, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT, 0f))
 
-        holder = Holder(list, more, dot, title, mainBar, recBar)
+        holder = Holder(list, more, moreWrap, dot, title, mainBar, recBar)
         fillList(script)
         refreshState()
         root.layoutParams = FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT,
             FrameLayout.LayoutParams.WRAP_CONTENT)
+
+        // 整体最大高度：列表已固定 4 行，但展开「更多」菜单会把窗口撑高，
+        // 菜单项一多就顶满甚至超出屏幕。这里夹住上限，超出部分内部滚动。
+        root.addOnLayoutChangeListener(object : View.OnLayoutChangeListener {
+            override fun onLayoutChange(v: View, l: Int, t: Int, r: Int, b: Int,
+                                        ol: Int, ot: Int, or_: Int, ob: Int) {
+                val maxH = FloatWindows.maxHeightPx(ctx)
+                val p = params ?: return
+                if (b - t > maxH && p.height != maxH) {
+                    p.height = maxH
+                    runCatching { wm?.updateViewLayout(view, p) }
+                }
+            }
+        })
         return root
     }
 
@@ -485,7 +511,8 @@ object FloatWorkWindow {
 
     private fun toggleMore() {
         val h = holder ?: return
-        h.more.visibility = if (h.more.visibility == View.VISIBLE) View.GONE else View.VISIBLE
+        h.moreWrap.visibility =
+            if (h.moreWrap.visibility == View.VISIBLE) View.GONE else View.VISIBLE
         runCatching { wm?.updateViewLayout(view, params) }
     }
 
