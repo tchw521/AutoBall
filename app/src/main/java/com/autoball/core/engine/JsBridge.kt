@@ -55,6 +55,10 @@ function setVar(k,v){return __call('setVar',k,v);}
 function getVar(k){return __call('getVar',k);}
 function log(m){return __call('log',m);}
 function stop(){return __call('stop');}
+function alert(m,o){return __call('alert',m,o);}
+function confirm(m,o){return __call('confirm',m,o);}
+function prompt(m,d,o){return __call('prompt',m,d==undefined?'':d,o);}
+function toast(m,d){return __call('toast',m,d==undefined?0:d);}
 
 var ab={
  click:function(x,y,d){return __call('click',x,y,d);},
@@ -66,14 +70,11 @@ var ab={
  key:function(c){return __call('key',c);},
  input:function(t){return __call('input',t);},
  openApp:function(p){return __call('openApp',p);},
- toast:function(t){return __call('toast',t);},
+
  screenshot:function(){return __call('screenshot');},
- findNode:function(t){return __call('findNode',t);},
  clickText:function(t){return __call('clickText',t);},
- setVar:function(k,v){return __call('setVar',k,v);},
- getVar:function(k){return __call('getVar',k);},
  getVars:function(){return __call('getVars');},
- findLocation:function(q){return __call('findLocation',__s(q));},
+ findLocation:function(q,a){return __call('findLocation',__s(q),!!a);},
  getScreenColor:function(x,y){return __call('getScreenColor',x,y);},
  getScreenAreaColors:function(q){return __call('getScreenAreaColors',__s(q));},
  readFile:function(p){return __call('readFile',p);},
@@ -92,8 +93,73 @@ var ab={
  log:function(m){return __call('log',m);},
  stop:function(){return __call('stop');},
  isCanceled:function(){return __call('isCanceled');},
- backend:function(){return __call('backend');}
+ backend:function(){return __call('backend');},
+
+ alert:function(m,o){return __call('alert',m,o);},
+ confirm:function(m,o){return __call('confirm',m,o);},
+ prompt:function(m,d,o){return __call('prompt',m,d==undefined?'':d,o);},
+ select:function(o){return __call('select',__s(o));},
+ toast:function(m,d){return __call('toast',m,d==undefined?0:d);},
+
+ getVar:function(n,sc){return __call('getVar',n,sc);},
+ setVar:function(n,v,sc){return __call('setVar',n,v,sc);},
+ deleteVar:function(n,sc){return __call('deleteVar',n,sc);},
+ clearVars:function(sc){return __call('clearVars',sc);},
+ printVars:function(){return __call('printVars');},
+
+ keyDown:function(k){return __call('keyDown',k);},
+ keyUp:function(k){return __call('keyUp',k);},
+ keyPress:function(){return __call.apply(null,['keyPress'].concat(__arr(arguments)));},
+ getClipboard:function(){return __call('getClipboard');},
+ setClipboard:function(t){return __call('setClipboard',t);},
+ getDeviceInfo:function(){return __call('getDeviceInfo');},
+ getAppVersion:function(){return __call('getAppVersion');},
+ getInstalledAppInfo:function(p){return __call('getInstalledAppInfo',p);},
+ vibrator:function(ms,a){return __call('vibrator',ms,a);},
+ requestUrl:function(o){return __call('requestUrl',__s(o));},
+ ocr:function(o){return __call('ocr',__s(o));},
+ recognitionScreen:function(o){return __call('recognitionScreen',__s(o));},
+ findNode:function(q,o){return __call('findNode',__s(q),__s(o));}
 };
+
+// console：全部写进运行日志（自动精灵里是日志面板）
+var __t={};
+var console={
+ log:function(){__cl('log',arguments);},
+ info:function(){__cl('info',arguments);},
+ debug:function(){__cl('debug',arguments);},
+ verbose:function(){__cl('verbose',arguments);},
+ warn:function(){__cl('warn',arguments);},
+ error:function(){__cl('error',arguments);},
+ assert:function(c,m){if(!c)__cl('error',[m]);},
+ dir:function(o){__cl('log',[__s(o)]);},
+ time:function(l){__t[l]=Date.now();},
+ timeLog:function(l){__cl('log',[l+': '+(Date.now()-__t[l])+'ms']);},
+ timeEnd:function(l){__cl('log',[l+': '+(Date.now()-__t[l])+'ms']);delete __t[l];},
+ clear:function(){__t={};},
+ show:function(){},hide:function(){}
+};
+function __cl(lv,a){var m=[];for(var i=0;i<a.length;i++){m.push(typeof a[i]==='string'?a[i]:__s(a[i]));}
+ __call('console',lv,m.join(' '));}
+
+// 异步变体：本引擎未排空 Promise 任务队列（见 R-127），
+// 这里**按同步执行**并直接返回值——保证脚本不挂死，
+// 而不是返回一个永远不会 resolve 的 Promise。
+(function(){
+ var asyncNames=['sleepAsync','alertAsync','confirmAsync','promptAsync','selectAsync',
+  'clickAsync','longClickAsync','swipeAsync','gestureAsync','gesturesAsync',
+  'runActionAsync','findLocationAsync','findNodeAsync','recognitionScreenAsync',
+  'getScreenColorAsync','getScreenAreaColorsAsync','requestUrlAsync',
+  'writeFileAsync','appendFileAsync','readFileAsync','playMediaAsync',
+  'touchDownAsync','touchMoveAsync','touchUpAsync','ocrAsync','vibratorAsync'];
+ for(var i=0;i<asyncNames.length;i++){
+  (function(name){
+   var sync=name.replace(/Async$/,'');
+   if(typeof ab[sync]!=='function') return;
+   ab[name]=function(){return ab[sync].apply(ab,arguments);};
+  })(asyncNames[i]);
+ }
+})();
 function __s(q){return (typeof q==='string')?q:JSON.stringify(q);}
 function __arr(a){var r=[];for(var i=0;i<a.length;i++){r.push(a[i]);}return r;}
 var zdjl=ab;

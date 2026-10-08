@@ -117,6 +117,56 @@ Action(20类) → BackendRouter(按能力位选后端) → 无障碍 / Shizuku
 
 ---
 
+## 构建验证：v1.31.0 首次编译（32 处错误）
+
+八个版本（v1.28–v1.31）未编译验证的后果一次性暴露。错误分四类：
+
+### 1. 前向引用（Kotlin 局部函数）
+
+`ConditionDialog` 里 `rebuild` 与 `editCond` 互相调用，但 Kotlin 的**局部函数**
+不支持前向引用（声明顺序即解析顺序）。`rebuild` 已改成 lateinit lambda，
+`editCond` 忘了改 —— 于是 2 处 Unresolved reference。
+**两个互相调用的局部逻辑都必须声明为 lateinit lambda 变量。**
+
+### 2. 字符串模板未转义（3 处）
+
+`"可用 $ok / $last / $stepN"` 里 `$ok` 被 Kotlin 当成模板引用 →
+变量不存在 → 编译失败。必须写 `\$ok`。
+这是我在同一轮修过一次又犯的（ConditionDialog 里也出现过）。
+
+### 3. 按记忆调用不存在的 API（4 处）
+
+- `ActionPreset.byLabel(String)` —— 实际收的是 **Action**，按 optionLabel 反查
+- `AB.store.setInt()` —— 实际叫 `putInt`
+- `ExecContext()` —— 需要 runId 参数
+- `JsBridge` 未 import（跨包引用）
+
+**结论：调 Kit / Ui / 各 Store 的方法前必须先 grep 签名，不能凭记忆。**
+
+### 4. 主构造参数作用域
+
+`class ScheduleBoard(ctx: Context, ...)` —— 不加 `val/var` 的话，
+`ctx` 只在 init 块可见，类体方法里用会报 Unresolved reference（26 处）。
+需要在类体里用的构造参数必须写成 `private val ctx: Context`。
+
+### 5. 缩进错位导致的隐性 bug
+
+`Script.kt` 里 `notifyEnabled = ...` 少写了 `s.` 前缀 ——
+语法上合法（赋值给了别的变量），语义上是错的。
+**确认是编译错误才发现的，静态检查看不出来。**
+
+---
+
+### CI 取产物的可行路径
+
+Actions 的 **artifact 下载对外部 token 返回 403**（policy_default_denied），
+job logs 同理。可行路径：
+- 编译错误 → `ci-errors` 分支（工作流会自动提交）
+- APK → `apk` 分支（按 `v{版本}/{engine}/app-{buildType}.apk` 组织）
+- 大文件（>1MB）要用 **git blobs API**，contents API 会返回空内容
+
+---
+
 ## v1.31.0 组件统一：色值收敛 + 自定义按键
 
 ### T-02 浮层色值收敛（16 处 → 0）

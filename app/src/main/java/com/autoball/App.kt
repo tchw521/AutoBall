@@ -1,5 +1,6 @@
 package com.autoball
 
+import android.app.Activity
 import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -18,11 +19,38 @@ class App : Application() {
         appRef = this
         CrashGuard.install()
         createChannels()
+        trackTopActivity()
         // Shizuku 握手走后台线程：失败不影响主线程启动，也不影响无障碍后端
         Thread {
             runCatching { ShizukuClient.instance.probe() }
         }.apply { isDaemon = true }.start()
     }
+
+    /**
+     * 记录当前前台 Activity。
+     *
+     * 脚本在**后台线程**里运行（不能卡主线程），而弹窗必须在主线程显示，
+     * 且 AlertDialog 需要一个 Activity 作为宿主。此前没有任何地方持有
+     * 前台 Activity，脚本里的 alert/confirm 根本无处可挂。
+     *
+     * 用弱引用：Activity 销毁后不该被 Application 一直持有。
+     */
+    private fun trackTopActivity() {
+        registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
+            override fun onActivityResumed(a: Activity) { topRef = java.lang.ref.WeakReference(a) }
+            override fun onActivityPaused(a: Activity) {
+                if (topRef?.get() === a) topRef = null
+            }
+            override fun onActivityCreated(a: Activity, b: android.os.Bundle?) {}
+            override fun onActivityStarted(a: Activity) {}
+            override fun onActivityStopped(a: Activity) {}
+            override fun onActivitySaveInstanceState(a: Activity, b: android.os.Bundle) {}
+            override fun onActivityDestroyed(a: Activity) {}
+        })
+    }
+
+    /** 当前前台 Activity（可能为 null，如应用已退到后台） */
+    fun topActivity(): Activity? = topRef?.get()
 
     private fun createChannels() {
         if (Build.VERSION.SDK_INT >= 26) {
@@ -36,6 +64,9 @@ class App : Application() {
 
     companion object {
         const val CHANNEL_RUN = "autoball_run"
+
+        @Volatile
+        private var topRef: java.lang.ref.WeakReference<Activity>? = null
 
         @Volatile
         private var appRef: App? = null

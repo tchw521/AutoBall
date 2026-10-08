@@ -209,7 +209,8 @@ class FloatDialog private constructor(private val ctx: Context, private val titl
         return true
     }
 
-    private fun dismiss() {
+    /** 供外部（如脚本弹窗超时）主动收起；按钮点击时内部也会调用 */
+    fun dismiss() {
         runCatching {
             (ctx.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager)
                 ?.hideSoftInputFromWindow(root?.windowToken, 0)

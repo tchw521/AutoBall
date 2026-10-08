@@ -143,14 +143,53 @@ class JsHost(
                         is ScreenResult.Unavailable -> throw CancelException(sr.reason)
                     }
                 }
+                /**
+                 * findNode（对齐自动精灵）：返回完整节点对象
+                 * {text, className, packageName, boundLeft/Top/Right/Bottom, children[]}。
+                 *
+                 * 第二参 options 支持 {findAll, withChildren}；
+                 * 选择器支持字符串（按文字）或对象 {text,id,className}。
+                 * 无障碍不可用时返回 **null**（无法判定），不是空数组——
+                 * 两者语义不同，脚本 `if (!node) throw` 才能区分"没权限"和"没找到"。
+                 */
                 "findNode" -> {
-                    val a = Action().apply {
-                        type = ActionType.CLICK_NODE
-                        nodeSpec = NodeSpec(text = args.optString(0, ""), clickableOnly = true)
-                    }
-                    val node = resolveNodePoint(a)
-                    if (node == null) null else {
-                        JSONObject().put("x", node.x.toDouble()).put("y", node.y.toDouble())
+                    if (!router.accessibility.isAvailable()) {
+                        log.warn(ctx.runId, "findNode 需要无障碍通道，Shizuku 后端不支持")
+                        null
+                    } else {
+                        val q = args.opt(0)
+                        val spec = when (q) {
+                            is JSONObject -> NodeSpec(
+                                text = q.optString("text").takeIf { it.isNotBlank() },
+                                id = q.optString("idResName").takeIf { it.isNotBlank() }
+                                    ?: q.optString("id").takeIf { it.isNotBlank() },
+                                className = q.optString("className").takeIf { it.isNotBlank() },
+                                desc = q.optString("desc").takeIf { it.isNotBlank() },
+                                clickableOnly = q.optBoolean("clickableOnly", false))
+                            else -> NodeSpec(text = args.optString(0, ""))
+                        }
+                        val opt = args.opt(1)
+                        val oo = opt as? JSONObject
+                        val findAll = oo?.optBoolean("findAll", false) ?: false
+                        val withKids = oo?.optBoolean("withChildren", false) ?: false
+                        val list = router.accessibility.nodeSnapshots(
+                            Action().apply { nodeSpec = spec }, findAll, withKids)
+                            ?: return err("findNode 需要无障碍服务")   // 无法判定
+                        fun toJson(n: com.autoball.core.backend.AccessibilityBackend.NodeSnapshot)
+                                : JSONObject = JSONObject()
+                            .put("text", n.text ?: "")
+                            .put("desc", n.desc ?: "")
+                            .put("className", n.className ?: "")
+                            .put("packageName", n.packageName ?: "")
+                            .put("boundLeft", n.boundLeft).put("boundTop", n.boundTop)
+                            .put("boundRight", n.boundRight).put("boundBottom", n.boundBottom)
+                            .put("clickable", n.clickable)
+                            .put("x", (n.boundLeft + n.boundRight) / 2)
+                            .put("y", (n.boundTop + n.boundBottom) / 2)
+                            .put("children", JSONArray().apply {
+                                n.children.forEach { put(toJson(it)) } })
+                        if (findAll) JSONArray().apply { list.forEach { put(toJson(it)) } }
+                        else if (list.isEmpty()) null else toJson(list[0])
                     }
                 }
                 "clickText" -> {
@@ -160,11 +199,76 @@ class JsHost(
                     }
                     exec(a)
                 }
-                "setVar" -> {
-                    ctx.setVar(args.optString(0, ""), args.optString(1, ""))
+                // ---- 用户交互（自动精灵 alert/confirm/prompt/select/toast）----
+                // 脚本跑在后台线程，弹窗要切主线程并阻塞等待；
+                // 没有前台界面也没有悬浮窗权限时**如实返回未答复**（R-003）
+                "alert" -> JsUi.alert(com.autoball.App.get(),
+                    args.optString(0, ""), args.opt(1).asTitle(),
+                    args.opt(1).asDuration(30_000L))
+                "confirm" -> JsUi.confirm(com.autoball.App.get(),
+                    args.optString(0, ""), args.opt(1).asTitle(),
+                    args.opt(1).asDuration(30_000L))
+                "prompt" -> JsUi.prompt(com.autoball.App.get(),
+                    args.optString(0, ""), args.optString(1, ""),
+                    args.opt(2).asTitle(), args.opt(2).asDuration(30_000L))
+                "select" -> {
+                    val o = args.optJSONObject(0) ?: args.opt(0).let {
+                        runCatching { JSONObject(it.toString()) }.getOrNull()
+                    }
+                    val items = parseStringList(o?.opt("items")).ifEmpty {
+                        parseStringList(o?.opt("items"))   // 兼容直接传数组
+                    }
+                    val sel = o?.optJSONArray("selectItems")
+                        ?.let { a -> (0 until a.length()).mapNotNull { items.indexOf(a.optString(it)).takeIf { it >= 0 } } }
+                        ?: emptyList()
+                    val multi = o?.optBoolean("multi", false) ?: false
+                    val ans = JsUi.select(com.autoball.App.get(),
+                        o?.optString("title", "请选择") ?: "请选择", items, sel, multi,
+                        o?.optLong("duration", 30_000L) ?: 30_000L)
+                    JsUi.selectJson(ans, items)
+                }
+                "toast" -> {
+                    JsUi.toast(com.autoball.App.get(), args.optString(0, ""),
+                        args.optInt(1, 0))
                     true
                 }
-                "getVar" -> ctx.getVar(args.optString(0, "")) ?: ""
+                // ---- console ----
+                "console" -> {
+                    val lv = args.optString(0, "log")
+                    val msg = args.optString(1, "")
+                    // 与自动精灵一致：error/warn 用对应级别，其余归 info
+                    when (lv) {
+                        "error" -> log.error(ctx.runId, "JS: $msg")
+                        "warn" -> log.warn(ctx.runId, "JS: $msg")
+                        else -> log.info(ctx.runId, "JS: $msg")
+                    }
+                    true
+                }
+                "setVar" -> {
+                    // 第三参 scope="global"：全局作用域（跨动作保留）
+                    ctx.setVar(args.optString(0, ""), args.optString(1, ""),
+                        args.optString(2, "").equals("global", true))
+                    true
+                }
+                "getVar" -> {
+                    val global = args.optString(1, "").equals("global", true)
+                    ctx.getVar(args.optString(0, ""), global) ?: ""
+                }
+                "deleteVar" -> {
+                    ctx.deleteVar(args.optString(0, ""),
+                        args.optString(1, "").equals("global", true))
+                    true
+                }
+                "clearVars" -> {
+                    ctx.clearVars(args.optString(0, "").equals("global", true))
+                    true
+                }
+                /** printVars：弹窗展示所有变量（自动精灵里是 UI，这里同样弹窗） */
+                "printVars" -> {
+                    val txt = ctx.vars.entries.joinToString("\n") { (k, v) -> "$k = $v" }
+                        .ifEmpty { "（当前没有变量）" }
+                    JsUi.alert(com.autoball.App.get(), txt, "变量", 30_000L)
+                }
                 "log" -> {
                     val msg = args.optString(0, "")
                     log.info(ctx.runId, "JS: $msg")
@@ -176,7 +280,9 @@ class JsHost(
                     o
                 }
                 // 定位与点击解耦（R-123）：脚本先拿到坐标，再决定点不点、点几次
-                "findLocation" -> findLocation(args.optString(0, ""))
+                // 第二参传 true：返回全部匹配（自动精灵 findLocation(q, true)）
+                "findLocation" -> findLocation(args.optString(0, ""),
+                    args.optBoolean(1, false))
                 "getScreenColor" -> {
                     val sr = screen() ?: throw CancelException("截图不可用")
                     val px = coord(args.opt(0), true).toInt()
@@ -266,6 +372,90 @@ class JsHost(
                  * 这两类动作要回到 JS 引擎执行，而当前正**在**引擎里——
                  * 同一个 QuickJS Context 不可重入，会直接卡死。宁可报错也不要挂起。
                  */
+                // ---- 按键（自动精灵用名字而非数字键码）----
+                "keyPress" -> {
+                    val names = (0 until args.length())
+                        .map { args.optString(it, "") }.filter { it.isNotBlank() }
+                    val codes = keyNamesToCodes(*names.toTypedArray())
+                    if (codes.isEmpty()) throw CancelException("未知按键名：${names.joinToString()}")
+                    codes.forEach { c ->
+                        exec(Action().apply {
+                            id = Action.newId(); type = ActionType.KEY; keyCode = c })
+                    }
+                    true
+                }
+                "keyDown" -> exec(Action().apply {
+                    id = Action.newId(); type = ActionType.KEY
+                    keyCode = keyCodeOf(args.optString(0, "")) })
+                // 按键动作本身就是"按下+抬起"，抬起无独立语义
+                "keyUp" -> true
+                // ---- 剪贴板 / 设备信息 ----
+                "getClipboard" -> {
+                    val cm = com.autoball.App.get().getSystemService(
+                        android.content.Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
+                    cm?.primaryClip?.getItemAt(0)?.text?.toString() ?: ""
+                }
+                "setClipboard" -> {
+                    val cm = com.autoball.App.get().getSystemService(
+                        android.content.Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
+                    cm?.setPrimaryClip(android.content.ClipData
+                        .newPlainText("autoball", args.optString(0, "")))
+                    cm != null
+                }
+                "getDeviceInfo" -> JSONObject()
+                    .put("model", android.os.Build.MODEL)
+                    .put("brand", android.os.Build.BRAND)
+                    .put("device", android.os.Build.DEVICE)
+                    .put("sdk", android.os.Build.VERSION.SDK_INT)
+                    .put("release", android.os.Build.VERSION.RELEASE)
+                    .put("manufacturer", android.os.Build.MANUFACTURER)
+                "getAppVersion" -> runCatching {
+                    val app = com.autoball.App.get()
+                    app.packageManager.getPackageInfo(app.packageName, 0).versionName
+                }.getOrDefault("unknown")
+                "getInstalledAppInfo" -> {
+                    val app = com.autoball.App.get()
+                    val info = runCatching {
+                        app.packageManager.getPackageInfo(args.optString(0, ""), 0) }.getOrNull()
+                    if (info == null) null else JSONObject()
+                        .put("packageName", info.packageName)
+                        .put("versionName", info.versionName ?: "")
+                        .put("versionCode", if (android.os.Build.VERSION.SDK_INT >= 28)
+                            info.longVersionCode else info.versionCode.toLong())
+                }
+                "vibrator" -> {
+                    val app = com.autoball.App.get()
+                    if (app.checkSelfPermission(android.Manifest.permission.VIBRATE)
+                        != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                        log.warn(ctx.runId, "vibrator 需要 VIBRATE 权限")
+                        false
+                    } else {
+                        val v = app.getSystemService(
+                            android.content.Context.VIBRATOR_SERVICE) as? android.os.Vibrator
+                        val ms = args.optLong(0, 200)
+                        if (v == null) false else {
+                            if (android.os.Build.VERSION.SDK_INT >= 26)
+                                v.vibrate(android.os.VibrationEffect.createOneShot(
+                                    ms, args.optInt(1, 255).coerceIn(1, 255)))
+                            else @Suppress("DEPRECATION") v.vibrate(ms)
+                            true
+                        }
+                    }
+                }
+                // ---- 网络（脚本主动发起，与应用自身不联网定位无关）----
+                "requestUrl" -> requestUrl(args.opt(0))
+                // ---- 依赖 OCR / 云端：如实报错，不静默返回空（R-003）----
+                "ocr" -> throw CancelException("本应用未内置 OCR 模块，ocr() 不可用")
+                "recognitionScreen" -> {
+                    // 退化为无障碍节点树文本（本地即得，不需要 OCR）
+                    val a = Action().apply {
+                        id = Action.newId(); type = ActionType.RECOGNIZE_SCREEN
+                        varName = (args.opt(0) as? JSONObject)
+                            ?.optString("varName", "screen") ?: "screen"
+                    }
+                    exec(a)
+                    ctx.getVar(a.varName ?: "screen") ?: ""
+                }
                 "runAction" -> runAction(args.optString(0, ""))
                 "check" -> evalCondition(args.optString(0, ""))
                 "stop" -> { control.cancel(); true }
@@ -292,7 +482,7 @@ class JsHost(
      * 能力不具备（如无 OCR）同样返回 null 并记日志——按 R-003，
      * 绝不伪造一个坐标让脚本点错地方。
      */
-    private fun findLocation(q: String): Any? {
+    private fun findLocation(q: String, all: Boolean = false): Any? {
         val o = runCatching { JSONObject(q) }.getOrNull()
         val type = o?.optString("type") ?: "text"
         val region = o?.optJSONArray("region")?.let { a ->
@@ -342,6 +532,29 @@ class JsHost(
             }
         }
         if (pt == null) return null
+        val one = toLoc(pt)
+        if (!all) return one
+        // all=true：node 走真实多匹配；color/image 目前只支持首个命中（如实记录）
+        val arr = JSONArray()
+        if (type == "node" && router.accessibility.isAvailable()) {
+            val list = router.accessibility.nodeSnapshots(Action().apply {
+                nodeSpec = NodeSpec(text = o?.optString("text"),
+                    id = o?.optString("id"), className = o?.optString("className"))
+            }, true, false) ?: emptyList()
+            // 多匹配结果覆盖单命中，避免同一个点重复出现
+            list.forEach { n -> arr.put(toLoc(
+                ((n.boundLeft + n.boundRight) / 2).toFloat() to
+                ((n.boundTop + n.boundBottom) / 2).toFloat())) }
+            if (list.isEmpty()) arr.put(one)
+        } else {
+            if (type != "node") log.info(ctx.runId, "findLocation(all) 对 type=$type 只返回首个命中")
+            arr.put(one)
+        }
+        return arr
+    }
+
+    /** 坐标对象：一次给全像素 / 百分比 / dp 三种单位 */
+    private fun toLoc(pt: Pair<Float, Float>): JSONObject {
         val app = com.autoball.App.get()
         val sz = com.autoball.core.util.Display.screenSize(app)
         val d = com.autoball.core.util.Display.dp(app, 1f).coerceAtLeast(1f)
@@ -352,6 +565,120 @@ class JsHost(
             .put("y_100", (pt.second / sz.y.toFloat().coerceAtLeast(1f) * 100f).toDouble())
             .put("x_dp", (pt.first / d).toDouble())
             .put("y_dp", (pt.second / d).toDouble())
+    }
+
+    /** options 里取 title（自动精灵 alert(msg, {title, duration})） */
+    private fun Any?.asTitle(): String? = when (this) {
+        is JSONObject -> optString("title", "").takeIf { it.isNotBlank() }
+        else -> null
+    }
+
+    /** options 里取 duration；没给就用默认 */
+    private fun Any?.asDuration(def: Long): Long = when (this) {
+        is JSONObject -> optLong("duration", def)
+        is Number -> toLong()
+        else -> def
+    }
+
+    /** items 可能是 JSONArray，也可能是换行串 */
+    private fun parseStringList(v: Any?): List<String> = when (v) {
+        is JSONArray -> (0 until v.length()).map { v.optString(it) }
+        is Iterable<*> -> v.mapNotNull { it?.toString() }
+        is String -> split("\n").map { it.trim() }.filter { it.isNotEmpty() }
+        else -> emptyList()
+    }
+
+    /** 单键名 → 键码 */
+    private fun keyCodeOf(name: String): Int =
+        keyNamesToCodes(name).firstOrNull() ?: throw CancelException("未知按键名：$name")
+
+    /**
+     * 按键名 → Android 键码（自动精灵用 'a'/'enter'/'ctrl' 这类名字）。
+     *
+     * 组合键按"依次按下"处理（'ctrl','a' → 先 ctrl 再 a）；
+     * 字母映射到 KEYCODE_A..Z，与文档 `keyPress('a')` 一致。
+     */
+    private fun keyNamesToCodes(vararg names: String): List<Int> =
+        names.mapNotNull { n ->
+            val t = n.trim().lowercase()
+            when {
+                t.length == 1 && t[0] in 'a'..'z' ->
+                    android.view.KeyEvent.KEYCODE_A + (t[0] - 'a')
+                t.length == 1 && t[0] in '0'..'9' ->
+                    android.view.KeyEvent.KEYCODE_0 + (t[0] - '0')
+                else -> when (t) {
+                    "enter" -> android.view.KeyEvent.KEYCODE_ENTER
+                    "tab" -> android.view.KeyEvent.KEYCODE_TAB
+                    "space" -> android.view.KeyEvent.KEYCODE_SPACE
+                    "backspace", "del" -> android.view.KeyEvent.KEYCODE_DEL
+                    "esc", "escape" -> android.view.KeyEvent.KEYCODE_ESCAPE
+                    "shift" -> android.view.KeyEvent.KEYCODE_SHIFT_LEFT
+                    "ctrl" -> android.view.KeyEvent.KEYCODE_CTRL_LEFT
+                    "alt" -> android.view.KeyEvent.KEYCODE_ALT_LEFT
+                    "up" -> android.view.KeyEvent.KEYCODE_DPAD_UP
+                    "down" -> android.view.KeyEvent.KEYCODE_DPAD_DOWN
+                    "left" -> android.view.KeyEvent.KEYCODE_DPAD_LEFT
+                    "right" -> android.view.KeyEvent.KEYCODE_DPAD_RIGHT
+                    "back" -> android.view.KeyEvent.KEYCODE_BACK
+                    "home" -> android.view.KeyEvent.KEYCODE_HOME
+                    "-" -> android.view.KeyEvent.KEYCODE_MINUS
+                    "=" -> android.view.KeyEvent.KEYCODE_EQUALS
+                    "[" -> android.view.KeyEvent.KEYCODE_LEFT_BRACKET
+                    "]" -> android.view.KeyEvent.KEYCODE_RIGHT_BRACKET
+                    "\\" -> android.view.KeyEvent.KEYCODE_BACKSLASH
+                    ";" -> android.view.KeyEvent.KEYCODE_SEMICOLON
+                    "'" -> android.view.KeyEvent.KEYCODE_APOSTROPHE
+                    "," -> android.view.KeyEvent.KEYCODE_COMMA
+                    "." -> android.view.KeyEvent.KEYCODE_PERIOD
+                    "/" -> android.view.KeyEvent.KEYCODE_SLASH
+                    else -> t.toIntOrNull()   // 也允许直接给 Android 键码
+                }
+            }
+        }
+
+    /**
+     * requestUrl：脚本主动发起的 HTTP 请求（平台 HttpURLConnection，不引三方库）。
+     *
+     * 说明：本应用自身不联网、不上传任何数据；这里是**脚本作者**发起的请求，
+     * 与自动精灵 requestUrl 同语义。返回 {code, headers, body}。
+     */
+    private fun requestUrl(spec: Any?): String {
+        val o = when (spec) {
+            is JSONObject -> spec
+            is String -> runCatching { JSONObject(spec) }.getOrNull()
+            else -> null
+        }
+        val url = o?.optString("url") ?: o?.optString("u")
+            ?: throw CancelException("requestUrl 需要 url")
+        val method = (o?.optString("method", "GET") ?: "GET").uppercase()
+        val timeout = (o?.optInt("timeout", 10_000) ?: 10_000).coerceIn(1000, 60_000)
+        val conn = (java.net.URL(url).openConnection() as java.net.HttpURLConnection).apply {
+            requestMethod = method
+            connectTimeout = timeout
+            readTimeout = timeout
+            o?.optJSONObject("headers")?.let { h ->
+                val it = h.keys()
+                while (it.hasNext()) {
+                    val k = it.next()
+                    setRequestProperty(k, h.optString(k))
+                }
+            }
+            val body = o?.optString("body", "") ?: ""
+            if (body.isNotEmpty() && method != "GET") {
+                doOutput = true
+                outputStream.use { it.write(body.toByteArray()) }
+            }
+        }
+        return try {
+            val code = conn.responseCode
+            val stream = if (code in 200..299) conn.inputStream else conn.errorStream
+            val text = stream?.use { it.bufferedReader().readText() } ?: ""
+            val headers = JSONObject()
+            conn.headerFields.forEach { (k, v) -> if (k != null) headers.put(k, v.joinToString(",")) }
+            JSONObject().put("code", code).put("headers", headers).put("body", text).toString()
+        } finally {
+            conn.disconnect()
+        }
     }
 
     /**

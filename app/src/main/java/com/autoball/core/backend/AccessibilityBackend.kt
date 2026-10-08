@@ -371,6 +371,70 @@ class AccessibilityBackend : InputBackend {
         return true
     }
 
+    /**
+     * 节点快照（findNode 的完整返回）。
+     *
+     * 此前 JS 的 `findNode()` 只回 `{x, y}`——脚本想读节点文字、
+     * 想取边界做区域判断都做不到。自动精灵返回的是完整节点对象。
+     *
+     * @param findAll true 返回全部匹配，false 只返回第一个（找不到都返回空列表）
+     * @return null 表示**无法判定**（无障碍未开启），区别于"找到 0 个"
+     */
+    fun nodeSnapshots(action: Action, findAll: Boolean,
+                      withChildren: Boolean): List<NodeSnapshot>? {
+        val svc = AutoBallAccessibilityService.instance ?: return null
+        val root = svc.rootInActiveWindow ?: return emptyList()
+        val spec = action.nodeSpec
+        val list = if (spec != null) {
+            when {
+                !spec.id.isNullOrEmpty() -> root.findAccessibilityNodeInfosByViewId(spec.id!!)
+                !spec.text.isNullOrEmpty() -> root.findAccessibilityNodeInfosByText(spec.text!!)
+                else -> findByPredicate(root, spec)
+            }
+        } else if (!action.text.isNullOrEmpty()) {
+            root.findAccessibilityNodeInfosByText(action.text!!)
+        } else emptyList()
+
+        val use = if (findAll) list else list.take(1)
+        val out = use.mapNotNull { n ->
+            val snap = runCatching { snapshotOf(n, withChildren) }.getOrNull()
+            n.recycle()
+            snap
+        }
+        // 未选中的也要回收，否则节点句柄泄漏
+        if (!findAll) list.drop(1).forEach { runCatching { it.recycle() } }
+        root.recycle()
+        return out
+    }
+
+    /** 节点的可读快照（回收前必须取完所有字段） */
+    class NodeSnapshot(
+        val text: String?, val desc: String?, val className: String?,
+        val packageName: String?, val boundLeft: Int, val boundTop: Int,
+        val boundRight: Int, val boundBottom: Int, val clickable: Boolean,
+        val children: List<NodeSnapshot>
+    )
+
+    private fun snapshotOf(n: AccessibilityNodeInfo, withChildren: Boolean): NodeSnapshot {
+        val r = android.graphics.Rect()
+        n.getBoundsInScreen(r)
+        val kids = if (!withChildren) emptyList() else {
+            val out = ArrayList<NodeSnapshot>()
+            for (i in 0 until n.childCount) {
+                val c = n.getChild(i) ?: continue
+                out.add(runCatching { snapshotOf(c, false) }.getOrDefault(
+                    NodeSnapshot(null, null, null, null, 0, 0, 0, 0, false, emptyList())))
+                c.recycle()
+            }
+            out
+        }
+        return NodeSnapshot(
+            text = n.text?.toString(), desc = n.contentDescription?.toString(),
+            className = n.className?.toString(), packageName = n.packageName?.toString(),
+            boundLeft = r.left, boundTop = r.top, boundRight = r.right, boundBottom = r.bottom,
+            clickable = n.isClickable, children = kids)
+    }
+
     /** 对外暴露的节点定位：只算坐标，不产生点击副作用 */
     fun nodeCenter(action: Action): Pt? {
         val svc = AutoBallAccessibilityService.instance ?: return null

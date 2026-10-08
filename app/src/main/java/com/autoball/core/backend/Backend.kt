@@ -48,8 +48,28 @@ class ExecContext(
 
     fun log(msg: String) { logger?.invoke(msg) }
 
-    fun getVar(name: String): String? = vars[name]
-    fun setVar(name: String, v: String) { vars[name] = v }
+    /**
+     * 全局作用域（跨动作、跨脚本保留一次运行内的数据）。
+     *
+     * 自动精灵的 `getVar(name, "global")` 就是这套语义：普通变量随动作走，
+     * global 变量整次运行可见。此前只有一份 vars，脚本写 scope 参数无效。
+     */
+    val globalVars: MutableMap<String, String> = HashMap()
+
+    fun getVar(name: String, global: Boolean = false): String? =
+        if (global) globalVars[name] else vars[name]
+
+    fun setVar(name: String, v: String, global: Boolean = false) {
+        if (global) globalVars[name] = v else vars[name] = v
+    }
+
+    fun deleteVar(name: String, global: Boolean = false) {
+        if (global) globalVars.remove(name) else vars.remove(name)
+    }
+
+    fun clearVars(globalOnly: Boolean = false) {
+        if (globalOnly) globalVars.clear() else { vars.clear(); globalVars.clear() }
+    }
 }
 
 /** 多指降级策略：后端不具备原生多指时如何处置 */
