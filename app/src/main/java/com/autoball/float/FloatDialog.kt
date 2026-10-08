@@ -200,7 +200,8 @@ class FloatDialog private constructor(private val ctx: Context, private val titl
         p.gravity = Gravity.CENTER
         p.softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
         rootParams = p
-        FloatWindows.add(ctx, root, p)
+        val rv = root
+        if (rv != null) FloatWindows.add(ctx, rv, p)
 
         // 入场
         card.scaleX = 0.94f; card.scaleY = 0.94f; card.alpha = 0f
