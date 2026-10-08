@@ -16,6 +16,7 @@ import com.autoball.AB
 import com.autoball.core.engine.JsEngines
 import com.autoball.core.log.CrashGuard
 import com.autoball.core.util.Display
+import com.autoball.service.NotifyService
 import com.autoball.float.FloatManager
 import com.autoball.service.AutoBallAccessibilityService
 import com.autoball.service.FloatingService
@@ -98,6 +99,22 @@ object MineSections {
             on = overlayOn,
             action = "去开启"
         ) { Display.openOverlaySettings(ctx) })
+
+        // 消息触发依赖「通知使用权」——权限藏得深（设置 → 通知 → 通知使用权），
+        // 不给入口的话用户根本找不到去哪开
+        val notifyOn = NotifyService.isEnabled()
+        b.addView(permRow(ctx,
+            title = "通知使用权",
+            sub = if (notifyOn) "已授予 · 消息触发可用（脚本里开启）"
+            else "未授予 · 消息触发不会生效",
+            on = notifyOn,
+            action = "去开启"
+        ) {
+            runCatching {
+                ctx.startActivity(Intent(
+                    Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+            }
+        })
 
         b.addView(Kit.groupHead(ctx, "后台运行"))
         val g = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
@@ -185,7 +202,18 @@ object MineSections {
         val g2 = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
         g2.addView(Kit.valueRow(ctx, "运行日志", "查看每一步的执行结果",
             "≡", Theme.warn()) { host.openSubPage("log") })
+        g2.addView(Kit.valueRow(ctx, "运行统计", "成功率、耗时、失败分布",
+            "📊", Theme.pri2()) { host.openSubPage("stat") })
         b.addView(Kit.settingCard(ctx, g2))
+
+        b.addView(Kit.groupHead(ctx, "标签"))
+        val g3 = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
+        g3.addView(Kit.note(ctx,
+            "标签与分组的区别：分组是单归属，一个脚本只能属于一个；"
+            + "标签是多归属，一个脚本可同时打多个标签。"))
+        g3.addView(Kit.valueRow(ctx, "标签管理", "${TagStore.all().size} 个标签",
+            "🏷", Theme.pri()) { TagDialog.manage(ctx, host) })
+        b.addView(Kit.settingCard(ctx, g3))
 
         b.addView(Kit.note(ctx, "运行日志只记录动作类型、执行后端、耗时与结果；" +
             "不记录输入文本、控件文本与分享码原文。"))
@@ -202,7 +230,7 @@ object MineSections {
         g1.addView(Kit.valueRow(ctx, "脚本引擎", JsEngines.engineName() +
             if (JsEngines.engineName() == "quickjs") "（未内置源码时自动降级）" else "",
             "⚙", Theme.pri2()) { })
-        g1.addView(Kit.valueRow(ctx, "版本", "v1.18.0", "ⓘ", Theme.pri2()) {
+        g1.addView(Kit.valueRow(ctx, "版本", "v1.21.0", "ⓘ", Theme.pri2()) {
             val act = ctx as? Activity ?: return@valueRow
             ChangeLog.show(act)
         })

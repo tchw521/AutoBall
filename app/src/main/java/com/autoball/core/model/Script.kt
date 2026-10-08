@@ -27,6 +27,14 @@ class Script {
     var jsCode: String = ""
     var flow: Flow? = null
 
+    /**
+     * 标签（与 groupId 的区别：分组是**单归属**，标签是**多归属**）。
+     *
+     * 脚本到 40+ 个后，单一分组栏不够用——一个脚本往往同时属于
+     * 「常用」「微信相关」「待调试」，单归属只能选其一。
+     */
+    var tags: MutableList<String> = ArrayList()
+
     var enabled: Boolean = true
     var isDefault: Boolean = false
 
@@ -49,6 +57,14 @@ class Script {
 
     /** 分享码加密口令；空表示不加密 */
     var sharePass: String = ""
+
+    // ---------- 自动精灵：消息触发 ----------
+    /** 消息触发开关（需系统授予通知使用权） */
+    var notifyEnabled: Boolean = false
+    /** 触发来源包名；空表示任意应用 */
+    var notifyPkg: String = ""
+    /** 关键词；空表示任意消息 */
+    var notifyKeyword: String = ""
     var createdAt: Long = System.currentTimeMillis()
     var updatedAt: Long = createdAt
     var runCount: Int = 0
@@ -58,6 +74,7 @@ class Script {
         put("name", name)
         put("kind", kind.name)
         put("groupId", groupId)
+        if (tags.isNotEmpty()) put("tags", org.json.JSONArray().apply { tags.forEach { put(it) } })
         targetPkg?.let { put("targetPkg", it) }
         put("slot", slot.name)
         put("jsCode", jsCode)
@@ -74,6 +91,9 @@ class Script {
         put("loopCount", loopCount)
         put("loopIntervalMs", loopIntervalMs)
         if (sharePass.isNotEmpty()) put("sharePass", sharePass)
+        put("notifyEnabled", notifyEnabled)
+        put("notifyPkg", notifyPkg)
+        put("notifyKeyword", notifyKeyword)
     }
 
     companion object {
@@ -86,6 +106,10 @@ class Script {
             s.kind = try { ScriptKind.valueOf(o.optStringOrNull("kind") ?: "FLOW") }
                      catch (e: Exception) { ScriptKind.FLOW }
             s.groupId = o.optStringOrNull("groupId") ?: "default"
+            s.tags = ArrayList()
+            o.optJSONArray("tags")?.let { a ->
+                for (i in 0 until a.length()) a.optString(i)?.let { s.tags.add(it) }
+            }
             s.targetPkg = o.optStringOrNull("targetPkg")
             s.slot = try { BallSlot.valueOf(o.optStringOrNull("slot") ?: "NONE") }
                      catch (e: Exception) { BallSlot.NONE }
@@ -104,6 +128,9 @@ class Script {
             s.loopCount = o.optInt("loopCount", 0)
             s.loopIntervalMs = o.optLong("loopIntervalMs", 0L)
             s.sharePass = o.optStringOrNull("sharePass") ?: ""
+            s.notifyEnabled = o.optBoolean("notifyEnabled", false)
+            s.notifyPkg = o.optStringOrNull("notifyPkg") ?: ""
+            s.notifyKeyword = o.optStringOrNull("notifyKeyword") ?: ""
             return s
         }
 

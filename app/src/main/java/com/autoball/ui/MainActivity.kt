@@ -37,7 +37,7 @@ interface PageHost {
     fun recreateUi()
 }
 
-class MainActivity : Activity(), PageHost {
+class MainActivity : Activity(), PageHost, com.autoball.NotifyHost {
 
     private lateinit var content: FrameLayout
     private lateinit var nav: LiquidNavView
@@ -94,7 +94,7 @@ class MainActivity : Activity(), PageHost {
         root.addView(navWrap)
 
         // 底部版本条（v3 .verbar）：点一下看更新日志
-        root.addView(Ui.versionBar(this, "v1.18.0", "查看更新日志") {
+        root.addView(Ui.versionBar(this, "v1.21.0", "查看更新日志") {
             ChangeLog.show(this)
         })
 
@@ -181,6 +181,21 @@ class MainActivity : Activity(), PageHost {
         com.autoball.core.engine.ScriptLauncher.launch(this, script)
     }
 
+    /**
+     * 消息触发入口：由 NotifyService 在收到匹配通知时调用。
+     * 会把来源包名与消息正文注入为 $notifyPkg / $notifyText 供脚本使用。
+     */
+    override fun runScriptWithVars(s: Script, vars: Map<String, String>) {
+        runOnUiThread {
+            if (com.autoball.core.engine.ScriptLauncher.isRunning()) {
+                AB.log.warn("notify", "已有脚本在运行，忽略本次触发")
+                return@runOnUiThread
+            }
+            Ui.toast(this, "消息触发：${s.name}")
+            com.autoball.core.engine.ScriptLauncher.launch(this, s, vars)
+        }
+    }
+
     override fun toggleTheme() {
         Theme.toggleDark()
         subPage = null
@@ -205,6 +220,7 @@ class MainActivity : Activity(), PageHost {
                 "data" -> MineSections.data(this, this)
                 "about" -> MineSections.about(this, this)
                 "log" -> LogPage(this, this)
+                "stat" -> StatPage(this, this)
                 "set" -> SetPage(this, this)
                 "js" -> {
                     val p = JsPage(this@MainActivity, this@MainActivity)
@@ -269,8 +285,14 @@ class MainActivity : Activity(), PageHost {
         }
     }
 
+    override fun onPause() {
+        super.onPause()
+        if (AB.notifyHost === this) AB.notifyHost = null
+    }
+
     override fun onResume() {
         super.onResume()
+        AB.notifyHost = this
         checkScheduled()
         if (com.autoball.AB.store.getBool("float_persistent", true)
             && Display.canDrawOverlay(this)) {

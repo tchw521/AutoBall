@@ -168,6 +168,14 @@ class EditPage(context: Context, private val host: PageHost) : FrameLayout(conte
     private var longPressTask: Runnable? = null
     private var dragIndex = -1
 
+    /**
+     * 复制的动作（进程内剪贴板）。
+     *
+     * 用深拷贝而非引用：直接存引用的话，粘贴后再编辑其中一个，
+     * 另一个会跟着变——用户以为是独立的两步。
+     */
+    private var clipboard: com.autoball.core.model.Action? = null
+
     init { build() }
 
     private fun build() {
@@ -368,6 +376,19 @@ class EditPage(context: Context, private val host: PageHost) : FrameLayout(conte
             acts.forEachIndexed { i, a -> listBox.addView(stepRow(i, a)) }
         }
         listBox.addView(addStepBtn())
+        listBox.addView(templateRow())
+        if (clipboard != null) {
+            val row = LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER
+            }
+            row.addView(pasteButton())
+            listBox.addView(row, LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                setMargins(0, 0, 0, Display.dpInt(context, 8f))
+            })
+        }
         refreshPreview()
     }
 
@@ -388,6 +409,46 @@ class EditPage(context: Context, private val host: PageHost) : FrameLayout(conte
         setOnClickListener { addAction() }
     }
 
+    /** 模板入口行：与「＋添加动作」并列 */
+    private fun templateRow(): LinearLayout {
+        val row = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+        }
+        row.addView(TextView(context).apply {
+            text = "⊞ 动作模板"
+            textSize = 12.5f
+            setTypeface(null, Typeface.BOLD)
+            gravity = Gravity.CENTER
+            setTextColor(Theme.pri())
+            background = Theme.rect(Theme.surface2(), 12f, context, Theme.pri())
+            setPadding(Display.dpInt(context, 12f), Display.dpInt(context, 9f),
+                Display.dpInt(context, 12f), Display.dpInt(context, 9f))
+            setOnClickListener { showTemplates() }
+        })
+        return row
+    }
+
+    /** 底部粘贴按钮：剪贴板为空时置灰，避免点了没反应 */
+    private fun pasteButton(): TextView {
+        val has = clipboard != null
+        return TextView(context).apply {
+            text = "⧉ 粘贴"
+            textSize = 12.5f
+            setTypeface(null, Typeface.BOLD)
+            gravity = Gravity.CENTER
+            setTextColor(if (has) Theme.pri() else Theme.textTer())
+            background = Theme.rect(
+                if (has) Theme.surface2() else Theme.surface(), 12f, context,
+                if (has) Theme.pri() else Theme.line())
+            setPadding(Display.dpInt(context, 12f), Display.dpInt(context, 9f),
+                Display.dpInt(context, 12f), Display.dpInt(context, 9f))
+            isEnabled = has
+            alpha = if (has) 1f else 0.5f
+            setOnClickListener { if (has) pasteAt(-1) }
+        }
+    }
+
     private fun stepRow(i: Int, a: Action): LinearLayout {
         val row = Kit.rowCard(context)
         row.addView(TextView(context).apply {
@@ -401,6 +462,7 @@ class EditPage(context: Context, private val host: PageHost) : FrameLayout(conte
                 Display.dpInt(context, 22f))
         })
         row.addView(Kit.twoLine(context, a.type.label, ActionEditor.describe(a)))
+        row.addView(Kit.miniBtn(context, "⧉") { copyAt(i) })
         row.addView(Kit.miniBtn(context, "↑") { move(i, -1) })
         row.addView(Kit.miniBtn(context, "↓") { move(i, 1) })
         row.addView(Kit.miniBtn(context, "✕") { removeAt(i) })
@@ -510,6 +572,176 @@ class EditPage(context: Context, private val host: PageHost) : FrameLayout(conte
         if (i !in acts.indices) return
         acts.removeAt(i)
         save(); renderSteps()
+    }
+
+    /** 复制第 i 步到剪贴板 */
+    private fun copyAt(i: Int) {
+        val acts = script?.flow?.actions ?: return
+        if (i !in acts.indices) return
+        val src = acts[i]
+        clipboard = com.autoball.core.model.Action().apply {
+            // 逐字段拷贝——避免粘贴出来的动作与原动作共享 id
+            id = com.autoball.core.model.Action.newId()
+            type = src.type
+            optionLabel = src.optionLabel
+            enabled = src.enabled
+            desc = src.desc
+            x = src.x; y = src.y; x2 = src.x2; y2 = src.y2
+            durationMs = src.durationMs
+            preDelayMs = src.preDelayMs
+            waitMs = src.waitMs
+            repeat = src.repeat
+            repeatIntervalMs = src.repeatIntervalMs
+            condition = src.condition
+            keyCode = src.keyCode
+            text = src.text
+            pkg = src.pkg
+            url = src.url
+            code = src.code
+            scriptId = src.scriptId
+            varName = src.varName
+            varValue = src.varValue
+            controlOp = src.controlOp
+            matchThreshold = src.matchThreshold
+            colorTolerance = src.colorTolerance
+            listeners = LinkedHashMap(src.listeners.mapValues { (_, v) ->
+                com.autoball.core.model.Action().apply {
+                    id = com.autoball.core.model.Action.newId()
+                    type = v.type
+                    x = v.x; y = v.y; x2 = v.x2; y2 = v.y2
+                    durationMs = v.durationMs
+                    waitMs = v.waitMs
+                    keyCode = v.keyCode
+                    text = v.text
+                    code = v.code
+                }
+            })
+            subActions = ArrayList(src.subActions.map { sub ->
+                com.autoball.core.model.Action().apply {
+                    id = com.autoball.core.model.Action.newId()
+                    type = sub.type
+                    x = sub.x; y = sub.y; x2 = sub.x2; y2 = sub.y2
+                    durationMs = sub.durationMs
+                    waitMs = sub.waitMs
+                    keyCode = sub.keyCode
+                    text = sub.text
+                    code = sub.code
+                }
+            })
+        }
+        Ui.toast(context, "已复制第 ${i + 1} 步")
+    }
+
+    /**
+     * 粘贴：插在 i 之后；i < 0 时追加到末尾。
+     * 复用悬浮窗「更多工具」的 newAction 思路——都走同一个预设复制路径。
+     */
+    private fun pasteAt(i: Int) {
+        val c = clipboard
+        if (c == null) { Ui.toast(context, "剪贴板为空，请先复制一步"); return }
+        val s = script ?: return
+        if (s.flow == null) s.flow = com.autoball.core.model.Flow()
+        val acts = s.flow!!.actions
+        val copy = com.autoball.core.model.Action().apply {
+            id = com.autoball.core.model.Action.newId()
+            type = c.type
+            optionLabel = c.optionLabel
+            enabled = c.enabled
+            desc = c.desc
+            x = c.x; y = c.y; x2 = c.x2; y2 = c.y2
+            durationMs = c.durationMs
+            preDelayMs = c.preDelayMs
+            waitMs = c.waitMs
+            repeat = c.repeat
+            repeatIntervalMs = c.repeatIntervalMs
+            condition = c.condition
+            keyCode = c.keyCode
+            text = c.text
+            pkg = c.pkg
+            url = c.url
+            code = c.code
+            scriptId = c.scriptId
+            varName = c.varName
+            varValue = c.varValue
+            controlOp = c.controlOp
+            matchThreshold = c.matchThreshold
+            colorTolerance = c.colorTolerance
+            listeners = LinkedHashMap(c.listeners)
+            subActions = ArrayList(c.subActions)
+        }
+        val at = if (i < 0) acts.size else (i + 1).coerceAtMost(acts.size)
+        acts.add(at, copy)
+        save(); renderSteps()
+        Ui.toast(context, "已粘贴为第 ${at + 1} 步")
+    }
+
+    /**
+     * 动作模板库（R-103）：插入一组预置或自建的多步序列。
+     *
+     * 单步复制粘贴已解决「重复配置一个动作」，但「点+等+点」这类
+     * 多步组合仍要一个个加。模板库补上这一层。
+     */
+    private fun showTemplates() {
+        val act = context as? android.app.Activity ?: return
+        val list = com.autoball.core.store.ActionTemplateStore.all()
+        if (list.isEmpty()) { Ui.toast(context, "还没有模板"); return }
+
+        val box = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+        list.forEach { t ->
+            box.addView(Kit.rowCard(context).apply {
+                addView(Kit.twoLine(context, t.name,
+                    "${t.actions.size} 步 · ${t.desc.ifEmpty { "无说明" }}"))
+                addView(Kit.miniBtn(context, "插入") {
+                    val s = script ?: return@miniBtn
+                    if (s.flow == null) s.flow = com.autoball.core.model.Flow()
+                    t.actions.forEach { a ->
+                        s.flow!!.actions.add(
+                            com.autoball.core.store.ActionTemplateStore.clone(a))
+                    }
+                    save(); renderSteps()
+                    Ui.toast(context, "已插入「${t.name}」${t.actions.size} 步")
+                })
+            })
+        }
+
+        // 把当前脚本的**全部动作**存为模板
+        box.addView(Kit.button(context, "＋ 把当前脚本存为模板", true) {
+            val s = script
+            val acts = s?.flow?.actions
+            if (acts.isNullOrEmpty()) {
+                Ui.toast(context, "当前脚本还没有动作")
+                return@button
+            }
+            saveAsTemplate(act, acts)
+        })
+
+        Ui.dialog(act, "动作模板").body(box)
+            .width(Theme.DIALOG_W + 20f).maxHeight(0.78f)
+            .negative("关闭") { }.show()
+    }
+
+    /** 存为模板：需要输入名称 */
+    private fun saveAsTemplate(act: android.app.Activity,
+                               acts: List<com.autoball.core.model.Action>) {
+        val et = android.widget.EditText(act).apply {
+            hint = "模板名称"
+            setSingleLine(true)
+            textSize = 13f
+            setText(script?.name ?: "")
+        }
+        val box = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
+        box.addView(et)
+        Ui.dialog(act, "存为模板").body(box).width(Theme.DIALOG_W)
+            .negative("取消") { }
+            .positive("保存") {
+                val n = et.text.toString().trim()
+                if (n.isEmpty()) { Ui.toast(act, "请输入名称"); false }
+                else {
+                    com.autoball.core.store.ActionTemplateStore.add(n, "", acts)
+                    Ui.toast(act, "已存为模板「$n」")
+                    true
+                }
+            }.show()
     }
 
     private fun addAction() {

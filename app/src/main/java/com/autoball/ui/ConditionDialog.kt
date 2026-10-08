@@ -124,6 +124,39 @@ object ConditionDialog {
                 box.addView(et)
                 exprEdit = et
 
+                // 取色 / 取图入口：这两个条件此前只能手填色值和路径，
+                // 用户无从得知目标色的准确值、也生成不了模板图，等于用不起来。
+                if (c.kind == Kind.COLOR) {
+                    box.addView(Ui.adRow(ctx, "取色器", "点屏幕取当前颜色", false,
+                        "自动隐藏本应用界面并截图，点一下屏幕即可取到准确色值") {
+                        val act = activity ?: return@adRow
+                        ScreenPicker.pick(ctx, act, ScreenPicker.Mode.COLOR,
+                            hostDialog = null,
+                            onColor = { hex ->
+                                c.expr = hex
+                                et.setText(hex)
+                                commit()
+                                Ui.toast(ctx, "已取色 $hex")
+                            })
+                    })
+                }
+                if (c.kind == Kind.IMAGE) {
+                    box.addView(Ui.adRow(ctx, "取图器", "框选区域存为模板", false,
+                        "框选要匹配的区域，自动裁剪存为模板图。\n" +
+                        "注意：模板图存放在本机，不随分享码走——" +
+                        "他人导入此脚本后该条件会判定为无法检测并跳过。") {
+                        val act = activity ?: return@adRow
+                        ScreenPicker.pick(ctx, act, ScreenPicker.Mode.IMAGE,
+                            hostDialog = null,
+                            onImage = { ref ->
+                                c.expr = ref
+                                et.setText(ref)
+                                commit()
+                                Ui.toast(ctx, "模板已保存")
+                            })
+                    })
+                }
+
                 box.addView(Ui.adSec(ctx))
                 box.addView(Ui.adRow(ctx, "条件区域",
                     if (c.region == null) "整屏" else "已选区域", c.region != null,
