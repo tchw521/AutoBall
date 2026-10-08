@@ -117,6 +117,32 @@ Action(20类) → BackendRouter(按能力位选后端) → 无障碍 / Shizuku
 
 ---
 
+## v1.32.0 JS API 对齐：三个新坑
+
+### 1. KDoc 里的裸方括号会让编译器报 "Closing bracket expected"
+
+注释里写 `返回 { result, items: [下标...] }` 直接编译失败——
+KDoc 把 `[...]` 当**文档链接**解析，内容不是合法标识符就报错。
+
+注意：形如 `[Action]`、`[nodeCenter]` 的**符号链接是合法的**且已大量使用，
+只有非标识符内容（含逗号、省略号、中文）才出问题。
+排查时别一刀切地删所有方括号。
+
+### 2. public 函数不能暴露 private 返回类型
+
+`private class Answer` 被 `fun select(...): Answer` 用作返回类型 →
+"'public' function exposes its 'private-in-class' return type"。
+内部类要出现在公开签名里，就得跟着公开。
+
+### 3. lambda 里的智能转换可能失效
+
+`when (v) { is JSONArray -> (0 until v.length()).map { v.optString(it) } }`
+报 receiver type mismatch——`v` 在 lambda 内没被智能转换。
+改成块体 + 显式 `val arr = v as? JSONArray` 就稳。
+**在 lambda 里用 when 智能转换的变量时，先取局部变量。**
+
+---
+
 ## 构建验证：v1.31.0 首次编译（32 处错误）
 
 八个版本（v1.28–v1.31）未编译验证的后果一次性暴露。错误分四类：
