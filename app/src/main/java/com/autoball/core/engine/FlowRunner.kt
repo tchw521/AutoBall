@@ -223,8 +223,10 @@ class FlowRunner(
         }
 
         override fun findImage(path: String, threshold: Float, region: FloatArray?): Boolean? {
-            // 需要图像匹配模块（按需下载，不进初始包）
-            return null
+            // 模板由取图器存本机；取不到就是没有配过或被清了，无法判定
+            val tpl = com.autoball.core.store.TemplateStore.load(path) ?: return null
+            val sr = screen() ?: return null
+            return ConditionEval.matchTemplate(sr, tpl, threshold.coerceIn(0.5f, 1f), region)
         }
 
         override fun evalJs(expr: String): Boolean? =

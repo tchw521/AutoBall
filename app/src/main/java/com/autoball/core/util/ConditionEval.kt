@@ -148,6 +148,86 @@ object ConditionEval {
         return false
     }
 
+    /**
+     * 模板匹配：归一化互相关（NCC）。
+     *
+     * 零依赖约束下不能用 OpenCV，自己实现灰度 NCC。
+     * 对**亮度整体偏移**不敏感（减均值后归一化），比逐像素比色稳健。
+     *
+     * @param region 百分比区域 [l,t,r,b]；null 表示整屏
+     * @param threshold 相似度阈值 0–1，越高越严格
+     */
+    fun matchTemplate(sr: ScreenResult.Ok, tpl: android.graphics.Bitmap,
+                      threshold: Float, region: FloatArray?): Boolean {
+        val w = sr.width; val h = sr.height
+        if (tpl.width > w || tpl.height > h) return false
+
+        // 搜索范围（屏幕区域）
+        val rx0 = ((region?.get(0) ?: 0f) / 100f * w).toInt().coerceIn(0, w - 1)
+        val ry0 = ((region?.get(1) ?: 0f) / 100f * h).toInt().coerceIn(0, h - 1)
+        val rx1 = ((region?.get(2) ?: 100f) / 100f * w).toInt().coerceIn(rx0 + tpl.width, w)
+        val ry1 = ((region?.get(3) ?: 100f) / 100f * h).toInt().coerceIn(ry0 + tpl.height, h)
+        if (rx1 <= rx0 || ry1 <= ry0) return false
+
+        // 模板灰度 + 归一化
+        val tw = tpl.width; val th = tpl.height
+        val tg = FloatArray(tw * th)
+        for (y in 0 until th) for (x in 0 until tw) {
+            val c = tpl.getPixel(x, y)
+            tg[y * tw + x] = (android.graphics.Color.red(c) * 0.299f +
+                android.graphics.Color.green(c) * 0.587f +
+                android.graphics.Color.blue(c) * 0.114f)
+        }
+        val tMean = tg.average().toFloat()
+        var tNorm = 0f
+        for (v in tg) { val d = v - tMean; tNorm += d * d }
+        tNorm = kotlin.math.sqrt(tNorm)
+        if (tNorm <= 0f) return false   // 纯色模板无法匹配
+
+        // 全屏逐像素太慢：按搜索面积抽稀，步长上限保证不漏过小目标
+        val step = kotlin.math.max(1,
+            kotlin.math.min(4, ((rx1 - rx0) * (ry1 - ry0)) / 40_000))
+        var best = -1f
+        var py = ry0
+        while (py + th <= ry1) {
+            var px = rx0
+            while (px + tw <= rx1) {
+                // 窗口灰度
+                var wMean = 0f
+                for (y in 0 until th step 2) {
+                    for (x in 0 until tw step 2) {
+                        val c = sr.pixels[(py + y) * w + (px + x)]
+                        wMean += (android.graphics.Color.red(c) * 0.299f +
+                            android.graphics.Color.green(c) * 0.587f +
+                            android.graphics.Color.blue(c) * 0.114f)
+                    }
+                }
+                val cnt = ((th + 1) / 2) * ((tw + 1) / 2)
+                wMean /= cnt
+                var num = 0f; var dn1 = 0f; var dn2 = 0f
+                for (y in 0 until th step 2) {
+                    for (x in 0 until tw step 2) {
+                        val c = sr.pixels[(py + y) * w + (px + x)]
+                        val gv = (android.graphics.Color.red(c) * 0.299f +
+                            android.graphics.Color.green(c) * 0.587f +
+                            android.graphics.Color.blue(c) * 0.114f)
+                        val tv = tg[y * tw + x] - tMean
+                        val wv = gv - wMean
+                        num += tv * wv; dn1 += tv * tv; dn2 += wv * wv
+                    }
+                }
+                if (dn1 > 0 && dn2 > 0) {
+                    val r = num / kotlin.math.sqrt(dn1 * dn2)
+                    if (r > best) best = r
+                    if (best >= threshold) return true
+                }
+                px += step
+            }
+            py += step
+        }
+        return false
+    }
+
     /** 给日志用的可读描述 */
     fun describe(raw: String?): String {
         if (raw.isNullOrBlank()) return "不检测"
