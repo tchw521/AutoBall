@@ -1,0 +1,153 @@
+package com.autoball.float
+
+import android.content.Context
+import android.graphics.PixelFormat
+import android.os.Build
+import android.os.Handler
+import android.os.Looper
+import android.view.View
+import android.view.WindowManager
+import com.autoball.core.util.Display
+
+/**
+ * 悬浮窗统一管理（统一组件）。
+ *
+ * 之前每个悬浮窗各自 addView / removeView，于是三件事没人负责：
+ * 1. **尺寸**：写死 dp，横屏时窗口可能比屏幕还高；
+ * 2. **层叠**：后开的窗口被旧窗口盖住；
+ * 3. **让出屏幕**：选点/录制要隐藏本应用全部界面，各自只记得自己那一层。
+ *
+ * 这里统一收口：
+ *
+ * - [widthDp]：竖屏取屏宽 1/2，横屏取屏宽 1/4。
+ *   横屏时竖屏尺寸会顶满高度，必须按比例收窄。
+ * - **窗口栈**：[add] 入栈、[remove] 出栈；新窗口后 add，天然压在旧窗口之上。
+ * - [hideAll] / [restore]：选点与录制期间把本应用界面整体让出，结束复原。
+ *
+ * 说明：TYPE_APPLICATION_OVERLAY 同为系统窗口层，
+ * 同一 WindowManager 下后 addView 的 z 序更高，无需额外 flag。
+ */
+object FloatWindows {
+
+    private data class Entry(val view: View, val params: WindowManager.LayoutParams)
+
+    private val handler = Handler(Looper.getMainLooper())
+    private val stack = ArrayList<Entry>()
+    private var wm: WindowManager? = null
+    /** 让出屏幕期间被摘下的窗口，用于 [restore] */
+    private val stashed = ArrayList<Entry>()
+
+    private fun manager(ctx: Context): WindowManager {
+        val m = wm ?: (ctx.applicationContext
+            .getSystemService(Context.WINDOW_SERVICE) as WindowManager)
+        wm = m
+        return m
+    }
+
+    /**
+     * 窗口宽度（dp）。
+     * 竖屏：屏宽 1/2；横屏：屏宽 1/4。
+     * 有下界 240dp，避免大屏横屏时窄到放不下内容。
+     */
+    fun widthDp(ctx: Context): Float {
+        val sz = Display.screenSize(ctx)
+        val landscape = sz.x > sz.y
+        val w = sz.x / if (landscape) 4f else 2f
+        return w.coerceAtLeast(240f)
+    }
+
+    /**
+     * 窗口最大高度（dp）：横屏时收窄，避免窗口顶满屏幕。
+     * 竖屏 78%，横屏 70%。
+     */
+    fun maxHeightRatio(ctx: Context): Float {
+        val sz = Display.screenSize(ctx)
+        return if (sz.x > sz.y) 0.70f else 0.78f
+    }
+
+    fun isLandscape(ctx: Context): Boolean {
+        val sz = Display.screenSize(ctx)
+        return sz.x > sz.y
+    }
+
+    /** 加入一个窗口；返回 false 表示已有同名窗口或没有权限 */
+    fun add(ctx: Context, view: View, params: WindowManager.LayoutParams): Boolean {
+        if (!Display.canDrawOverlay(ctx)) return false
+        val m = manager(ctx)
+        if (stack.any { it.view === view }) return true
+        stack.add(Entry(view, params))
+        return runCatching { m.addView(view, params); true }.getOrDefault(false)
+    }
+
+    fun remove(view: View?) {
+        val v = view ?: return
+        val e = stack.firstOrNull { it.view === v } ?: return
+        stack.remove(e)
+        runCatching { wm?.removeView(v) }
+    }
+
+    fun update(view: View?, params: WindowManager.LayoutParams?) {
+        val v = view ?: return
+        val p = params ?: return
+        stack.firstOrNull { it.view === v }?.let { it.view.layoutParams }
+        runCatching { wm?.updateViewLayout(v, p) }
+    }
+
+    /**
+     * 让出屏幕：摘下本应用全部悬浮窗口。
+     * 选点与录制时调用——否则采集层只能采到本应用自己的界面，
+     * 用户也看不到目标应用。
+     */
+    fun hideAll() {
+        handler.post {
+            val m = wm ?: return@post
+            stashed.clear()
+            stack.toList().forEach { e ->
+                runCatching { m.removeView(e.view) }
+                stashed.add(e)
+            }
+        }
+    }
+
+    /** 恢复 [hideAll] 摘下的窗口（保持原有层叠顺序） */
+    fun restore() {
+        handler.post {
+            val m = wm ?: return@post
+            if (stashed.isEmpty()) return@post
+            stashed.forEach { e -> runCatching { m.addView(e.view, e.params) } }
+            stashed.clear()
+        }
+    }
+
+    /** 转屏后重算所有窗口尺寸：逐个回调让宿主重新布局 */
+    fun onConfigChanged(ctx: Context, resize: (View, Float) -> Unit) {
+        handler.post {
+            val w = widthDp(ctx)
+            stack.toList().forEach { e -> resize(e.view, w) }
+        }
+    }
+
+    fun count(): Int = stack.size
+
+    // ---------- 通用参数 ----------
+
+    fun overlayType(): Int =
+        if (Build.VERSION.SDK_INT >= 26) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+        else {
+            @Suppress("DEPRECATION")
+            WindowManager.LayoutParams.TYPE_PHONE
+        }
+
+    fun params(ctx: Context, wDp: Float, focusable: Boolean = false)
+            : WindowManager.LayoutParams {
+        val p = WindowManager.LayoutParams(
+            Display.dpInt(ctx, wDp),
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            overlayType(),
+            if (focusable) 0 else WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+            PixelFormat.TRANSLUCENT
+        )
+        p.gravity = android.view.Gravity.CENTER
+        return p
+    }
+}

@@ -53,8 +53,13 @@ class FloatSetPage(context: Context, private val host: PageHost) : FrameLayout(c
 
         addView(root, FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
-        renderBall()
-        renderWin()
+        // 两块面板分别容错：一处渲染异常不至于让整个二级页打不开
+        runCatching { renderBall() }.onFailure {
+            com.autoball.core.log.CrashGuard.report("渲染悬浮球面板失败", it)
+        }
+        runCatching { renderWin() }.onFailure {
+            com.autoball.core.log.CrashGuard.report("渲染悬浮窗面板失败", it)
+        }
     }
 
     private fun refreshSeg() {
@@ -89,27 +94,29 @@ class FloatSetPage(context: Context, private val host: PageHost) : FrameLayout(c
         BallSlot.values().filter { it != BallSlot.NONE }.forEach { ballPane.addView(gestRow(it)) }
 
         ballPane.addView(Kit.section(context, "行为"))
-        ballPane.addView(Kit.switchRow(context, "常驻显示", null, "●", Theme.pri2(),
+        ballPane.addView(Kit.switchRow(context, "常驻显示", "退出界面后仍显示", "●", Theme.pri2(),
             AB.store.getBool("float_persistent", true)) {
             AB.store.putBool("float_persistent", it)
             if (it) runCatching { FloatManager.showBall(context.applicationContext) }
             else FloatManager.hideBall()
         })
-        ballPane.addView(Kit.switchRow(context, "自动贴边", null, "⇤", Theme.ok(),
+        ballPane.addView(Kit.switchRow(context, "自动贴边", "松手后吸附到屏幕边缘", "⇤", Theme.ok(),
             AB.store.getBool("ball_snap_edge", true)) {
             AB.store.putBool("ball_snap_edge", it)
         })
-        ballPane.addView(Kit.switchRow(context, "闲置半透明", null, "◑", Theme.warn(),
-            AB.store.getBool("ball_idle_alpha", true)) {
-            AB.store.putBool("ball_idle_alpha", it)
+        // 注意：ball_idle_alpha 存的是 Float 透明度，这里用的是独立的布尔开关 key。
+        // 早前两处共用同一个 key，getBool 读到 Float 会走降级分支，语义也互相覆盖。
+        ballPane.addView(Kit.switchRow(context, "闲置半透明", "不用时自动变淡", "◑",
+            Theme.warn(), AB.store.getBool("ball_fade_idle", true)) {
+            AB.store.putBool("ball_fade_idle", it)
         })
 
         ballPane.addView(Kit.sliderRow(context, "大小",
-            AB.store.getFloat("ball_size", 48f), 36f, 72f, "dp") {
-            AB.store.putFloat("ball_size", it)
+            AB.store.getFloat("ball_size_dp", 48f), 36f, 72f, "dp") {
+            AB.store.putFloat("ball_size_dp", it)
         })
         ballPane.addView(Kit.sliderRow(context, "闲置透明度",
-            AB.store.getFloat("ball_alpha", 55f), 20f, 100f, "%") {
+            AB.store.getFloat("ball_idle_alpha", 0.72f) * 100f, 20f, 100f, "%") {
             AB.store.putFloat("ball_alpha", it)
         })
     }
@@ -221,7 +228,8 @@ class FloatSetPage(context: Context, private val host: PageHost) : FrameLayout(c
             Display.dpInt(context, 18f), Display.dpInt(context, 92f))
 
         winPane.addView(Kit.section(context, "悬浮窗皮肤"))
-        val cur = AB.store.getInt("panel_skin", 0)
+        // 旧版本把皮肤名存成字符串，getInt 已带类型兜底，这里再夹一次范围
+        val cur = AB.store.getInt("panel_skin", 0).coerceIn(0, SKINS.size - 1)
         SKINS.chunked(2).forEachIndexed { ri, rowItems ->
             val line = LinearLayout(context).apply {
                 orientation = LinearLayout.HORIZONTAL
@@ -258,11 +266,11 @@ class FloatSetPage(context: Context, private val host: PageHost) : FrameLayout(c
         })
 
         winPane.addView(Kit.section(context, "行为"))
-        winPane.addView(Kit.switchRow(context, "运行时自动显示", null, "▷", Theme.ok(),
+        winPane.addView(Kit.switchRow(context, "运行时自动显示", "脚本开始即弹出", "▷", Theme.ok(),
             AB.store.getBool("panel_auto", true)) {
             AB.store.putBool("panel_auto", it)
         })
-        winPane.addView(Kit.switchRow(context, "显示步骤名", null, "≡", Theme.pri2(),
+        winPane.addView(Kit.switchRow(context, "显示步骤名", "在悬浮窗上显示当前动作", "≡", Theme.pri2(),
             AB.store.getBool("panel_step", false)) {
             AB.store.putBool("panel_step", it)
         })

@@ -94,7 +94,7 @@ class MainActivity : Activity(), PageHost {
         root.addView(navWrap)
 
         // 底部版本条（v3 .verbar）：点一下看更新日志
-        root.addView(Ui.versionBar(this, "v1.12.0", "查看更新日志") {
+        root.addView(Ui.versionBar(this, "v1.13.0", "查看更新日志") {
             ChangeLog.show(this)
         })
 
@@ -237,6 +237,12 @@ class MainActivity : Activity(), PageHost {
         }
         FloatingService.start(this)
         CreatePage.startRecording(this, "录制脚本 " + (com.autoball.AB.store.all().size + 1))
+    }
+
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        // 转屏后窗口宽度规则变了（竖屏 1/2 ↔ 横屏 1/4），通知悬浮窗重算
+        com.autoball.float.FloatWorkWindow.onConfigChanged(this)
     }
 
     override fun onResume() {

@@ -174,7 +174,8 @@ class FloatDialog private constructor(private val ctx: Context, private val titl
             card.addView(bar)
         }
 
-        val w = Display.dpInt(ctx, widthDp)
+        val w = Display.dpInt(ctx, widthDp).coerceAtMost(
+            Display.dpInt(ctx, FloatWindows.widthDp(ctx) + 60f))
         root = FrameLayout(ctx).apply {
             addView(shade, FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
@@ -199,7 +200,7 @@ class FloatDialog private constructor(private val ctx: Context, private val titl
         p.gravity = Gravity.CENTER
         p.softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
         rootParams = p
-        wm.addView(root, p)
+        FloatWindows.add(ctx, root, p)
 
         // 入场
         card.scaleX = 0.94f; card.scaleY = 0.94f; card.alpha = 0f
@@ -213,9 +214,7 @@ class FloatDialog private constructor(private val ctx: Context, private val titl
                 ?.hideSoftInputFromWindow(root?.windowToken, 0)
         }
         val r = root ?: return
-        runCatching {
-            (ctx.getSystemService(Context.WINDOW_SERVICE) as WindowManager).removeView(r)
-        }
+        FloatWindows.remove(r)
         root = null
     }
 

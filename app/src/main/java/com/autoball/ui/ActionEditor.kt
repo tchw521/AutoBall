@@ -222,7 +222,7 @@ object ActionEditor {
                 valueView(ctx, opt.label, opt.label != "未设置"),
                 null,
                 pick = {
-                    showTypeGrid(ctx, a) { rebuild() }
+                    showTypeList(ctx, a) { rebuild() }
                 },
                 help = "共 ${OPTIONS.size} 种动作，按 基础触摸 / 识别定位 / 系统操作 / 高级 分组；\n" +
                     "选中即套用预设参数（如长按 700ms、返回键 code 4）。"))
@@ -364,43 +364,33 @@ object ActionEditor {
     // 分组宫格：仿自动精灵的动作类型选择
     // =====================================================================
 
-    private fun showTypeGrid(ctx: android.content.Context, a: Action, onChange: () -> Unit) {
+    /**
+     * 动作类型选择——**列表展现**（自动精灵「更多工具」即为此形态）。
+     *
+     * 早前用宫格，22 项挤在 3 列里，每项只剩两个字，说明文字全被砍掉；
+     * 列表能同时显示图标、名称与用途，选错的概率更低。
+     */
+    private fun showTypeList(ctx: android.content.Context, a: Action, onChange: () -> Unit) {
         val box = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
         val groups = OPTIONS.map { it.group }.distinct()
         var cur = groups.indexOf(optionOf(a).group).takeIf { it >= 0 } ?: 0
-
         val listBox = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
 
         fun fill() {
             listBox.removeAllViews()
-            val g = groups[cur]
-            val items = OPTIONS.filter { it.group == g }
-            // 3 列宫格
-            var row: LinearLayout? = null
-            items.forEachIndexed { i, opt ->
-                if (i % 3 == 0) {
-                    row = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL }
-                    listBox.addView(row)
-                }
-                row!!.addView(gridCell(ctx, opt.label, opt.label == optionOf(a).label) {
+            OPTIONS.filter { it.group == groups[cur] }.forEach { opt ->
+                listBox.addView(listItem(ctx, opt.label, opt.type.label,
+                    opt.label == optionOf(a).label) {
                     a.type = opt.type
                     a.optionLabel = opt.label
                     opt.preset(a)
                     gridDlg?.dismiss()
                     onChange()
-                }, LinearLayout.LayoutParams(0,
-                    LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
-                    setMargins(Display.dpInt(ctx, 3f), Display.dpInt(ctx, 3f),
-                        Display.dpInt(ctx, 3f), Display.dpInt(ctx, 3f))
                 })
             }
         }
 
-        val seg = Kit.segment(ctx, groups, cur) { i ->
-            cur = i
-            fill()
-        }
-        box.addView(seg)
+        box.addView(Kit.segment(ctx, groups, cur) { i -> cur = i; fill() })
         box.addView(listBox, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
             LinearLayout.LayoutParams.WRAP_CONTENT).apply {
@@ -417,37 +407,61 @@ object ActionEditor {
         val act0 = ctx as? Activity ?: return
         gridDlg = Ui.dialog(act0, "选择动作类型")
             .body(box)
-            .width(Theme.DIALOG_W + 60f)
+            .width(Theme.DIALOG_W + 40f)
             .maxHeight(0.72f)
             .negative("取消") { }
             .show()
     }
 
-    private fun gridCell(ctx: android.content.Context, label: String, selected: Boolean,
-                         onClick: () -> Unit): LinearLayout =
+    /** 列表项：图标 + 名称 + 说明 + 右侧选中标记 */
+    private fun listItem(ctx: android.content.Context, title: String, sub: String,
+                         selected: Boolean, onClick: () -> Unit): LinearLayout =
         LinearLayout(ctx).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
             background = Theme.rect(
-                if (selected) Theme.surface2() else Theme.surface(),
-                10f, ctx,
+                if (selected) Theme.surface2() else Theme.surface(), 10f, ctx,
                 if (selected) Theme.pri() else Theme.line())
-            setPadding(Display.dpInt(ctx, 4f), Display.dpInt(ctx, 10f),
-                Display.dpInt(ctx, 4f), Display.dpInt(ctx, 10f))
+            setPadding(Display.dpInt(ctx, 10f), Display.dpInt(ctx, 9f),
+                Display.dpInt(ctx, 10f), Display.dpInt(ctx, 9f))
+            val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT)
+            lp.setMargins(0, Display.dpInt(ctx, 3f), 0, Display.dpInt(ctx, 3f))
+            layoutParams = lp
             setOnClickListener { onClick() }
+
             addView(TextView(ctx).apply {
-                text = label.take(2)
-                textSize = 15f
+                text = title.take(2)
+                textSize = 13f
                 setTypeface(null, Typeface.BOLD)
                 setTextColor(if (selected) Theme.pri() else Theme.textSec())
                 gravity = Gravity.CENTER
+                background = Theme.oval(if (selected) Theme.pri2() else Theme.surface2())
+                layoutParams = LinearLayout.LayoutParams(
+                    Display.dpInt(ctx, 32f), Display.dpInt(ctx, 32f))
             })
-            addView(TextView(ctx).apply {
-                text = label
-                textSize = 9.5f
-                setTextColor(if (selected) Theme.pri2() else Theme.textTer())
-                gravity = Gravity.CENTER
-                setPadding(0, Display.dpInt(ctx, 3f), 0, 0)
+            val col = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
+            col.addView(TextView(ctx).apply {
+                text = title
+                textSize = 13f
+                setTypeface(null, Typeface.BOLD)
+                setTextColor(if (selected) Theme.pri() else Theme.textPri())
+            })
+            col.addView(TextView(ctx).apply {
+                text = sub
+                textSize = 10.5f
+                setTextColor(Theme.textTer())
+                setPadding(0, Display.dpInt(ctx, 2f), 0, 0)
+            })
+            addView(col, LinearLayout.LayoutParams(0,
+                LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                marginStart = Display.dpInt(ctx, 10f)
+            })
+            if (selected) addView(TextView(ctx).apply {
+                text = "✓"
+                textSize = 13f
+                setTypeface(null, Typeface.BOLD)
+                setTextColor(Theme.pri())
             })
         }
 

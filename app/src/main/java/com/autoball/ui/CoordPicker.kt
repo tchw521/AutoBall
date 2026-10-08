@@ -20,6 +20,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import com.autoball.core.util.Display
 import com.autoball.float.FloatManager
+import com.autoball.float.FloatWindows
 
 /**
  * 全屏选点（UI 设计方案 v3 · N20 / N15）。
@@ -71,6 +72,10 @@ object CoordPicker {
         // 1) 隐藏本应用的一切遮挡，露出真实屏幕
         wasBallShown = FloatManager.isBallShown()
         FloatManager.hideAll()
+        // 关键：连同工作台悬浮窗与悬浮弹窗一起让出。
+        // 早前只隐藏了悬浮球/悬浮窗，从动作编辑框发起选点时，
+        // 那个编辑框仍盖在屏幕上，用户根本看不到目标应用。
+        FloatWindows.hideAll()
         hostActivity = activity
         this.hostDialog = hostDialog
         runCatching { hostDialog?.hide() }
@@ -131,6 +136,9 @@ object CoordPicker {
         if (v != null) runCatching { wm?.removeView(v) }
         view = null
         wm = null
+
+        // 选点结束，恢复此前让出屏幕的本应用窗口
+        FloatWindows.restore()
     }
 
     private fun overlayType(): Int =

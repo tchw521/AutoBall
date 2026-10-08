@@ -93,19 +93,16 @@ object FloatWorkWindow {
             val manager = ctx.getSystemService(Context.WINDOW_SERVICE) as WindowManager
             wm = manager
             val v = buildView(ctx, script, cb)
-            val p = WindowManager.LayoutParams(
-                WindowManager.LayoutParams.WRAP_CONTENT,
-                WindowManager.LayoutParams.WRAP_CONTENT,
-                overlayType(),
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
-                PixelFormat.TRANSLUCENT
-            )
-            p.gravity = Gravity.CENTER
-            p.x = 0
+            // 宽度走统一规则：竖屏屏宽 1/2、横屏 1/4，避免横屏顶满屏幕
+            val p = FloatWindows.params(ctx, FloatWindows.widthDp(ctx))
             p.y = Display.screenSize(ctx).y / 6
             view = v
             params = p
-            runCatching { manager.addView(v, p) }
+            // 走统一栈：新窗口后入栈，天然压在旧窗口之上
+            if (!FloatWindows.add(ctx, v, p)) {
+                view = null
+                return@post
+            }
             if (goHome) goHome(ctx)
         }
     }
@@ -113,7 +110,7 @@ object FloatWorkWindow {
     fun hide() {
         handler.post {
             val v = view ?: return@post
-            runCatching { wm?.removeView(v) }
+            FloatWindows.remove(v)
             view = null
             params = null
             holder = null
@@ -123,6 +120,15 @@ object FloatWorkWindow {
     fun setRecording(on: Boolean) {
         recording = on
         handler.post { refreshState() }
+    }
+
+    /** 转屏后重算窗口宽度（横屏收窄到屏宽 1/4） */
+    fun onConfigChanged(ctx: Context) {
+        handler.post {
+            val p = params ?: return@post
+            p.width = Display.dpInt(ctx, FloatWindows.widthDp(ctx))
+            FloatWindows.update(view, p)
+        }
     }
 
     /** 动作列表变化后刷新 */
@@ -138,7 +144,6 @@ object FloatWorkWindow {
             background = panelBg(ctx)
             elevation = Display.dp(ctx, 10f)
         }
-        val w = Display.dpInt(ctx, 260f)
 
         // ---- 标题栏：脚本名 + 状态点 + ✕ ----
         val head = FrameLayout(ctx).apply {
@@ -239,7 +244,8 @@ object FloatWorkWindow {
 
         holder = Holder(list, more, dot, recBtn, title)
         fillList(script)
-        root.layoutParams = FrameLayout.LayoutParams(w,
+        root.layoutParams = FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT,
             FrameLayout.LayoutParams.WRAP_CONTENT)
         return root
     }
