@@ -1,5 +1,6 @@
 package com.autoball.core.store
 
+import com.autoball.AB
 import com.autoball.App
 import com.autoball.core.model.BallSlot
 import com.autoball.core.model.Script
@@ -45,8 +46,8 @@ object GestureBinding {
         // 同步 Script.slot：让其它读旧字段的地方（如脚本卡片上的绑定标记）
         // 也能反映出"第一个"绑定，不至于显示成未绑定
         val all = AB.store.all()
-        all.forEach { s ->
-            if (s.slot == slot && s.id !in ids) s.slot = BallSlot.NONE
+        all.forEach { sc ->
+            if (sc.slot == slot && sc.id !in ids) sc.slot = BallSlot.NONE
         }
         ids.firstOrNull()?.let { first ->
             all.firstOrNull { it.id == first }?.let { it.slot = slot }
@@ -79,5 +80,4 @@ object GestureBinding {
         out
     }.getOrDefault(emptyList())
 
-    private fun AB() = com.autoball.AB.store
 }

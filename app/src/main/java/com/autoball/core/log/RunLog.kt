@@ -84,7 +84,7 @@ class RunLog(private val defaultCapacity: Int = 200) {
         val o = org.json.JSONObject()
         var size = 2
         for ((k, v) in vars) {
-            val item = ""$k":"
+            val item = "\"$k\":"
             if (size + item.length + v.length + 2 > 2048) break
             o.put(k, v)
             size += item.length + v.length + 2
