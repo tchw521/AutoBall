@@ -76,6 +76,130 @@ Action(20类) → BackendRouter(按能力位选后端) → 无障碍 / Shizuku
 
 ---
 
+## v1.29.0 自动精灵对齐 + JS API 地基
+
+### R-121 JS API 白名单收敛（三处 → 一处）
+
+此前 API 白名单分裂在三处，加一个 API 要改三遍，漏改就是运行时
+"unknown host api"：
+1. C++ `autoball_quickjs.cpp` 的 `kHostApis[]`（每个 API 一个 magic）
+2. `RhinoEngine.BRIDGE`（Rhino 的 prelude）
+3. `JsHost.call()` 的 when 分支
+
+**决策**：C++ 只注册一个通用 `host(name, ...args)`，全部 API 名称与包装
+集中在 Kotlin 的 `JsBridge.PRELUDE`。两个引擎共用同一份字符串。
+从此新增 API 只改 Kotlin，不必碰 C++（也没有 NDK 的重新编译成本）。
+
+命名空间取 `ab.*` 为主 + `zdjl.*` 别名指向同一对象——社区脚本可直接跑。
+全局函数（`click()` 等）保留，保证早期脚本不失效。
+
+### R-122 坐标单位必须在宿主侧换算
+
+`Action` 的坐标字段**只存百分比**。若 JS 传来的像素直接透传，
+`CoordMapper` 会再按录制签名缩放一次 → 双重缩放。
+所以 `'50%'` / `'200dp'` / 像素统一在 `JsHost.coord()` 里换算完再建 Action。
+
+### R-125 runAction 的重入死锁
+
+`RUN_JS` 本身就是 ActionType 之一。JS 里 `runAction({type:'运行JS代码'})`
+等于在同一 QuickJS Context 内重入 → 必卡死（自动精灵文档也警告过）。
+**显式拒绝 RUN_JS / SET_VAR 并报错**，而不是尝试执行或静默跳过。
+
+### 顺带修：取区回调把像素当百分比（真 bug）
+
+`RegionPicker` 回调的是**像素**，而 `Action` 存百分比。
+`ActionEditor` 的「结束位置」直接把像素存进百分比字段，还把右边界当宽度相加
+（`x2 = l + r`，而 r 本来就是 right）。两个错误叠加 →
+用户截图里出现 `点击(612.0%, 1344.0%)` 这种荒谬值。
+
+修法：统一 `pctOf()` 换算（像素 ÷ 屏幕尺寸 × 100），并加 0–100 夹紧。
+**凡是取点/取区控件的回调值，存进 Action 前都要过这一层。**
+
+---
+
+## v1.31.0 组件统一：色值收敛 + 自定义按键
+
+### T-02 浮层色值收敛（16 处 → 0）
+
+`FloatPanelView` 把 `#F21E1836` / `#F2141022` 这类**深色调**写死在代码里，
+切到浅色主题时浮层仍是深色块，与整体割裂——这是真 bug 不是洁癖。
+
+新增令牌：`floatStops()` / `floatEdge()` / `runEdge()` / `C_KEY_EDGE`。
+槽位色**复用已有的 `Theme.G` 调色板**（7 色，深浅各一套），
+不另造一个色表——否则改主题时要同时维护两处。
+
+### R-118 自定义按键：皮肤退化为"初始模板"
+
+关键设计：不新增一套并行的自定义数据，而是让固定皮肤**退化为初始模板**。
+选皮肤 = 把该模板的按键写进自定义列表，用户再自行增删。
+这样固定皮肤与自定义布局共用一份数据，不用维护两套渲染路径。
+
+`PanelKeyStore` 用 String id 存动作（不直接引用 UI 枚举）——
+store 层不依赖 UI 类型，悬浮窗在窗口里重建时不会因类型不匹配失效。
+
+### 新增 Kit.colorDot（三次法则触发）
+
+分组配色、标签配色、悬浮按键配色三处都要"一排色点选一个"，
+各写一遍就有三种不同的选中标记与尺寸。抽为 `Kit.colorDot(ctx, color, selected)`。
+
+### 又踩的两个坑
+
+1. `Kit.section()` 返回的是 **TextView**，不能 `addView`。
+   需要"分区标题 + 输入框"时必须自己包一层纵向容器。
+2. `Theme.pill` 不存在——色点组件是 `Kit.pill(ctx, text, onClick)`，
+   且它带文字，不适合做纯色点。最终新抽 `Kit.colorDot`。
+
+---
+
+## v1.28.0 代码审查：六个真缺陷
+
+### 1. 快照与回滚形同虚设（最严重）
+
+`ScriptStore.all()` 只浅拷贝**列表**，Script 对象与缓存共享引用。
+编辑页 `bind()` 直接持有这个共享对象并原地修改 → `save()` 里
+`list[idx] === s` → `SnapshotStore.snapshot(list[idx])` 拍到的是**已改后**的新状态。
+回滚到"上一版"等于回到当前版，**功能完全失效**。
+
+修法：`Script.copy()` / `Flow.copy()`，编辑页与 JS 页在 `bind()` 持有副本。
+
+教训：注释写着"调用方可自由修改，不影响缓存"——**注释与实现不符时，按实现为准去查**。
+
+### 2. 动作复制丢失字段 + 浅拷贝
+
+`EditPage.copyAt/pasteAt` 与 `ActionTemplateStore.clone()` 各自手写逐字段拷贝，
+三处都漏掉 `colorHex` / `nodeSpec` / `imageRef` / `failOp` / `failJumpTo` /
+`jitterDp` 等十余项；`nodeSpec` 还是可变 data class，浅拷贝会连带改到原动作。
+后果：复制一个"点击节点"动作，粘贴出来节点选择器是空的。
+
+修法：统一走 `Action.copy(newId)`，深拷贝嵌套结构。这正是 R-001 三次法则的触发点。
+
+### 3. `optionLabel` 只写不读
+
+序列化写了，反序列化没读 → 保存再打开就丢，界面回退成动作类型名，
+用户分不清当初选的是「长按」还是「点击」（两者都是 CLICK 类型）。
+
+### 4. 定时脚本"当天只触发一次"在重启后失效
+
+`lastFiredDay` 从不持久化。进程被回收后归零 → 当天会**重复触发一次**。
+`markFired` 后虽有 `store.save()`，但 JSON 里没这个字段，等于没存。
+
+### 5. `FloatWindows` 两处状态不一致
+
+- `add()` 失败时已入栈却未回滚 → 留下"没真正挂上"的幽灵条目
+- `update()` 里 `?.let { it.view.layoutParams }` 是**无副作用的死代码**，
+  拖动窗口后 `hideAll → restore` 会把窗口弹回旧位置
+
+### 6. 导航栏 onDraw 每帧解析与分配
+
+导航栏带呼吸动画，是常驻重绘视图。`onDraw` 里 3 处 `Color.parseColor`、
+2 个 `LinearGradient` + 1 个 `RadialGradient` **每帧新建**。
+已全部改为预解析常量 + 按尺寸/主题缓存渐变。
+
+注意：缓存渐变时坐标必须落在**画布绝对坐标**（以圆心 cx,cy 为基准），
+只用 r 推相对值会让高光跑到视图左上角。
+
+---
+
 ## 踩过的坑（同类错误已犯多次，务必自查）
 
 ### 编译期
