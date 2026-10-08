@@ -51,6 +51,39 @@ object ConditionDialog {
             return "%.1f%%, %.1f%% → %.1f%%, %.1f%%".format(r[0], r[1], r[2], r[3])
         }
 
+        fun rebuild() {
+            box.removeAllViews()
+
+            val real = set.items.filter { it.kind != ActionCondition.Kind.NONE }
+            if (real.size > 1) {
+                box.addView(Ui.adRow(ctx, "多条件关系", set.op.label, true, set.op.desc) {
+                    Ui.popMenu(ctx, box, ConditionSet.Op.values().map { it.label },
+                        ConditionSet.Op.values().indexOf(set.op)) { i ->
+                        set.op = ConditionSet.Op.values()[i]
+                        commit(); rebuild()
+                    }
+                })
+                box.addView(Ui.adSec(ctx))
+            }
+
+            real.forEachIndexed { idx, c ->
+                box.addView(Ui.adRow(ctx, "条件 ${idx + 1}", one(c), true,
+                    "点开可修改本条；长按右侧 ✕ 可删除") {
+                    editCond(c)
+                })
+            }
+
+            box.addView(Kit.button(ctx, "＋ 添加条件", false) {
+                val nc = ActionCondition()
+                set.items.add(nc)
+                editCond(nc)
+            })
+
+            box.addView(Kit.note(ctx,
+                "多条条件时可选「全部满足」或「任一满足」。"
+                + "无法判定（如缺少截图能力）时按不满足跳过，不会静默当作成立。"))
+        }
+
         fun editCond(c: ActionCondition) {
             val inner = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
             var exprEdit: android.widget.EditText? = null
@@ -162,39 +195,6 @@ object ConditionDialog {
                     exprEdit?.text?.toString()?.trim()?.let { c.value = it }
                     commit(); rebuild(); true
                 }.show()
-        }
-
-        fun rebuild() {
-            box.removeAllViews()
-
-            val real = set.items.filter { it.kind != ActionCondition.Kind.NONE }
-            if (real.size > 1) {
-                box.addView(Ui.adRow(ctx, "多条件关系", set.op.label, true, set.op.desc) {
-                    Ui.popMenu(ctx, box, ConditionSet.Op.values().map { it.label },
-                        ConditionSet.Op.values().indexOf(set.op)) { i ->
-                        set.op = ConditionSet.Op.values()[i]
-                        commit(); rebuild()
-                    }
-                })
-                box.addView(Ui.adSec(ctx))
-            }
-
-            real.forEachIndexed { idx, c ->
-                box.addView(Ui.adRow(ctx, "条件 ${idx + 1}", one(c), true,
-                    "点开可修改本条；长按右侧 ✕ 可删除") {
-                    editCond(c)
-                })
-            }
-
-            box.addView(Kit.button(ctx, "＋ 添加条件", false) {
-                val nc = ActionCondition()
-                set.items.add(nc)
-                editCond(nc)
-            })
-
-            box.addView(Kit.note(ctx,
-                "多条条件时可选「全部满足」或「任一满足」。"
-                + "无法判定（如缺少截图能力）时按不满足跳过，不会静默当作成立。"))
         }
 
         rebuild()

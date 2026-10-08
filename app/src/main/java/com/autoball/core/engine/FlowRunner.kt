@@ -136,7 +136,7 @@ class FlowRunner(
                 // 每步失败处理（R-113）：全局开关之外，允许单步覆盖策略。
                 // 有的步骤失败无所谓（找图没找到），有的必须停（付款前校验）。
                 if (!okAll && a.type != ActionType.RUN_JS) fire("er")
-                if (!okAll && !handleFail(a)) {
+                if (!okAll && !handleFail(a, flow)) {
                     return Outcome(false, executed, failed,
                         "动作失败，已按「${a.failOp.label}」处理")
                 }
@@ -192,7 +192,7 @@ class FlowRunner(
      * 优先级：单步策略 > 全局「失败立即暂停」。
      * 默认 [FailOp.NEXT] 时仍沿用全局设置，保证老脚本行为不变。
      */
-    private fun handleFail(a: Action): Boolean {
+    private fun handleFail(a: Action, flow: Flow): Boolean {
         val op = if (a.failOp == FailOp.NEXT && flow.failStop) FailOp.PAUSE else a.failOp
         return when (op) {
             FailOp.NEXT -> true
@@ -241,7 +241,8 @@ class FlowRunner(
     private fun jitterAction(a: Action): Action {
         val r = a.jitterDp
         if (r <= 0) return a
-        if (!hasCoord(a.type)) return a
+        // ActionType.hasCoord 已由 fieldGroups 推导（含点击族与滑动族），不要另写一份
+        if (!a.type.hasCoord) return a
         val px = Display.dp(App.get(), (r * 2).toFloat()) / 2f
         fun j(v: Float): Float =
             // Math.random() 是 Double，必须先转 Float——
@@ -256,13 +257,6 @@ class FlowRunner(
 
     private fun screenW(): Float =
         Display.screenSize(App.get()).x.toFloat().coerceAtLeast(1f)
-
-    private fun hasCoord(t: com.autoball.core.model.ActionType): Boolean =
-        t == com.autoball.core.model.ActionType.CLICK ||
-            t == com.autoball.core.model.ActionType.LONG_CLICK ||
-            t == com.autoball.core.model.ActionType.SWIPE ||
-            t == com.autoball.core.model.ActionType.MULTI_TOUCH ||
-            t == com.autoball.core.model.ActionType.SINGLE_TOUCH
 
     private fun morphAction(a: Action): Action {
         val p = morph ?: return a

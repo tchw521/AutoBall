@@ -595,6 +595,13 @@ object ActionEditor {
      * 值区右对齐占满剩余宽度；单位灰色小字；「⋯」为拾取/选择入口；
      * 末尾「?」统一弹 [Ui.helpBubble]。
      */
+    /** 跳转目标的可读标签；目标已被删除时显示「已失效」而不是空白 */
+    private fun jumpLabel(steps: List<Action>, id: String?): String {
+        if (id == null) return "未设置"
+        val i = steps.indexOfFirst { it.id == id }
+        return if (i < 0) "已失效" else "${i + 1}. ${steps[i].optionLabel ?: steps[i].type.label}"
+    }
+
     private fun zsRow(ctx: android.content.Context, label: String, value: View,
                       unit: String?, pick: (() -> Unit)?, help: String): LinearLayout =
         LinearLayout(ctx).apply {
