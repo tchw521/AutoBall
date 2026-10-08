@@ -49,8 +49,26 @@ class RunLog(private val defaultCapacity: Int = 200) {
 
     private val buf = CopyOnWriteArrayList<Entry>()
 
-    @Volatile
+    /**
+     * 日志变更监听。
+     *
+     * 改成**多播**：此前是单个回调，第二个使用者（悬浮控制台）一注册
+     * 就会把日志页的监听顶掉——两边都收不到通知，属于静默失效。
+     * 读时快照一份再遍历，避免回调里反注册导致 ConcurrentModification。
+     */
+    private val listeners = CopyOnWriteArrayList<() -> Unit>()
+
+    fun addListener(l: () -> Unit) { listeners.add(l) }
+
+    fun removeListener(l: () -> Unit) { listeners.remove(l) }
+
+    @Deprecated("改用 addListener：单个回调会被后注册者顶掉")
     var onChange: (() -> Unit)? = null
+
+    private fun notifyChange() {
+        onChange?.invoke()
+        listeners.forEach { runCatching(it) }
+    }
 
     fun add(runId: String, level: Level, result: String, message: String? = null,
             actionId: String? = null, backend: String? = null, latencyMs: Long = 0,
@@ -58,7 +76,7 @@ class RunLog(private val defaultCapacity: Int = 200) {
         buf.add(Entry(System.currentTimeMillis(), runId, level, actionId, backend,
             result, latencyMs, message, varsJson))
         while (buf.size > capacity) buf.removeAt(0)
-        onChange?.invoke()
+        notifyChange()
     }
 
     fun info(runId: String, msg: String) = add(runId, Level.INFO, "INFO", msg)
@@ -111,5 +129,5 @@ class RunLog(private val defaultCapacity: Int = 200) {
     /** UI 只读副本 */
     fun snapshot(): List<Entry> = ArrayList(buf)
 
-    fun clear() { buf.clear(); onChange?.invoke() }
+    fun clear() { buf.clear(); notifyChange() }
 }

@@ -16,12 +16,24 @@ object ScriptLauncher {
 
     val coordinator: RunnerCoordinator = RunnerCoordinator()
 
-    fun launch(context: Context, script: Script) = launch(context, script, emptyMap())
+    fun launch(context: Context, script: Script) = launch(context, script, emptyMap(), false)
+
+    /** @param initVars 初始变量，供消息触发注入 $notifyPkg / $notifyText */
+    fun launch(context: Context, script: Script, initVars: Map<String, String>) =
+        launch(context, script, initVars, false)
 
     /**
-     * @param initVars 初始变量，供消息触发注入 $notifyPkg / $notifyText
+     * @param step 单步执行：每个动作前暂停，等悬浮条放行（R-131）
+     *
+     * 只对**动作流**有效——JS 脚本不经过 FlowRunner 的 checkStep，
+     * 单步对它没意义。这里如实提示而不是静默忽略（R-003）。
      */
-    fun launch(context: Context, script: Script, initVars: Map<String, String>) {
+    fun launch(context: Context, script: Script, initVars: Map<String, String>, step: Boolean) {
+        if (step && script.kind == com.autoball.core.model.ScriptKind.JS) {
+            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                com.autoball.ui.Ui.toast(context, "单步只支持动作流脚本，JS 脚本请用 console 调试")
+            }
+        }
         val pair = coordinator.tryStart(script)
         if (pair == null) {
             AB.log.warn("launch", "已有脚本在运行，本次触发转为停止")
@@ -32,6 +44,14 @@ object ScriptLauncher {
         val seed = HashMap<String, String>(initVars)
         val ctx = coordinator.context(runId, control, seed)
         FloatManager.setRunning(true)
+
+        // 单步：必须在启动线程**之前**置位，否则前几个动作会直接跑过去
+        val useStep = step && script.kind != com.autoball.core.model.ScriptKind.JS
+        if (useStep) {
+            control.stepMode = true
+            com.autoball.float.FloatStepBar.show(context, control)
+            AB.log.info(runId, "单步模式：每个动作前等待放行")
+        }
 
         val t = Thread {
             try {
@@ -53,6 +73,8 @@ object ScriptLauncher {
             } catch (e: Throwable) {
                 coordinator.markError(e.message ?: "运行异常")
             } finally {
+                // 单步条必须收掉：它挂在屏幕上会一直挡着，且持有 control 引用
+                if (useStep) com.autoball.float.FloatStepBar.hide()
                 FloatManager.setRunning(false)
             }
         }

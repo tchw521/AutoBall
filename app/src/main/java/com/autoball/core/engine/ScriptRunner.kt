@@ -133,6 +133,18 @@ object ScriptRunner {
         val ok = flowOk && jsOk && !control.canceled
         if (control.canceled) AB.log.warn(ctx.runId, "已被用户停止")
         lastResult = lastResult ?: if (ok) "运行完成" else "运行未完成"
+
+        // 运行结束收起悬浮控制台：脚本里 console.show() 开的窗口若不管，
+        // 会一直挂在屏幕上挡住别的界面——用户还得手动去关。
+        // 这里延迟收起，给"跑完看一眼最后几行"留时间。
+        if (com.autoball.float.FloatConsole.isShowing()) {
+            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                // 用户可能又手动打开了（比如正在排查），那就别关
+                val st = com.autoball.core.engine.ScriptLauncher.coordinator.state
+                if (st == com.autoball.core.RunnerCoordinator.State.IDLE)
+                    com.autoball.float.FloatConsole.hide()
+            }, 1500)
+        }
         return ok
     }
 

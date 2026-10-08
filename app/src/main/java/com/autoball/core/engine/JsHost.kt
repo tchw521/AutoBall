@@ -32,6 +32,9 @@ class JsHost(
      */
     private var lastTouch: Pair<Float, Float>? = null
 
+    /** 最近一次 findLocation(type=image) 的相似度，用于回填 similarity 字段 */
+    private var lastImageSimilarity: Float = 0f
+
     companion object {
         /** sleep 上限：避免 sleep(MAX_INT) 让脚本永不响应停止 */
         const val MAX_SLEEP_MS = 300_000L
@@ -245,17 +248,20 @@ class JsHost(
                         args.optInt(1, 0))
                     true
                 }
-                // ---- console ----
+                // ---- console（R-131 调试闭环）----
+                // show/hide/clear 走悬浮窗：脚本运行时用户在别的应用里，
+                // 应用内日志页根本看不到，等于盲调。
                 "console" -> {
                     val lv = args.optString(0, "log")
                     val msg = args.optString(1, "")
-                    // 与自动精灵一致：error/warn 用对应级别，其余归 info
                     when (lv) {
+                        "show" -> com.autoball.float.FloatConsole.show(com.autoball.App.get())
+                        "hide" -> { com.autoball.float.FloatConsole.hide(); true }
+                        "clear" -> { log.clear(); true }
                         "error" -> log.error(ctx.runId, "JS: $msg")
                         "warn" -> log.warn(ctx.runId, "JS: $msg")
                         else -> log.info(ctx.runId, "JS: $msg")
                     }
-                    true
                 }
                 "setVar" -> {
                     // 第三参 scope="global"：全局作用域（跨动作保留）
@@ -534,16 +540,12 @@ class JsHost(
                 val sr = screen() ?: return null
                 val id = o?.optString("template") ?: o?.optString("value") ?: return null
                 val tpl = com.autoball.core.store.TemplateStore.load(id) ?: return null
-                // matchTemplate 只返回布尔；要坐标就得另写一份扫描，
-                // 这里退化为"匹配成功则返回区域中心"，并如实标注相似度来源
-                val ok = com.autoball.core.util.ConditionEval.matchTemplate(
+                // R-130：现在返回**模板实际所在位置**，不再是区域中心
+                val m = com.autoball.core.util.ConditionEval.matchTemplatePos(
                     sr, tpl, (o?.optDouble("similarity", 0.9) ?: 0.9).toFloat(), region)
-                if (!ok) null else {
-                    val rx0 = (region?.get(0) ?: 0f) / 100f * sr.width
-                    val ry0 = (region?.get(1) ?: 0f) / 100f * sr.height
-                    val rx1 = (region?.get(2) ?: 100f) / 100f * sr.width
-                    val ry1 = (region?.get(3) ?: 100f) / 100f * sr.height
-                    (rx0 + rx1) / 2f to (ry0 + ry1) / 2f
+                if (m == null) null else {
+                    lastImageSimilarity = m.similarity
+                    m.x to m.y
                 }
             }
             else -> {
@@ -552,7 +554,7 @@ class JsHost(
             }
         }
         if (pt == null) return null
-        val one = toLoc(pt)
+        val one = toLoc(pt, if (type == "image") lastImageSimilarity else 1f)
         if (!all) return one
         // all=true：node 走真实多匹配；color/image 目前只支持首个命中（如实记录）
         val arr = JSONArray()
@@ -573,12 +575,18 @@ class JsHost(
         return arr
     }
 
-    /** 坐标对象：一次给全像素 / 百分比 / dp 三种单位 */
-    private fun toLoc(pt: Pair<Float, Float>): JSONObject {
+    /**
+     * 坐标对象：一次给全像素 / 百分比 / dp 三种单位（自动精灵同款字段名）。
+     *
+     * similarity 只在模板匹配时有意义；取色/取节点时填 1f（完全命中），
+     * 不填 null——脚本常写 `if (loc.similarity > 0.9)`，null 会让比较静默失败。
+     */
+    private fun toLoc(pt: Pair<Float, Float>, similarity: Float = 1f): JSONObject {
         val app = com.autoball.App.get()
         val sz = com.autoball.core.util.Display.screenSize(app)
         val d = com.autoball.core.util.Display.dp(app, 1f).coerceAtLeast(1f)
         return JSONObject()
+            .put("similarity", similarity.toDouble())
             .put("x", pt.first.toDouble())
             .put("y", pt.second.toDouble())
             .put("x_100", (pt.first / sz.x.toFloat().coerceAtLeast(1f) * 100f).toDouble())

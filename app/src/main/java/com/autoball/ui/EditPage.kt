@@ -924,6 +924,12 @@ class EditPage(context: Context, private val host: PageHost) : FrameLayout(conte
         box.addView(Ui.sheetOption(act, "▶", Theme.pri2(), "运行脚本", "立即执行一次") {
             script?.let { host.runScript(it) }
         })
+        // 单步（R-131）：每个动作前暂停，配合悬浮条放行。
+        // 调试"到底哪一步点错了"最有效的手段——比事后翻日志直观得多。
+        box.addView(Ui.sheetOption(act, "⏯", Theme.pri(), "单步运行",
+            "每步暂停，用悬浮条逐步放行（仅动作流）") {
+            script?.let { com.autoball.core.engine.ScriptLauncher.launch(act, it, emptyMap(), true) }
+        })
         box.addView(Ui.sheetOption(act, "●", Theme.ok(), "从此录制", "在当前脚本后追加录制的动作") {
             host.startRecording()
         })

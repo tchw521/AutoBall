@@ -98,6 +98,18 @@
       playMedia 同步等播完（上限 120s，期间响应停止）；getMousePosition 返回
       本引擎最后一次派发的坐标（真机无鼠标，语义是"上次点在哪"）
 
+- [x] ~~R-130 findLocation 图像精确坐标~~ ✅ v1.34.0（C++ 双变体已验证）
+      matchTemplate 只返回布尔 → 新增 matchTemplatePos 返回最佳匹配中心+相似度。
+      **取全局最优**而非首个超阈值的命中（首个可能是误匹配）。
+      此前退化成"区域中心"，于是「找图点击」实际点的是区域中心而非图片位置：
+      界面能选能存、但点不准，属 R-003 类静默失效。
+- [x] ~~R-131 调试闭环：悬浮控制台 + 单步执行~~ ✅ v1.34.0
+      `console.show()` 开悬浮日志窗（只读、节流 120ms、最多 200 行）；
+      RunLog.onChange 改多播（原单回调会被后注册者顶掉）。
+      单步：RunControl 早有 stepMode/nextStep 但无 UI 入口 → 新增 FloatStepBar。
+      **只对动作流有效**，JS 脚本如实提示而非静默忽略。
+      脚本结束 1.5s 后自动收起控制台（若未再手动打开）。
+
 - [ ] **R-128 内置 OCR 模块**（P2）：`ocr()` 当前直接报错，需引三方或自训练模型
 - [ ] **R-129 设备开关类 API**（P3）：wakeupScreen / setScreenBrightness /
       setWifiEnable / setBluetoothEnable / setCameraFlashEnable 多需系统签名权限，

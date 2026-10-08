@@ -190,8 +190,9 @@ var console={
  time:function(l){__t[l]=Date.now();},
  timeLog:function(l){__cl('log',[l+': '+(Date.now()-__t[l])+'ms']);},
  timeEnd:function(l){__cl('log',[l+': '+(Date.now()-__t[l])+'ms']);delete __t[l];},
- clear:function(){__t={};},
- show:function(){},hide:function(){}
+ clear:function(){__call('console','clear');},
+ show:function(){return __call('console','show');},
+ hide:function(){return __call('console','hide');}
 };
 function __cl(lv,a){var m=[];for(var i=0;i<a.length;i++){m.push(typeof a[i]==='string'?a[i]:__s(a[i]));}
  __call('console',lv,m.join(' '));}
