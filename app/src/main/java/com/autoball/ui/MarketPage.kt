@@ -342,7 +342,7 @@ class MarketPage(context: Context, private val host: PageHost) : FrameLayout(con
 
         textSize = 11f
 
-        textColor = Theme.textTer()
+        setTextColor(Theme.textTer())
 
         setPadding(0, Display.dpInt(context, 6f), 0, 0)
 
