@@ -1,6 +1,8 @@
 package com.autoball.core.store
 
 import android.util.Base64
+import com.autoball.core.model.ActionCondition
+import com.autoball.core.model.ConditionSet
 import com.autoball.core.model.Script
 import org.json.JSONObject
 import java.io.ByteArrayInputStream
@@ -23,12 +25,113 @@ object ShareCode {
 
     fun encode(script: Script): String = encode(script, script.sharePass)
 
+    // ---------- 模板图内联（用户选择：压缩后内联进分享码） ----------
+
+    /** 单张模板图内联后的上限（原始字节）；超出则放弃内联，退回"仅本机可用" */
+    private const val MAX_TPL_EACH = 24 * 1024
+    /** 一个码里所有模板图的总上限 */
+    private const val MAX_TPL_TOTAL = 96 * 1024
+    /** 模板图最长边压到多少像素——160px 足够匹配，再大收益递减而码变长 */
+    private const val TPL_MAX_EDGE = 160
+
+    /**
+     * 收集脚本里用到的模板图，压缩后以 base64 内联。
+     *
+     * 取舍：不内联的话「图片存在」条件在他人机器上直接失效；
+     * 内联整图的话码会变成几百 KB 没法传。所以压到 160px + JPEG 75，
+     * 单张上限 24KB、总量 96KB——典型模板压完只有几 KB。
+     *
+     * 压缩会损失细节，但对模板匹配（灰度 NCC）影响很小：
+     * NCC 本身就是低频相似度度量。
+     */
+    private fun collectTemplates(script: Script): org.json.JSONObject {
+        val out = org.json.JSONObject()
+        var total = 0
+        script.flow?.actions?.forEach { a ->
+            // 用统一模型解析，支持多条条件（任一条件里的图片都要带上）
+            ConditionSet.parse(a.condition).items.forEach { c ->
+                if (c.kind != ActionCondition.Kind.IMAGE) return@forEach
+                val id = c.value.takeIf { it.isNotBlank() } ?: return@forEach
+                val bmp = TemplateStore.load(id) ?: return@forEach
+                val small = scaleDown(bmp, TPL_MAX_EDGE)
+                val bos = java.io.ByteArrayOutputStream()
+                small.compress(android.graphics.Bitmap.CompressFormat.JPEG, 75, bos)
+                val bytes = bos.toByteArray()
+                if (bytes.size > MAX_TPL_EACH) return@forEach
+                if (total + bytes.size > MAX_TPL_TOTAL) return@forEach
+                out.put(id, Base64.encodeToString(bytes, Base64.NO_WRAP))
+                total += bytes.size
+            }
+        }
+        return out
+    }
+
+    @Suppress("unused")
+    private fun collectTemplatesLegacy(script: Script): org.json.JSONObject {
+        val out = org.json.JSONObject()
+        var total = 0
+        script.flow?.actions?.forEach { a ->
+            val id = imageRefOf(a.condition) ?: return@forEach
+            val bmp = TemplateStore.load(id) ?: return@forEach
+            val small = scaleDown(bmp, TPL_MAX_EDGE)
+            val bos = java.io.ByteArrayOutputStream()
+            small.compress(android.graphics.Bitmap.CompressFormat.JPEG, 75, bos)
+            val bytes = bos.toByteArray()
+            if (bytes.size > MAX_TPL_EACH) return@forEach
+            if (total + bytes.size > MAX_TPL_TOTAL) return@forEach
+            out.put(id, Base64.encodeToString(bytes, Base64.NO_WRAP))
+            total += bytes.size
+        }
+        return out
+    }
+
+    private fun scaleDown(src: android.graphics.Bitmap, maxEdge: Int): android.graphics.Bitmap {
+        val w = src.width; val h = src.height
+        val s = (maxEdge.toFloat() / maxOf(w, h)).coerceAtMost(1f)
+        if (s >= 1f) return src
+        return android.graphics.Bitmap.createScaledBitmap(
+            src, (w * s).toInt().coerceAtLeast(1), (h * s).toInt().coerceAtLeast(1), true)
+    }
+
+    /** 从条件的 JSON 里取出图片引用 id */
+    private fun imageRefOf(raw: String?): String? {
+        if (raw.isNullOrBlank() || !raw.trim().startsWith("{")) return null
+        return runCatching {
+            val o = org.json.JSONObject(raw)
+            if (o.optString("k") != "IMAGE") null else o.optString("v").takeIf { it.isNotBlank() }
+        }.getOrNull()
+    }
+
+    /** 导入端：把内联的模板图写回本机 TemplateStore，并重写条件里的引用 id */
+    private fun restoreTemplates(script: Script, tpl: org.json.JSONObject?) {
+        if (tpl == null || tpl.length() == 0) return
+        script.flow?.actions?.forEach { a ->
+            val set = ConditionSet.parse(a.condition)
+            var changed = false
+            set.items.forEach { c ->
+                if (c.kind != ActionCondition.Kind.IMAGE) return@forEach
+                val b64 = tpl.optString(c.value, null) ?: return@forEach
+                val bytes = runCatching { Base64.decode(b64, Base64.DEFAULT) }
+                    .getOrNull() ?: return@forEach
+                val bmp = android.graphics.BitmapFactory
+                    .decodeByteArray(bytes, 0, bytes.size) ?: return@forEach
+                // 重写为本机新 id，避免与导入方已有模板撞 id
+                c.value = TemplateStore.saveBitmap(bmp)
+                changed = true
+            }
+            if (changed) a.condition = ConditionSet.serialize(set)
+        }
+    }
+
     /**
      * @param pass 口令；非空时对明文做 AES 加密（自动精灵同款「加密分享」）。
      *             口令不随码传输，导入方必须手动输入同样的口令。
      */
     fun encode(script: Script, pass: String): String {
-        var bytes = script.toJson().toString().toByteArray(Charsets.UTF_8)
+        val root = script.toJson()
+        val tpl = collectTemplates(script)
+        if (tpl.length() > 0) root.put("tpl", tpl)
+        var bytes = root.toString().toByteArray(Charsets.UTF_8)
         if (pass.isNotEmpty()) bytes = CipherBox.encrypt(bytes, pass)
         val crc = crc32(bytes)
         val bos = ByteArrayOutputStream()
@@ -45,9 +148,20 @@ object ShareCode {
 
     fun encodeAll(scripts: List<Script>): String {
         val arr = org.json.JSONArray()
-        scripts.forEach { arr.put(it.toJson()) }
-        val bytes = org.json.JSONObject().put("version", 1)
-            .put("scripts", arr).toString().toByteArray(Charsets.UTF_8)
+        val tplAll = org.json.JSONObject()
+        scripts.forEach { sc ->
+            arr.put(sc.toJson())
+            // 批量导出时合并所有脚本的模板图
+            val t = collectTemplates(sc)
+            val it2 = t.keys()
+            while (it2.hasNext()) {
+                val k = it2.next()
+                if (!tplAll.has(k)) tplAll.put(k, t.optString(k))
+            }
+        }
+        val root = org.json.JSONObject().put("version", 1).put("scripts", arr)
+        if (tplAll.length() > 0) root.put("tpl", tplAll)
+        val bytes = root.toString().toByteArray(Charsets.UTF_8)
         val crc = crc32(bytes)
         val bos = ByteArrayOutputStream()
         GZIPOutputStream(bos).use { it.write(bytes) }
@@ -71,10 +185,13 @@ object ShareCode {
             if (crc32(bytes).toString(16) != crcHex) return null
             val o = org.json.JSONObject(String(bytes, Charsets.UTF_8))
             val arr = o.optJSONArray("scripts") ?: return null
+            val tpl = o.optJSONObject("tpl")
             val out = ArrayList<Script>()
             for (i in 0 until arr.length()) {
                 val so = arr.optJSONObject(i) ?: continue
-                out.add(Script.fromJson(so))
+                val sc = Script.fromJson(so)
+                restoreTemplates(sc, tpl)
+                out.add(sc)
             }
             out
         } catch (e: Exception) {
@@ -111,7 +228,9 @@ object ShareCode {
                 return null
             } else bytes
             val o = JSONObject(String(plain, Charsets.UTF_8))
-            Script.fromJson(o)
+            val sc = Script.fromJson(o)
+            restoreTemplates(sc, o.optJSONObject("tpl"))
+            sc
         } catch (e: Exception) {
             null
         }

@@ -94,6 +94,9 @@ class Action {
         c.waitMs = waitMs
         c.preDelayMs = preDelayMs
         c.condition = condition
+        c.failOp = failOp
+        c.failJumpTo = failJumpTo
+        c.jitterDp = jitterDp
         c.x = x; c.y = y; c.x2 = x2; c.y2 = y2
         c.durationMs = durationMs
         c.text = text
@@ -125,7 +128,21 @@ class Action {
     var preDelayMs: Long = 0        // 执行前等待
     var repeat: Int = 1             // 重复次数
     var repeatIntervalMs: Long = 0
-    var condition: String? = null   // 运行条件：JS 表达式，选填
+    var condition: String? = null   // 运行条件（ConditionSet 的 JSON）
+    /**
+     * 本步执行失败后的处理（R-113）。
+     * 此前只有全局「有动作失败立即暂停」开关，粒度太粗——
+     * 有的步骤失败无所谓（如找图没找到），有的必须停（如付款前的校验）。
+     */
+    var failOp: FailOp = FailOp.NEXT
+    /** [FailOp.JUMP] 的目标步骤 id */
+    var failJumpTo: String? = null
+    /**
+     * 每步坐标随机微调半径（dp，R-114）。
+     * 0 表示不抖动。与全局手势变形的区别：那个是整段脚本的仿射矩阵，
+     * 这里只作用于本步，用于"关键步骤必须精确、次要步骤可以抖"的混搭。
+     */
+    var jitterDp: Int = 0
     var timeoutMs: Long = 10_000
 
     // ---- 坐标类 ----
@@ -185,6 +202,9 @@ class Action {
         put("repeat", repeat)
         put("repeatIntervalMs", repeatIntervalMs)
         condition?.let { put("condition", it) }
+        if (failOp != FailOp.NEXT) put("failOp", failOp.name)
+        failJumpTo?.let { put("failJumpTo", it) }
+        if (jitterDp != 0) put("jitterDp", jitterDp)
         put("timeoutMs", timeoutMs)
         if (listeners.isNotEmpty()) {
             val lobj = JSONObject()
@@ -263,6 +283,9 @@ class Action {
             a.repeat = o.optInt("repeat", 1).coerceAtLeast(1)
             a.repeatIntervalMs = o.optLong("repeatIntervalMs", 0)
             a.condition = o.optStringOrNull("condition")
+            a.failOp = FailOp.byName(o.optString("failOp"))
+            a.failJumpTo = o.optStringOrNull("failJumpTo")
+            a.jitterDp = o.optInt("jitterDp", 0)
             a.timeoutMs = o.optLong("timeoutMs", 10_000)
             a.listeners = listenersFromJson(o.optJSONObject("listeners"))
 

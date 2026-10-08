@@ -31,7 +31,7 @@ import com.autoball.core.store.TemplateStore
  */
 object ScreenPicker {
 
-    enum class Mode { COLOR, IMAGE }
+    enum class Mode { COLOR, IMAGE, REGION }
 
     @Volatile private var view: PickView? = null
     @Volatile private var wm: WindowManager? = null
@@ -51,7 +51,9 @@ object ScreenPicker {
         mode: Mode,
         hostDialog: android.app.Dialog? = null,
         onColor: ((String) -> Unit)? = null,
-        onImage: ((String) -> Unit)? = null
+        onImage: ((String) -> Unit)? = null,
+        /** 区域模式回调：百分比 [左,上,右,下]（0–100） */
+        onRegionPct: ((FloatArray) -> Unit)? = null
     ) {
         if (!Display.canDrawOverlay(context)) {
             Display.openOverlaySettings(context)
@@ -72,12 +74,15 @@ object ScreenPicker {
                 })
             }
             // 再延迟一点，等桌面真正绘制出来
-            handler.postDelayed({ shoot(context, activity, mode, onColor, onImage) }, 420)
+            handler.postDelayed({
+                shoot(context, activity, mode, onColor, onImage, onRegionPct)
+            }, 420)
         }, 80)
     }
 
     private fun shoot(context: Context, activity: Activity?, mode: Mode,
-                      onColor: ((String) -> Unit)?, onImage: ((String) -> Unit)?) {
+                      onColor: ((String) -> Unit)?, onImage: ((String) -> Unit)?,
+                      onRegionPct: ((FloatArray) -> Unit)?) {
         val sr = runCatching { AB.router.screenshot(
             com.autoball.core.backend.ExecContext("pick")) }.getOrNull()
         val ok = sr as? ScreenResult.Ok
@@ -90,17 +95,24 @@ object ScreenPicker {
         val bmp = Bitmap.createBitmap(ok.width, ok.height, Bitmap.Config.ARGB_8888)
         bmp.setPixels(ok.pixels, 0, ok.width, 0, 0, ok.width, ok.height)
         lastBitmap = bmp
-        showLayer(context.applicationContext, activity, bmp, mode, onColor, onImage)
+        showLayer(context.applicationContext, activity, bmp, mode,
+            onColor, onImage, onRegionPct)
     }
 
     private fun showLayer(ctx: Context, activity: Activity?, bmp: Bitmap, mode: Mode,
-                          onColor: ((String) -> Unit)?, onImage: ((String) -> Unit)?) {
+                          onColor: ((String) -> Unit)?, onImage: ((String) -> Unit)?,
+                          onRegionPct: ((FloatArray) -> Unit)?) {
         val onDone: () -> Unit = { restore(activity); removeNow() }
         val layer = PickView(ctx, bmp, mode,
             onColor = { hex -> onColor?.invoke(hex); onDone() },
             onRegion = { l, t, r, b ->
-                val ref = TemplateStore.save(bmp, l, t, r, b)
-                onImage?.invoke(ref)
+                if (mode == Mode.REGION) {
+                    // 区域模式：换算成屏幕百分比（截图即整屏，比例一致）
+                    onRegionPct?.invoke(floatArrayOf(l, t, r, b))
+                } else {
+                    val ref = TemplateStore.save(bmp, l, t, r, b)
+                    onImage?.invoke(ref)
+                }
                 onDone()
             },
             onCancel = onDone)
@@ -170,7 +182,11 @@ object ScreenPicker {
             visibility = View.GONE
         }
         private val tip = TextView(ctx).apply {
-            text = if (mode == Mode.COLOR) "点一下屏幕取色" else "框选要匹配的区域"
+            text = when (mode) {
+                Mode.COLOR -> "点一下屏幕取色"
+                Mode.IMAGE -> "框选要匹配的区域"
+                Mode.REGION -> "拖动框选检测区域"
+            }
             textSize = 13f
             setTextColor(Color.WHITE)
             gravity = Gravity.CENTER
@@ -228,7 +244,7 @@ object ScreenPicker {
                 android.view.MotionEvent.ACTION_DOWN -> {
                     sx = ev.x; sy = ev.y; ex = sx; ey = sy
                     dragging = true
-                    if (mode == Mode.IMAGE) {
+                    if (mode == Mode.IMAGE || mode == Mode.REGION) {
                         box.visibility = View.VISIBLE
                         layoutBox()
                     }
@@ -237,7 +253,7 @@ object ScreenPicker {
                 }
                 android.view.MotionEvent.ACTION_MOVE -> {
                     ex = ev.x; ey = ev.y
-                    if (mode == Mode.IMAGE) layoutBox()
+                    if (mode == Mode.IMAGE || mode == Mode.REGION) layoutBox()
                     previewColor(ev.x, ev.y)
                     return true
                 }
@@ -254,6 +270,12 @@ object ScreenPicker {
                         if (r - l < 20 || b - t < 20) {
                             Ui.toast(context, "框选区域太小，请重新框选")
                             box.visibility = View.GONE
+                        } else if (mode == Mode.REGION) {
+                            // 截图即整屏，视图铺满屏幕 → 直接按视图尺寸归一为百分比
+                            val vw = width.toFloat().coerceAtLeast(1f)
+                            val vh = height.toFloat().coerceAtLeast(1f)
+                            onRegion(l / vw * 100f, t / vh * 100f,
+                                r / vw * 100f, b / vh * 100f)
                         } else {
                             // 换算回图片坐标（预览是 FIT_CENTER，需按缩放比还原）
                             val m = imgRect()

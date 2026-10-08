@@ -17,6 +17,7 @@ import com.autoball.core.model.ActionPreset
 import com.autoball.core.model.KeyCode
 import com.autoball.core.model.ActionType
 import com.autoball.core.model.ControlOp
+import com.autoball.core.model.FailOp
 import com.autoball.core.util.Display
 
 /**
@@ -405,6 +406,55 @@ object ActionEditor {
                 help = "本动作执行前后挂载的动作（截图、日志、兜底）。\n" +
                     "与「脚本全局设置 → 全局监听动作」的区别：那作用于整段脚本，" +
                     "这里只作用于当前动作。"))
+
+            // ---- 每步失败处理（R-113）----
+            box.addView(Ui.adSec(ctx))
+            box.addView(zsRow(ctx, "失败后",
+                valueView(ctx, a.failOp.label, a.failOp != FailOp.NEXT),
+                null,
+                pick = {
+                    Ui.popMenu(ctx, box, FailOp.values().map { it.label },
+                        FailOp.values().indexOf(a.failOp)) { i ->
+                        a.failOp = FailOp.values()[i]
+                        rebuild()
+                    }
+                },
+                help = "本步执行失败时如何处理。\n"
+                    + "全局「有动作失败立即暂停」只作用于未单独设置的步骤——"
+                    + "关键步骤可单独设终止，次要步骤设继续。"))
+
+            if (a.failOp == FailOp.JUMP) {
+                val steps = flowRef?.actions ?: emptyList()
+                val names = steps.mapIndexed { i, s2 ->
+                    "${i + 1}. ${s2.optionLabel ?: s2.type.label}" }
+                box.addView(zsRow(ctx, "跳转到",
+                    valueView(ctx, jumpLabel(steps, a.failJumpTo),
+                        a.failJumpTo != null),
+                    null,
+                    pick = {
+                        if (steps.isEmpty()) {
+                            Ui.toast(ctx, "脚本还没有步骤")
+                        } else {
+                            Ui.popMenu(ctx, box, names,
+                                steps.indexOfFirst { it.id == a.failJumpTo }
+                                    .coerceAtLeast(0)) { i ->
+                                a.failJumpTo = steps[i].id
+                                rebuild()
+                            }
+                        }
+                    },
+                    help = "失败后跳到这一步继续。目标在后面则跳过中间步骤。"))
+            }
+
+            // ---- 每步坐标随机微调（R-114）----
+            box.addView(Ui.adSec(ctx))
+            val jitEt = numField(ctx,
+                a.jitterDp.takeIf { it > 0 }?.toString() ?: "", "选填")
+            readers["jitter"] = { a.jitterDp = jitEt.text.toString().trim().toIntOrNull() ?: 0 }
+            box.addView(zsRow(ctx, "坐标随机", jitEt, "dp", null,
+                help = "本步坐标的随机偏移半径（dp）。\n"
+                    + "与全局手势变形的区别：那个作用于整段脚本的仿射矩阵，"
+                    + "这里只作用于本步，可做到「关键步骤精确、次要步骤抖动」。"))
 
             // ---- 动作描述（备注，自动精灵在末尾一行）----
             val descEt = textField(ctx, a.desc ?: "", "选填")

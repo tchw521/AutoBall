@@ -1,6 +1,7 @@
 package com.autoball.core.engine
 
 import com.autoball.AB
+import com.autoball.App
 import com.autoball.core.RunControl
 import com.autoball.core.backend.BackendRouter
 import com.autoball.core.backend.ExecContext
@@ -9,6 +10,7 @@ import com.autoball.core.model.*
 import com.autoball.core.util.Condition
 import com.autoball.core.util.ConditionEval
 import com.autoball.core.util.CoordMapper
+import com.autoball.core.util.Display
 
 /**
  * 动作流执行器：**不经 JS 引擎**，直接把结构化动作交给后端执行。
@@ -76,6 +78,12 @@ class FlowRunner(
                 control.checkStep()
                 control.checkPause()
                 if (!a.enabled) continue
+                // 跳转模式：跳过目标步骤之前的动作
+                val jt = jumpTo
+                if (jt != null) {
+                    if (a.id != jt) continue
+                    jumpTo = null
+                }
 
                 fire("br")        // 每个动作运行前
                 if (control.canceled) return Outcome(false, executed, failed, "已停止")
@@ -125,6 +133,14 @@ class FlowRunner(
                         }
                     }
                 }
+                // 每步失败处理（R-113）：全局开关之外，允许单步覆盖策略。
+                // 有的步骤失败无所谓（找图没找到），有的必须停（付款前校验）。
+                if (!okAll && a.type != ActionType.RUN_JS) fire("er")
+                if (!okAll && !handleFail(a)) {
+                    return Outcome(false, executed, failed,
+                        "动作失败，已按「${a.failOp.label}」处理")
+                }
+
                 onProgress?.invoke(-1, total, a)
                 // 自动精灵：运行条件可引用前序动作的执行状态。
                 // 写入三个变量供后续动作的「运行条件」表达式使用：
@@ -135,17 +151,9 @@ class FlowRunner(
                 runCatching { ctx.vars["ok"] = if (failed == 0) "1" else "0" }
                 runCatching { ctx.vars["step${executed - failed}"] = if (okAll) "1" else "0" }
                 fire("ba")        // 每个动作运行后
-                if (!okAll && a.type != ActionType.RUN_JS) {
-                    // 「有动作失败立即暂停」：防止后续动作在错误界面上乱点
-                    if (flow.failStop) {
-                        // 失败时记录变量快照（R-107）：调试时可直接回填到变量面板，
-                        // 不用手动重跑一遍去猜当时各变量是什么值
-                        log.errorWithVars(ctx.runId,
-                            "动作失败且已开启失败暂停，中止脚本：${a.type.label}", ctx.vars)
-                        fire("er")
-                        return Outcome(false, executed, failed, "动作失败，已按设置暂停")
-                    }
-                }
+                // 「有动作失败立即暂停」的全局分支已下移到 [handleFail] 统一处理：
+                // 单步失败策略优先于全局开关，这样关键步骤可以单独设终止、
+                // 次要步骤设继续，而不必全脚本一刀切。
                 if (!okAll && a.type != ActionType.RUN_JS) {
                     // 单个动作失败不中止整体，交由上层策略决定是否继续
                     log.warn(ctx.runId, "动作失败：${a.type.label}")
@@ -179,11 +187,81 @@ class FlowRunner(
     fun runSingle(action: Action): Boolean = execOne(action)
 
     /**
+     * 处理单步失败，返回是否继续执行后续动作。
+     *
+     * 优先级：单步策略 > 全局「失败立即暂停」。
+     * 默认 [FailOp.NEXT] 时仍沿用全局设置，保证老脚本行为不变。
+     */
+    private fun handleFail(a: Action): Boolean {
+        val op = if (a.failOp == FailOp.NEXT && flow.failStop) FailOp.PAUSE else a.failOp
+        return when (op) {
+            FailOp.NEXT -> true
+            FailOp.PAUSE -> {
+                log.errorWithVars(ctx.runId,
+                    "动作失败，暂停脚本：${a.type.label}", ctx.vars)
+                control.pause()
+                false
+            }
+            FailOp.STOP -> {
+                log.errorWithVars(ctx.runId,
+                    "动作失败，终止脚本：${a.type.label}", ctx.vars)
+                false
+            }
+            FailOp.JUMP -> {
+                val target = a.failJumpTo
+                if (target.isNullOrBlank()) {
+                    log.error(ctx.runId, "跳转目标未设置，终止脚本")
+                    return false
+                }
+                // 目标步骤在后面 → 跳过中间步骤；在前面 → 由上层循环处理
+                jumpTo = target
+                log.warn(ctx.runId, "动作失败，跳转到步骤 $target")
+                true
+            }
+        }
+    }
+
+    /** [FailOp.JUMP] 的目标步骤 id；非空时跳过中间步骤 */
+    private var jumpTo: String? = null
+
+    /**
      * 对坐标类动作施加矩阵变形。
      *
      * 只处理有坐标的类型（点击/长按/滑动…），其余原样返回——
      * 对「等待」「返回键」这类动作做抖动没有意义。
      */
+    /**
+     * 每步坐标随机微调（R-114）。
+     *
+     * 与全局手势变形（morph）的分工：morph 是整段脚本的仿射矩阵，
+     * 这里只作用于本步——用于"关键步骤必须精确、次要步骤可以抖"的混搭。
+     *
+     * 只处理带坐标的动作；对「等待」「按键」抖动没有意义。
+     */
+    private fun jitterAction(a: Action): Action {
+        val r = a.jitterDp
+        if (r <= 0) return a
+        if (!hasCoord(a.type)) return a
+        val px = Display.dp(App.get(), (r * 2).toFloat()) / 2f
+        fun j(v: Float): Float =
+            (v + (Math.random() * 2 - 1) * px / screenW() * 100f)
+                .coerceIn(0f, 100f)
+        val c = a.copy()
+        c.x = j(a.x); c.y = j(a.y)
+        if (a.x2 != 0f || a.y2 != 0f) { c.x2 = j(a.x2); c.y2 = j(a.y2) }
+        return c
+    }
+
+    private fun screenW(): Float =
+        Display.screenSize(App.get()).x.toFloat().coerceAtLeast(1f)
+
+    private fun hasCoord(t: com.autoball.core.model.ActionType): Boolean =
+        t == com.autoball.core.model.ActionType.CLICK ||
+            t == com.autoball.core.model.ActionType.LONG_CLICK ||
+            t == com.autoball.core.model.ActionType.SWIPE ||
+            t == com.autoball.core.model.ActionType.MULTI_TOUCH ||
+            t == com.autoball.core.model.ActionType.SINGLE_TOUCH
+
     private fun morphAction(a: Action): Action {
         val p = morph ?: return a
         if (!a.type.hasCoord) return a
@@ -214,7 +292,9 @@ class FlowRunner(
 
         override fun findColor(hex: String, tol: Int, region: FloatArray?): Boolean? {
             val sr = screen() ?: return null
-            return ConditionEval.matchColor(sr, hex, tol, region)
+            val pos = ConditionEval.findColorPos(sr, hex, tol, region)
+            lastMatchPos = pos
+            return pos != null
         }
 
         override fun findText(text: String, region: FloatArray?): Boolean? {
@@ -231,7 +311,26 @@ class FlowRunner(
 
         override fun evalJs(expr: String): Boolean? =
             jsEval?.let { fn -> runCatching { fn(expr, ctx) }.getOrNull() }
+
+        /**
+         * 位置周围条件：以**最近一次颜色匹配的命中点**为基准偏移。
+         *
+         * 基准点由 [matchColorWithPos] 写入 [lastMatchPos]——先在主区域找到
+         * 主色，再校验它周围若干偏移点的颜色，这正是「多点找色」的做法。
+         * 主色没命中过就无法判定（返回 null），绝不猜。
+         */
+        override fun probeAt(dxDp: Float, dyDp: Float, hex: String, tol: Int): Boolean? {
+            val sr = screen() ?: return null
+            val (mx, my) = lastMatchPos ?: return null
+            val px = (mx + Display.dp(App.get(), dxDp)).toInt()
+            val py = (my + Display.dp(App.get(), dyDp)).toInt()
+            if (px < 0 || py < 0 || px >= sr.width || py >= sr.height) return false
+            return ConditionEval.colorAt(sr, px, py, hex, tol)
+        }
     }
+
+    /** 最近一次颜色匹配的命中点（像素），供周围条件探针作基准 */
+    private var lastMatchPos: Pair<Int, Int>? = null
 
     /** 无法判定时的修复指引，写进日志帮用户定位 */
     private fun howToFix(raw: String?): String {
@@ -283,7 +382,7 @@ class FlowRunner(
                 if (fn == null) { log.warn(ctx.runId, "无法运行子脚本"); false } else fn(sid)
             }
             else -> {
-                val target = CoordMapper.applyTo(morphAction(a), scale)
+                val target = CoordMapper.applyTo(morphAction(jitterAction(a)), scale)
                 val r = router.execute(target, ctx)
                 log.add(ctx.runId,
                     if (r.ok) RunLog.Level.OK else RunLog.Level.ERROR,

@@ -333,10 +333,23 @@ class ScriptPage(
         }
         val kw = query.trim()
         if (kw.isNotEmpty()) {
-            l = l.filter {
-                it.name.contains(kw, true) ||
-                    (it.jsCode.contains(kw, true)) ||
-                    (it.flow?.name?.contains(kw, true) == true)
+            l = l.filter { s ->
+                s.name.contains(kw, true) ||
+                    s.jsCode.contains(kw, true) ||
+                    s.flow?.name?.contains(kw, true) == true ||
+                    // 标签：加了标签却搜不到等于白加
+                    s.tags.any { it.contains(kw, true) } ||
+                    // 绑定应用包名
+                    s.targetPkg?.contains(kw, true) == true ||
+                    // 动作参数内容（包名 / 输入文本 / JS 片段 / 目标脚本名）
+                    s.flow?.actions?.any { a ->
+                        a.pkg?.contains(kw, true) == true ||
+                            a.text?.contains(kw, true) == true ||
+                            a.code?.contains(kw, true) == true ||
+                            a.desc?.contains(kw, true) == true ||
+                            a.url?.contains(kw, true) == true ||
+                            a.varName?.contains(kw, true) == true
+                    } == true
             }
         }
         return l
@@ -362,7 +375,7 @@ class ScriptPage(
             setTextColor(Theme.textTer())
         })
         val et = android.widget.EditText(context).apply {
-            hint = "搜索脚本"
+            hint = "搜索名称 / 标签 / 代码 / 动作内容"
             setHintTextColor(Theme.textTer())
             setTextColor(Theme.textPri())
             textSize = 13f
@@ -548,6 +561,7 @@ class ScriptPage(
                     listOf("编辑" to false, "运行" to false, "生成分享码" to false,
                            "加密分享码" to false, "定时与循环" to false,
                            "消息触发" to false, "标签" to false, "导出为文件" to false,
+                           "历史版本" to false,
                            "绑定手势" to false, "重命名" to false, "删除" to true)) { i ->
                     when (i) {
                         0 -> host.openScript(s)
@@ -567,10 +581,13 @@ class ScriptPage(
                         6 -> (context as? android.app.Activity)?.let {
                             TagDialog.editFor(it, s) { renderList() }
                         }
-                        7 -> host.exportScriptFile(s)
-                        8 -> host.openSubPage("float")
-                        9 -> renameDialog(s)
-                        10 -> { AB.store.delete(setOf(s.id))
+                        7 -> (context as? android.app.Activity)?.let {
+                            SnapshotDialog.show(it, s) { renderList() }
+                        }
+                        8 -> host.exportScriptFile(s)
+                        9 -> host.openSubPage("float")
+                        10 -> renameDialog(s)
+                        11 -> { AB.store.delete(setOf(s.id))
                             com.autoball.core.store.GestureBinding.prune(setOf(s.id))
                             renderList() }
                     }

@@ -176,6 +176,15 @@ class EditPage(context: Context, private val host: PageHost) : FrameLayout(conte
      */
     private var clipboard: com.autoball.core.model.Action? = null
 
+    /**
+     * 步骤多选状态（R-108）：批量改等待 / 重复 / 启用 / 删除。
+     *
+     * 长脚本逐个改参数很痛——20 步都要把等待从 500ms 改成 1s，
+     * 得点 20 次编辑框。多选后一次改完。
+     */
+    private val selSteps = LinkedHashSet<Int>()
+    private var multiMode = false
+
     init { build() }
 
     private fun build() {
@@ -366,6 +375,162 @@ class EditPage(context: Context, private val host: PageHost) : FrameLayout(conte
         }, 1600)
     }
 
+    /** 多选工具条：进入/退出 + 全选 + 批量操作 */
+    private fun multiBar(): LinearLayout {
+        val row = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            setPadding(Display.dpInt(context, 10f), Display.dpInt(context, 6f),
+                Display.dpInt(context, 10f), Display.dpInt(context, 6f))
+            background = Theme.rect(Theme.surface2(), 12f, context, Theme.pri())
+        }
+        row.addView(TextView(context).apply {
+            text = if (multiMode) "退出多选" else "☑ 多选"
+            textSize = 12f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(Theme.pri())
+            setPadding(Display.dpInt(context, 10f), Display.dpInt(context, 6f),
+                Display.dpInt(context, 10f), Display.dpInt(context, 6f))
+            setOnClickListener {
+                multiMode = !multiMode
+                if (!multiMode) selSteps.clear()
+                renderSteps()
+            }
+        })
+        if (!multiMode) return row
+
+        val acts = script?.flow?.actions ?: return row
+        row.addView(TextView(context).apply {
+            text = if (selSteps.size == acts.size) "取消全选" else "全选"
+            textSize = 12f
+            setTextColor(Theme.textSec())
+            setPadding(Display.dpInt(context, 10f), Display.dpInt(context, 6f),
+                Display.dpInt(context, 10f), Display.dpInt(context, 6f))
+            setOnClickListener {
+                if (selSteps.size == acts.size) selSteps.clear()
+                else selSteps.addAll(acts.indices)
+                renderSteps()
+            }
+        })
+        row.addView(TextView(context).apply {
+            text = "已选 ${selSteps.size}"
+            textSize = 11.5f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(Theme.pri())
+            setPadding(Display.dpInt(context, 6f), Display.dpInt(context, 6f),
+                Display.dpInt(context, 6f), Display.dpInt(context, 6f))
+        })
+        return row
+    }
+
+    /** 选中步骤的操作按钮：改等待 / 改重复 / 启用 / 禁用 / 删除 */
+    private fun multiActions(): LinearLayout {
+        val row = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            setPadding(Display.dpInt(context, 8f), Display.dpInt(context, 4f),
+                Display.dpInt(context, 8f), Display.dpInt(context, 4f))
+        }
+        fun btn(t: String, danger: Boolean = false, cb: () -> Unit) {
+            row.addView(TextView(context).apply {
+                text = t
+                textSize = 11.5f
+                setTypeface(null, Typeface.BOLD)
+                gravity = Gravity.CENTER
+                setTextColor(if (danger) Theme.danger() else Theme.pri())
+                background = Theme.rect(Theme.surface(), 10f, context,
+                    if (danger) Theme.danger() else Theme.pri())
+                setPadding(Display.dpInt(context, 10f), Display.dpInt(context, 6f),
+                    Display.dpInt(context, 10f), Display.dpInt(context, 6f))
+                val lp = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT)
+                lp.setMargins(Display.dpInt(context, 3f), 0, Display.dpInt(context, 3f), 0)
+                layoutParams = lp
+                setOnClickListener { cb() }
+            })
+        }
+        btn("等待") { batchWait() }
+        btn("重复") { batchRepeat() }
+        btn("启用") { batchEnabled(true) }
+        btn("禁用") { batchEnabled(false) }
+        btn("删除", true) { batchDelete() }
+        return row
+    }
+
+    private fun selected(): List<com.autoball.core.model.Action> {
+        val acts = script?.flow?.actions ?: return emptyList()
+        return selSteps.sorted().mapNotNull { acts.getOrNull(it) }
+    }
+
+    private fun batchWait() {
+        val act = context as? android.app.Activity ?: return
+        val et = android.widget.EditText(act).apply {
+            hint = "毫秒"; setSingleLine(true); textSize = 13f
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER
+        }
+        val box = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
+        box.addView(et)
+        Ui.dialog(act, "统一设置等待（${selSteps.size} 步）").body(box)
+            .width(Theme.DIALOG_W)
+            .negative("取消") { }
+            .positive("确定") {
+                val v = et.text.toString().trim().toLongOrNull()
+                if (v == null) { Ui.toast(act, "请输入毫秒数"); false }
+                else {
+                    selected().forEach { it.waitMs = v }
+                    save(); renderSteps()
+                    Ui.toast(act, "已设置 ${selSteps.size} 步等待 ${v}ms"); true
+                }
+            }.show()
+    }
+
+    private fun batchRepeat() {
+        val act = context as? android.app.Activity ?: return
+        val et = android.widget.EditText(act).apply {
+            hint = "次数"; setSingleLine(true); textSize = 13f
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER
+        }
+        val box = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
+        box.addView(et)
+        Ui.dialog(act, "统一设置重复（${selSteps.size} 步）").body(box)
+            .width(Theme.DIALOG_W)
+            .negative("取消") { }
+            .positive("确定") {
+                val v = et.text.toString().trim().toIntOrNull()
+                if (v == null || v < 1) { Ui.toast(act, "请输入 ≥1 的次数"); false }
+                else {
+                    selected().forEach { it.repeat = v }
+                    save(); renderSteps()
+                    Ui.toast(act, "已设置 ${selSteps.size} 步重复 $v 次"); true
+                }
+            }.show()
+    }
+
+    private fun batchEnabled(on: Boolean) {
+        selected().forEach { it.enabled = on }
+        save(); renderSteps()
+        Ui.toast(context, "已${if (on) "启用" else "禁用"} ${selSteps.size} 步")
+    }
+
+    private fun batchDelete() {
+        val act = context as? android.app.Activity ?: return
+        val n = selSteps.size
+        Ui.dialog(act, "删除 $n 步").body(LinearLayout(act).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(Kit.note(act, "删除后无法撤销（可用脚本快照回滚）。"))
+        }).width(Theme.DIALOG_W)
+            .negative("取消") { }
+            .positive("删除") {
+                val acts = script?.flow?.actions ?: return@positive false
+                selSteps.sortedDescending().forEach { acts.removeAt(it) }
+                selSteps.clear()
+                multiMode = false
+                save(); renderSteps()
+                Ui.toast(act, "已删除 $n 步"); true
+            }.show()
+    }
+
     private fun renderSteps() {
         listBox.removeAllViews()
         val acts = script?.flow?.actions ?: emptyList<Action>().toMutableList()
@@ -375,8 +540,13 @@ class EditPage(context: Context, private val host: PageHost) : FrameLayout(conte
         } else {
             acts.forEachIndexed { i, a -> listBox.addView(stepRow(i, a)) }
         }
+        if (script?.flow?.actions?.isNotEmpty() == true) {
+            listBox.addView(multiBar())
+            if (multiMode && selSteps.isNotEmpty()) listBox.addView(multiActions())
+        }
         listBox.addView(addStepBtn())
         listBox.addView(templateRow())
+        listBox.addView(snapshotRow())
         if (clipboard != null) {
             val row = LinearLayout(context).apply {
                 orientation = LinearLayout.HORIZONTAL
@@ -462,6 +632,19 @@ class EditPage(context: Context, private val host: PageHost) : FrameLayout(conte
                 Display.dpInt(context, 22f))
         })
         row.addView(Kit.twoLine(context, a.type.label, ActionEditor.describe(a)))
+        if (multiMode) {
+            row.addView(TextView(context).apply {
+                text = if (i in selSteps) "☑" else "☐"
+                textSize = 15f
+                gravity = Gravity.CENTER
+                setTextColor(if (i in selSteps) Theme.pri() else Theme.textTer())
+                setPadding(Display.dpInt(context, 6f), 0, Display.dpInt(context, 6f), 0)
+                setOnClickListener {
+                    if (i in selSteps) selSteps.remove(i) else selSteps.add(i)
+                    renderSteps()
+                }
+            })
+        }
         row.addView(Kit.miniBtn(context, "⧉") { copyAt(i) })
         row.addView(Kit.miniBtn(context, "↑") { move(i, -1) })
         row.addView(Kit.miniBtn(context, "↓") { move(i, 1) })
@@ -681,6 +864,32 @@ class EditPage(context: Context, private val host: PageHost) : FrameLayout(conte
      * 单步复制粘贴已解决「重复配置一个动作」，但「点+等+点」这类
      * 多步组合仍要一个个加。模板库补上这一层。
      */
+    /** 历史版本入口：误删动作后的后悔药 */
+    private fun snapshotRow(): LinearLayout {
+        val n = script?.let { com.autoball.core.store.SnapshotStore.count(it.id) } ?: 0
+        val row = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+        }
+        row.addView(TextView(context).apply {
+            text = if (n > 0) "🕘 历史版本（$n）" else "🕘 历史版本"
+            textSize = 12.5f
+            setTypeface(null, Typeface.BOLD)
+            gravity = Gravity.CENTER
+            setTextColor(if (n > 0) Theme.pri() else Theme.textTer())
+            background = Theme.rect(Theme.surface2(), 12f, context,
+                if (n > 0) Theme.pri() else Theme.line())
+            setPadding(Display.dpInt(context, 12f), Display.dpInt(context, 9f),
+                Display.dpInt(context, 12f), Display.dpInt(context, 9f))
+            setOnClickListener {
+                val act = context as? android.app.Activity ?: return@setOnClickListener
+                val s = script ?: return@setOnClickListener
+                SnapshotDialog.show(act, s) { bind(it) }
+            }
+        })
+        return row
+    }
+
     private fun showTemplates() {
         val act = context as? android.app.Activity ?: return
         val list = com.autoball.core.store.ActionTemplateStore.all()

@@ -1,6 +1,8 @@
 package com.autoball.core.util
 
 import com.autoball.core.backend.ScreenResult
+import com.autoball.core.model.ActionCondition
+import com.autoball.core.model.ConditionSet
 import org.json.JSONObject
 
 /**
@@ -32,120 +34,107 @@ object ConditionEval {
         fun findImage(path: String, threshold: Float, region: FloatArray?): Boolean?
         /** 求值 JS 表达式；无引擎返回 null */
         fun evalJs(expr: String): Boolean?
+        /**
+         * 位置周围条件：主匹配点偏移 (dxDp, dyDp) 处的颜色是否匹配。
+         * 由调用方持主匹配点坐标后换算；不支持返回 null。
+         */
+        fun probeAt(dxDp: Float, dyDp: Float, hex: String, tol: Int): Boolean? = null
     }
 
     /**
      * @param raw `Action.condition` 原文：可能是 JSON，也可能是旧的纯表达式
      * @param fallbackExpr 当 raw 不是 JSON 时按旧逻辑求值（保证老脚本不失效）
      */
+    /**
+     * 求值一整组条件（支持多条 + AND/OR）。
+     *
+     * 三条判定原则（R-003：失效优于静默）
+     * 1. 空条件 → 成立（没配就是不做限制）。
+     * 2. 某条**无法判定**（能力缺失）时：AND 下整组判 UNKNOWN，
+     *    OR 下该条**不参与**——OR 本就只要一条成立，无法判定不该拖累其他条。
+     * 3. 绝不把 UNKNOWN 当作成立。
+     */
     fun eval(raw: String?, vars: Map<String, String>, probe: Probe?): Outcome {
-        if (raw.isNullOrBlank()) return Outcome.SATISFIED
+        val set = ConditionSet.parse(raw)
+        if (set.items.isEmpty()) return Outcome.SATISFIED
 
-        val t = raw.trim()
+        val real = set.items.filter { it.kind != ActionCondition.Kind.NONE }
+        if (real.isEmpty()) return Outcome.SATISFIED
 
-        // 不是 JSON → 旧格式（纯表达式），保持向后兼容
-        if (!t.startsWith("{")) {
-            return if (Condition.eval(t, vars)) Outcome.SATISFIED
-            else Outcome.NOT_SATISFIED
+        var anyUnknown = false
+        for (c in real) {
+            when (evalOne(c, vars, probe)) {
+                Outcome.SATISFIED -> if (set.op == ConditionSet.Op.OR) return Outcome.SATISFIED
+                Outcome.NOT_SATISFIED -> if (set.op == ConditionSet.Op.AND) return Outcome.NOT_SATISFIED
+                Outcome.UNKNOWN -> anyUnknown = true
+            }
         }
-
-        val o = runCatching { JSONObject(t) }.getOrNull()
-            ?: return Outcome.UNKNOWN
-
-        val kind = o.optString("k", "NONE")
-        val value = o.optString("v", "")
-        val region = o.optJSONArray("r")?.let { a ->
-            if (a.length() == 4) floatArrayOf(
-                a.optDouble(0, 0.0).toFloat(), a.optDouble(1, 0.0).toFloat(),
-                a.optDouble(2, 0.0).toFloat(), a.optDouble(3, 0.0).toFloat()
-            ) else null
-        }
-
-        return when (kind) {
-            "NONE" -> Outcome.SATISFIED
-
-            "JS" -> when (probe?.evalJs(value)) {
-                true -> Outcome.SATISFIED
-                false -> Outcome.NOT_SATISFIED
-                null -> Outcome.UNKNOWN
-            }
-
-            "COLOR" -> {
-                if (value.isBlank()) return Outcome.UNKNOWN
-                val tol = o.optInt("tol", 10)
-                when (probe?.findColor(value, tol, region)) {
-                    true -> Outcome.SATISFIED
-                    false -> Outcome.NOT_SATISFIED
-                    null -> Outcome.UNKNOWN
-                }
-            }
-
-            "TEXT" -> {
-                if (value.isBlank()) return Outcome.UNKNOWN
-                when (probe?.findText(value, region)) {
-                    true -> Outcome.SATISFIED
-                    false -> Outcome.NOT_SATISFIED
-                    null -> Outcome.UNKNOWN
-                }
-            }
-
-            "IMG" -> {
-                if (value.isBlank()) return Outcome.UNKNOWN
-                val th = o.optDouble("th", 0.9).toFloat()
-                when (probe?.findImage(value, th, region)) {
-                    true -> Outcome.SATISFIED
-                    false -> Outcome.NOT_SATISFIED
-                    null -> Outcome.UNKNOWN
-                }
-            }
-
-            else -> Outcome.UNKNOWN
+        return if (set.op == ConditionSet.Op.AND) {
+            if (anyUnknown) Outcome.UNKNOWN else Outcome.SATISFIED
+        } else {
+            // OR：走完都没成立
+            if (anyUnknown) Outcome.UNKNOWN else Outcome.NOT_SATISFIED
         }
     }
 
-    /**
-     * 在截图像素里找颜色。
-     *
-     * 这是目前**唯一能真实判定**的识别类条件——截图是两条后端都有的能力，
-     * 不需要额外模块。图像/文字匹配依赖按需下载的能力包，缺了就是 UNKNOWN。
-     *
-     * @param region 百分比区域 [l,t,r,b]（0–100）；null 表示整屏
-     */
-    fun matchColor(sr: ScreenResult.Ok, hex: String, tol: Int,
-                   region: FloatArray?): Boolean {
-        val target = runCatching {
-            android.graphics.Color.parseColor(
-                if (hex.startsWith("#")) hex else "#$hex")
-        }.getOrNull() ?: return false
-        val tr = android.graphics.Color.red(target)
-        val tg = android.graphics.Color.green(target)
-        val tb = android.graphics.Color.blue(target)
-
-        val w = sr.width
-        val h = sr.height
-        val px = sr.pixels
-        val x0 = ((region?.get(0) ?: 0f) / 100f * w).toInt().coerceIn(0, w - 1)
-        val y0 = ((region?.get(1) ?: 0f) / 100f * h).toInt().coerceIn(0, h - 1)
-        val x1 = ((region?.get(2) ?: 100f) / 100f * w).toInt().coerceIn(x0 + 1, w)
-        val y1 = ((region?.get(3) ?: 100f) / 100f * h).toInt().coerceIn(y0 + 1, h)
-
-        // 步长：大屏全屏逐像素太慢，按区域面积抽稀，最少 2dp 粒度
-        val step = ((x1 - x0) / 200).coerceAtLeast(1).coerceAtMost(8)
-        val tol2 = tol * tol
-        var y = y0
-        while (y < y1) {
-            var x = x0
-            while (x < x1) {
-                val c = px[y * w + x]
-                val dr = android.graphics.Color.red(c) - tr
-                val dg = android.graphics.Color.green(c) - tg
-                val db = android.graphics.Color.blue(c) - tb
-                if (dr * dr + dg * dg + db * db <= tol2) return true
-                x += step
+    private fun evalOne(c: ActionCondition, vars: Map<String, String>,
+                        probe: Probe?): Outcome {
+        val base = when (c.kind) {
+            ActionCondition.Kind.NONE -> Outcome.SATISFIED
+            ActionCondition.Kind.JS ->
+                if (c.value.isBlank()) Outcome.UNKNOWN
+                else when (probe?.evalJs(c.value)) {
+                    true -> Outcome.SATISFIED
+                    false -> Outcome.NOT_SATISFIED
+                    null -> Outcome.UNKNOWN
+                }
+            ActionCondition.Kind.COLOR -> {
+                if (c.value.isBlank()) return Outcome.UNKNOWN
+                when (probe?.findColor(c.value, c.tol, c.region)) {
+                    true -> matchProbes(c, probe)
+                    false -> Outcome.NOT_SATISFIED
+                    null -> Outcome.UNKNOWN
+                }
             }
-            y += step
+            ActionCondition.Kind.TEXT -> {
+                if (c.value.isBlank()) return Outcome.UNKNOWN
+                when (probe?.findText(c.value, c.region)) {
+                    true -> Outcome.SATISFIED
+                    false -> Outcome.NOT_SATISFIED
+                    null -> Outcome.UNKNOWN
+                }
+            }
+            ActionCondition.Kind.IMAGE -> {
+                if (c.value.isBlank()) return Outcome.UNKNOWN
+                when (probe?.findImage(c.value, c.sim / 100f, c.region)) {
+                    true -> Outcome.SATISFIED
+                    false -> Outcome.NOT_SATISFIED
+                    null -> Outcome.UNKNOWN
+                }
+            }
         }
-        return false
+        return base
+    }
+
+    /**
+     * 位置周围条件（多点找色）：主坐标匹配成功后，再校验周围各点。
+     *
+     * 这是自动精灵「位置周围条件」的用法——单点找色在界面里有大量同色干扰时
+     * 会误命中，加上周围几个点的相对颜色约束就能精确定位。
+     *
+     * 探针能力不足时返回 UNKNOWN（不假装成立）。
+     */
+    private fun matchProbes(c: ActionCondition, probe: Probe): Outcome {
+        if (c.probes.isEmpty()) return Outcome.SATISFIED
+        for (p in c.probes) {
+            if (p.color.isBlank()) continue
+            when (probe.probeAt(p.dx, p.dy, p.color, p.tol)) {
+                true -> Unit
+                false -> return Outcome.NOT_SATISFIED
+                null -> return Outcome.UNKNOWN
+            }
+        }
+        return Outcome.SATISFIED
     }
 
     /**
@@ -228,21 +217,84 @@ object ConditionEval {
         return false
     }
 
+    /**
+     * 在区域/整屏内找目标色；返回**命中点的像素坐标**，没找到返回 null。
+     *
+     * 返回坐标而非布尔值，是为了支持「位置周围条件」——
+     * 后续探针要以这个命中点作基准做偏移校验（多点找色）。
+     */
+    fun findColorPos(sr: ScreenResult.Ok, hex: String, tol: Int,
+                     region: FloatArray?): Pair<Int, Int>? {
+        val want = runCatching { android.graphics.Color.parseColor(hex) }.getOrNull()
+            ?: return null
+        val wr = android.graphics.Color.red(want)
+        val wg = android.graphics.Color.green(want)
+        val wb = android.graphics.Color.blue(want)
+
+        val w = sr.width; val h = sr.height
+        val x0 = ((region?.get(0) ?: 0f) / 100f * w).toInt().coerceIn(0, w - 1)
+        val y0 = ((region?.get(1) ?: 0f) / 100f * h).toInt().coerceIn(0, h - 1)
+        val x1 = ((region?.get(2) ?: 100f) / 100f * w).toInt().coerceIn(x0 + 1, w)
+        val y1 = ((region?.get(3) ?: 100f) / 100f * h).toInt().coerceIn(y0 + 1, h)
+
+        // 抽稀：全屏逐像素太慢。步长按搜索面积自适应，上限 4px。
+        val step = kotlin.math.max(1,
+            kotlin.math.min(4, ((x1 - x0) * (y1 - y0)) / 200_000))
+        val t2 = tol * tol
+        var y = y0
+        while (y < y1) {
+            var x = x0
+            while (x < x1) {
+                val c = sr.pixels[y * w + x]
+                val dr = android.graphics.Color.red(c) - wr
+                val dg = android.graphics.Color.green(c) - wg
+                val db = android.graphics.Color.blue(c) - wb
+                if (dr * dr + dg * dg + db * db <= t2) return x to y
+                x += step
+            }
+            y += step
+        }
+        return null
+    }
+
+    /** 指定像素点是否为目标色（供周围条件探针用） */
+    fun colorAt(sr: ScreenResult.Ok, px: Int, py: Int, hex: String, tol: Int): Boolean {
+        val want = runCatching { android.graphics.Color.parseColor(hex) }.getOrNull()
+            ?: return false
+        val c = sr.pixels[py * sr.width + px]
+        val dr = android.graphics.Color.red(c) - android.graphics.Color.red(want)
+        val dg = android.graphics.Color.green(c) - android.graphics.Color.green(want)
+        val db = android.graphics.Color.blue(c) - android.graphics.Color.blue(want)
+        return dr * dr + dg * dg + db * db <= tol * tol
+    }
+
     /** 给日志用的可读描述 */
     fun describe(raw: String?): String {
-        if (raw.isNullOrBlank()) return "不检测"
-        val t = raw.trim()
-        if (!t.startsWith("{")) return "表达式：$t"
-        val o = runCatching { JSONObject(t) }.getOrNull() ?: return "未知"
-        val k = o.optString("k", "NONE")
-        val v = o.optString("v", "")
-        return when (k) {
-            "NONE" -> "不检测"
-            "JS" -> "JS：$v"
-            "COLOR" -> "颜色 $v"
-            "TEXT" -> "文字「$v」"
-            "IMG" -> "图片匹配"
-            else -> "未知类型"
+        val set = ConditionSet.parse(raw)
+        if (set.items.isEmpty()) return "不检测"
+        val list = set.items.map { one(it) }
+        return if (list.size == 1) list[0]
+        else list.joinToString(if (set.op == ConditionSet.Op.AND) " 且 " else " 或 ")
+    }
+
+    private fun one(c: ActionCondition): String = when (c.kind) {
+        ActionCondition.Kind.NONE -> "不检测"
+        ActionCondition.Kind.JS -> "JS：${c.value}"
+        ActionCondition.Kind.COLOR -> "颜色 ${c.value}" +
+            (if (c.probes.isNotEmpty()) " +${c.probes.size}个周围点" else "")
+        ActionCondition.Kind.TEXT -> "文字「${c.value}」"
+        ActionCondition.Kind.IMAGE -> "图片匹配"
+    }
+
+    /** 能力不足时的修复指引 */
+    fun howToFix(raw: String?): String {
+        val set = ConditionSet.parse(raw)
+        val kinds = set.items.map { it.kind }.toSet()
+        return when {
+            kinds.contains(ActionCondition.Kind.IMAGE) -> "图片匹配需要模板图，请用「取图器」框选并保存"
+            kinds.contains(ActionCondition.Kind.TEXT) -> "文字检测需要 OCR 或节点树能力，当前不可用"
+            kinds.contains(ActionCondition.Kind.COLOR) -> "颜色检测需要截图能力，请开启无障碍或 Shizuku"
+            else -> "需要截图或 JS 引擎能力"
         }
     }
 }

@@ -37,6 +37,16 @@ object TemplateStore {
         return id
     }
 
+    /** 直接保存一张位图（导入端还原内联模板图时用） */
+    fun saveBitmap(bmp: Bitmap): String {
+        val id = "tpl_" + System.currentTimeMillis().toString(36) +
+            "_" + (kotlin.random.Random.nextInt(1000))
+        File(dir(), "$id.png").outputStream().use {
+            bmp.compress(Bitmap.CompressFormat.PNG, 100, it)
+        }
+        return id
+    }
+
     fun load(id: String): Bitmap? = runCatching {
         val f = File(dir(), "$id.png")
         if (!f.exists()) return null

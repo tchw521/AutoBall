@@ -4,6 +4,8 @@ import android.app.Activity
 import android.widget.LinearLayout
 import android.widget.TextView
 import com.autoball.core.model.Action
+import com.autoball.core.model.ActionCondition
+import com.autoball.core.model.ConditionSet
 import com.autoball.core.util.Display
 import org.json.JSONObject
 
@@ -17,9 +19,11 @@ import org.json.JSONObject
  * - 颜色存在：指定点或区域内出现目标颜色
  * - JS 表达式：脚本返回 true 才执行
  *
- * 存储格式：`Action.condition` 存一段紧凑 JSON
- * `{"k":"IMAGE","e":"...","sim":90,"fail":0,"r":[x1,y1,x2,y2]}`，
- * 保证分享码能完整携带，且旧版纯文本条件仍可解析（见 [Kind.from]）。
+ * 数据模型统一在 [ConditionSet] / [ActionCondition]（R-001）。
+ * 此前 UI 写 `e`、求值读 `v`，字段不一致导致所有识别类条件读到空值；
+ * 现在三处（本弹窗 / ConditionEval / ShareCode）共用同一模型。
+ *
+ * 支持多条条件 + AND/OR，以及「位置周围条件」（多点找色）。
  *
  * 修复（v1.4）：原先把选择状态挂在 object 的字段上，弹窗关闭后不清理，
  * 下次打开另一个动作会带着上次残留的相似度与区域。改为全部用局部变量，
@@ -27,177 +31,222 @@ import org.json.JSONObject
  */
 object ConditionDialog {
 
-    private enum class Kind(val label: String, val desc: String) {
-        NONE("不检测", "无条件，直接执行本动作"),
-        IMAGE("图片存在", "截屏后在指定区域内找图，相似度达标才执行"),
-        TEXT("文字存在", "在节点树或 OCR 结果里能找到指定文字才执行"),
-        COLOR("颜色存在", "指定点或区域内出现目标颜色才执行"),
-        JS("JS 表达式", "脚本返回 true 才执行"),
-        ;
-        companion object {
-            fun byName(s: String?): Kind =
-                values().firstOrNull { it.name.equals(s?.trim(), true) } ?: NONE
-        }
-    }
-
     private val SIMS = intArrayOf(70, 80, 90, 95)
-    private val ON_FAIL = arrayOf("跳过本动作", "等待重试", "停止脚本")
-
-    /** 条件区域：百分比 0–100 的 [x1,y1,x2,y2] */
-    private data class Cond(
-        var kind: Kind = Kind.NONE,
-        var expr: String = "",
-        var sim: Int = 90,
-        var fail: Int = 0,
-        var region: FloatArray? = null
-    )
-
-    /** 从 Action.condition 还原；兼容旧的 "KIND: expr" 纯文本格式 */
-    private fun parse(raw: String?): Cond {
-        if (raw.isNullOrBlank()) return Cond()
-        val t = raw.trim()
-        if (t.startsWith("{")) {
-            return runCatching {
-                val o = JSONObject(t)
-                val r = o.optJSONArray("r")
-                Cond(
-                    kind = Kind.byName(o.optString("k", "NONE")),
-                    expr = o.optString("e", ""),
-                    sim = o.optInt("sim", 90),
-                    fail = o.optInt("fail", 0),
-                    region = if (r != null && r.length() == 4)
-                        FloatArray(4) { r.optDouble(it, 0.0).toFloat() } else null
-                )
-            }.getOrDefault(Cond(expr = t))
-        }
-        val name = t.substringBefore(":").trim()
-        return Cond(kind = Kind.byName(name), expr = t.substringAfter(":", "").trim())
-    }
-
-    private fun serialize(c: Cond): String? {
-        if (c.kind == Kind.NONE) return null
-        return JSONObject().apply {
-            put("k", c.kind.name)
-            put("e", c.expr)
-            put("sim", c.sim)
-            put("fail", c.fail)
-            c.region?.let { r ->
-                put("r", org.json.JSONArray().apply { r.forEach { put(it.toDouble()) } })
-            }
-        }.toString()
-    }
+    private val TOLS = intArrayOf(5, 10, 24, 48)
 
     fun show(activity: Activity, a: Action, onChanged: () -> Unit) {
         val ctx = activity
-        val c = parse(a.condition)
+        val set = ConditionSet.parse(a.condition)
 
         val box = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
-        var exprEdit: android.widget.EditText? = null
 
         fun commit() {
-            exprEdit?.text?.toString()?.trim()?.let { c.expr = it }
-            a.condition = serialize(c)
+            a.condition = ConditionSet.serialize(set)
             onChanged()
         }
 
-        fun rebuild() {
-            box.removeAllViews()
+        /** 区域的可读文本（百分比，保留一位小数） */
+        fun regionText(r: FloatArray?): String {
+            if (r == null || r.size < 4) return "整屏"
+            return "%.1f%%, %.1f%% → %.1f%%, %.1f%%".format(r[0], r[1], r[2], r[3])
+        }
 
-            box.addView(Ui.adRow(ctx, "条件类型", c.kind.label, c.kind != Kind.NONE, c.kind.desc) {
-                Ui.popMenu(ctx, box, Kind.values().map { it.label },
-                    Kind.values().indexOf(c.kind)) { i ->
-                    c.kind = Kind.values()[i]
-                    rebuild()
-                }
-            })
+        fun editCond(c: ActionCondition) {
+            val inner = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
+            var exprEdit: android.widget.EditText? = null
 
-            if (c.kind != Kind.NONE) {
-                box.addView(Ui.adSec(ctx))
+            fun fill() {
+                inner.removeAllViews()
+                inner.addView(Ui.adRow(ctx, "条件类型", c.kind.label,
+                    c.kind != ActionCondition.Kind.NONE, c.kind.desc) {
+                    Ui.popMenu(ctx, inner,
+                        ActionCondition.Kind.values().map { it.label },
+                        ActionCondition.Kind.values().indexOf(c.kind)) { i ->
+                        c.kind = ActionCondition.Kind.values()[i]
+                        fill()
+                    }
+                })
+
+                if (c.kind == ActionCondition.Kind.NONE) return
+
+                inner.addView(Ui.adSec(ctx))
                 val hint = when (c.kind) {
-                    Kind.IMAGE -> "图片名或分享码"
-                    Kind.TEXT -> "要找的文字"
-                    Kind.COLOR -> "颜色，如 #FF0000"
-                    Kind.JS -> "返回 true/false 的表达式"
-                    Kind.NONE -> ""
+                    ActionCondition.Kind.IMAGE -> "模板图（请用取图器）"
+                    ActionCondition.Kind.TEXT -> "要找的文字"
+                    ActionCondition.Kind.COLOR -> "颜色，如 #FF0000"
+                    ActionCondition.Kind.JS -> "返回 true/false 的表达式"
+                    else -> ""
                 }
-                val et = Ui.adText(ctx, c.expr, hint)
-                box.addView(et)
+                val et = Ui.adText(ctx, c.value, hint)
+                inner.addView(et)
                 exprEdit = et
 
                 // 取色 / 取图入口：这两个条件此前只能手填色值和路径，
                 // 用户无从得知目标色的准确值、也生成不了模板图，等于用不起来。
-                if (c.kind == Kind.COLOR) {
-                    box.addView(Ui.adRow(ctx, "取色器", "点屏幕取当前颜色", false,
+                if (c.kind == ActionCondition.Kind.COLOR) {
+                    inner.addView(Ui.adRow(ctx, "取色器", "点屏幕取当前颜色", false,
                         "自动隐藏本应用界面并截图，点一下屏幕即可取到准确色值") {
-                        val act = activity ?: return@adRow
-                        ScreenPicker.pick(ctx, act, ScreenPicker.Mode.COLOR,
-                            hostDialog = null,
+                        ScreenPicker.pick(ctx, activity, ScreenPicker.Mode.COLOR,
                             onColor = { hex ->
-                                c.expr = hex
+                                c.value = hex
                                 et.setText(hex)
-                                commit()
                                 Ui.toast(ctx, "已取色 $hex")
                             })
                     })
                 }
-                if (c.kind == Kind.IMAGE) {
-                    box.addView(Ui.adRow(ctx, "取图器", "框选区域存为模板", false,
+                if (c.kind == ActionCondition.Kind.IMAGE) {
+                    inner.addView(Ui.adRow(ctx, "取图器", "框选区域存为模板", false,
                         "框选要匹配的区域，自动裁剪存为模板图。\n" +
-                        "注意：模板图存放在本机，不随分享码走——" +
-                        "他人导入此脚本后该条件会判定为无法检测并跳过。") {
-                        val act = activity ?: return@adRow
-                        ScreenPicker.pick(ctx, act, ScreenPicker.Mode.IMAGE,
-                            hostDialog = null,
+                        "模板图会压缩后随分享码一起走（长边 160px）。") {
+                        ScreenPicker.pick(ctx, activity, ScreenPicker.Mode.IMAGE,
                             onImage = { ref ->
-                                c.expr = ref
+                                c.value = ref
                                 et.setText(ref)
-                                commit()
                                 Ui.toast(ctx, "模板已保存")
                             })
                     })
                 }
 
+                // 检测区域：在截图上拖框（原先只能手填四个数值，等于从不生效）
+                inner.addView(Ui.adRow(ctx, "检测区域", regionText(c.region),
+                    c.region != null,
+                    "缩小检测范围可提速；在截图上拖框即可，不用手填数值") {
+                    ScreenPicker.pick(ctx, activity, ScreenPicker.Mode.REGION,
+                        onRegionPct = { r ->
+                            c.region = r
+                            Ui.toast(ctx, "已选区域 ${regionText(r)}")
+                            fill()
+                        })
+                })
+
+                // 位置周围条件（多点找色）：主色命中后校验周围偏移点的颜色
+                if (c.kind == ActionCondition.Kind.COLOR) {
+                    inner.addView(Ui.adSec(ctx))
+                    inner.addView(Ui.adRow(ctx, "位置周围条件",
+                        if (c.probes.isEmpty()) "未设置" else "${c.probes.size} 个周围点",
+                        c.probes.isNotEmpty(),
+                        "单点找色在界面里同色干扰多时容易误命中；"
+                        + "加上周围几个点的相对颜色约束就能精确定位。") {
+                        editProbes(ctx, activity, c) { fill() }
+                    })
+                }
+
+                if (c.kind == ActionCondition.Kind.IMAGE) {
+                    inner.addView(Ui.adRow(ctx, "相似度", "${c.sim}%", true,
+                        "越高越严格，越容易漏检") {
+                        Ui.popMenu(ctx, inner, SIMS.map { "$it%" },
+                            SIMS.indexOf(c.sim).coerceAtLeast(0)) { k ->
+                            c.sim = SIMS[k]; fill()
+                        }
+                    })
+                }
+                if (c.kind == ActionCondition.Kind.COLOR) {
+                    inner.addView(Ui.adRow(ctx, "颜色容差", "${c.tol}", true,
+                        "越大越宽松；抗锯齿与渐变会让像素色值有偏差") {
+                        Ui.popMenu(ctx, inner, TOLS.map { "$it" },
+                            TOLS.indexOf(c.tol).coerceAtLeast(0)) { k ->
+                            c.tol = TOLS[k]; fill()
+                        }
+                    })
+                }
+            }
+            fill()
+
+            Ui.dialog(ctx, "编辑条件").body(inner)
+                .width(Theme.DIALOG_W + 10f).maxHeight(0.8f)
+                .negative("删除本条") {
+                    set.items.remove(c)
+                    commit(); rebuild()
+                }
+                .positive("确定") {
+                    exprEdit?.text?.toString()?.trim()?.let { c.value = it }
+                    commit(); rebuild(); true
+                }.show()
+        }
+
+        fun rebuild() {
+            box.removeAllViews()
+
+            val real = set.items.filter { it.kind != ActionCondition.Kind.NONE }
+            if (real.size > 1) {
+                box.addView(Ui.adRow(ctx, "多条件关系", set.op.label, true, set.op.desc) {
+                    Ui.popMenu(ctx, box, ConditionSet.Op.values().map { it.label },
+                        ConditionSet.Op.values().indexOf(set.op)) { i ->
+                        set.op = ConditionSet.Op.values()[i]
+                        commit(); rebuild()
+                    }
+                })
                 box.addView(Ui.adSec(ctx))
-                box.addView(Ui.adRow(ctx, "条件区域",
-                    if (c.region == null) "整屏" else "已选区域", c.region != null,
-                    "缩小检测范围可提速") {
-                    RegionPicker.pick(ctx, activity, null) { x1, y1, x2, y2 ->
-                        c.region = floatArrayOf(x1, y1, x2, y2)
-                        rebuild()
-                    }
-                })
-                box.addView(Ui.adRow(ctx, "相似度", "${c.sim}%", true,
-                    "越高越严格，越容易漏检") {
-                    Ui.popMenu(ctx, box, SIMS.map { "$it%" },
-                        SIMS.indexOf(c.sim).coerceAtLeast(0)) { k ->
-                        c.sim = SIMS[k]
-                        rebuild()
-                    }
-                })
-                box.addView(Ui.adRow(ctx, "条件不成立时", ON_FAIL[c.fail], true,
-                    "决定条件不满足时脚本如何继续") {
-                    Ui.popMenu(ctx, box, ON_FAIL.toList(), c.fail) { k ->
-                        c.fail = k
-                        rebuild()
-                    }
+            }
+
+            real.forEachIndexed { idx, c ->
+                box.addView(Ui.adRow(ctx, "条件 ${idx + 1}", one(c), true,
+                    "点开可修改本条；长按右侧 ✕ 可删除") {
+                    editCond(c)
                 })
             }
 
-            box.addView(TextView(ctx).apply {
-                text = "条件在执行前检查；不成立则按上方策略处理。"
-                textSize = 10.5f
-                setTextColor(Theme.textTer())
-                setPadding(Display.dpInt(ctx, 8f), Display.dpInt(ctx, 6f),
-                    Display.dpInt(ctx, 8f), 0)
+            box.addView(Kit.button(ctx, "＋ 添加条件", false) {
+                val nc = ActionCondition()
+                set.items.add(nc)
+                editCond(nc)
             })
+
+            box.addView(Kit.note(ctx,
+                "多条条件时可选「全部满足」或「任一满足」。"
+                + "无法判定（如缺少截图能力）时按不满足跳过，不会静默当作成立。"))
         }
 
         rebuild()
-        Ui.dialog(ctx, "运行条件")
-            .body(box)
-            .width(Theme.DIALOG_W)
+
+        Ui.dialog(ctx, "运行条件").body(box)
+            .width(Theme.DIALOG_W + 10f).maxHeight(0.82f)
             .negative("清除") { a.condition = null; onChanged() }
             .positive("确定") { commit(); true }
             .show()
+    }
+
+    private fun one(c: ActionCondition): String {
+        val tail = if (c.probes.isNotEmpty()) " · 周围${c.probes.size}点" else ""
+        return when (c.kind) {
+            ActionCondition.Kind.NONE -> "不检测"
+            ActionCondition.Kind.JS -> "JS：${c.value}"
+            ActionCondition.Kind.COLOR -> "颜色 ${c.value}$tail"
+            ActionCondition.Kind.TEXT -> "文字「${c.value}」"
+            ActionCondition.Kind.IMAGE -> "图片匹配 ${c.sim}%"
+        }
+    }
+
+    /** 位置周围条件编辑器：增删探针，每个探针含偏移与颜色 */
+    private fun editProbes(ctx: Activity, act: Activity, c: ActionCondition,
+                           onChanged: () -> Unit) {
+        val box = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
+
+        fun fill() {
+            box.removeAllViews()
+            box.addView(Kit.note(act,
+                "主坐标匹配成功后，再校验这些偏移点。偏移单位 dp，换机型保持一致。"))
+            c.probes.forEachIndexed { i, p ->
+                box.addView(Kit.rowCard(act).apply {
+                    addView(Kit.twoLine(act, "偏移 (${p.dx.toInt()}, ${p.dy.toInt()})",
+                        "${p.color.ifEmpty { "未取色" }} · 容差 ${p.tol}"))
+                    addView(Kit.miniBtn(act, "取色") {
+                        ScreenPicker.pick(act, act, ScreenPicker.Mode.COLOR,
+                            onColor = { hex -> p.color = hex; onChanged(); fill() })
+                    })
+                    addView(Kit.miniBtn(act, "✕") { c.probes.removeAt(i); onChanged(); fill() })
+                })
+            }
+            box.addView(Kit.button(act, "＋ 添加周围点", false) {
+                c.probes.add(ActionCondition.Probe())
+                onChanged(); fill()
+            })
+        }
+        fill()
+
+        Ui.dialog(act, "位置周围条件").body(box)
+            .width(Theme.DIALOG_W + 10f).maxHeight(0.8f)
+            .negative("清空") { c.probes.clear(); onChanged(); fill() }
+            .positive("确定") { onChanged(); true }.show()
     }
 }

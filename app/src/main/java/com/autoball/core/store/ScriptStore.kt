@@ -59,6 +59,8 @@ class ScriptStore(private val ctx: Context) {
         val list = all()
         val idx = list.indexOfFirst { it.id == s.id }
         s.updatedAt = System.currentTimeMillis()
+        // 快照必须在覆盖**之前**留——存的是能被回退到的旧版本
+        if (idx >= 0) runCatching { SnapshotStore.snapshot(list[idx]) }
         if (idx >= 0) list[idx] = s else list.add(s)
         writeAll(list)
     }
@@ -66,6 +68,8 @@ class ScriptStore(private val ctx: Context) {
     fun delete(ids: Collection<String>) = synchronized(lock) {
         val list = all().filterNot { it.id in ids }.toMutableList()
         writeAll(list)
+        // 脚本删了，它的快照一起清掉，否则会留下一堆永远用不到的孤儿文件
+        ids.forEach { runCatching { SnapshotStore.clearFor(it) } }
     }
 
     fun move(ids: Collection<String>, groupId: String) = synchronized(lock) {
