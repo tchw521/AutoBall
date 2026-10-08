@@ -14,6 +14,14 @@ package com.autoball.core.model
  *
  * 每个预设描述：显示名、所属分组、动作类型、选中后套用的参数。
  */
+/** 按键码常量——此前散落在 UI 与工具面板两处 */
+object KeyCode {
+    const val HOME = 3
+    const val BACK = 4
+    const val RECENTS = 187
+    const val EXPAND_STATUS = 1001
+}
+
 data class ActionPreset(
     val label: String,
     val group: String,
@@ -40,14 +48,6 @@ data class ActionPreset(
         const val G_RECOGNIZE = "识别定位"
         const val G_SYSTEM = "系统操作"
         const val G_ADVANCE = "高级"
-
-        /** 按键码常量——此前散落在 UI 与工具面板两处 */
-        object KeyCode {
-            const val HOME = 3
-            const val BACK = 4
-            const val RECENTS = 187
-            const val EXPAND_STATUS = 1001
-        }
 
         val ALL: List<ActionPreset> = listOf(
             // ---- 基础触摸 ----
@@ -85,13 +85,13 @@ data class ActionPreset(
 
             // ---- 系统操作 ----
             ActionPreset("返回键", G_SYSTEM, ActionType.KEY,
-                { it.keyCode = KeyCode.BACK }, "系统返回"),
+                { it.keyCode = com.autoball.core.model.KeyCode.BACK }, "系统返回"),
             ActionPreset("返回桌面", G_SYSTEM, ActionType.KEY,
-                { it.keyCode = KeyCode.HOME }, "回到主屏幕"),
+                { it.keyCode = com.autoball.core.model.KeyCode.HOME }, "回到主屏幕"),
             ActionPreset("最近任务", G_SYSTEM, ActionType.KEY,
-                { it.keyCode = KeyCode.RECENTS }, "打开最近任务列表"),
+                { it.keyCode = com.autoball.core.model.KeyCode.RECENTS }, "打开最近任务列表"),
             ActionPreset("下拉状态栏", G_SYSTEM, ActionType.KEY,
-                { it.keyCode = KeyCode.EXPAND_STATUS }, "展开通知栏"),
+                { it.keyCode = com.autoball.core.model.KeyCode.EXPAND_STATUS }, "展开通知栏"),
             ActionPreset("屏幕截屏", G_SYSTEM, ActionType.RECOGNIZE_SCREEN,
                 hint = "截取当前屏幕"),
             ActionPreset("打开应用", G_SYSTEM, ActionType.OPEN_APP,

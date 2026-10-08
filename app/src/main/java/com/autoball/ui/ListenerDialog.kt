@@ -49,6 +49,41 @@ object ListenerDialog {
         }
     }
 
+    /**
+     * 动作级监听：`Action.listeners`（key 用 Stage 的 name）。
+     *
+     * 与脚本级 9 时机的区别：那作用于整段脚本，这里只作用于当前动作。
+     * 两者存储互不干扰（Flow.hooks vs Action.listeners）。
+     */
+    fun show(activity: Activity, a: Action, onChanged: () -> Unit) {
+        val ctx = activity
+        val box = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
+        box.addView(Ui.note(ctx,
+            "这些钩子只作用于当前动作；整段脚本的钩子在「脚本全局设置 → 全局监听动作」。"))
+
+        fun fill() {
+            box.removeAllViews()
+            box.addView(Ui.note(ctx,
+                "这些钩子只作用于当前动作；整段脚本的钩子在「脚本全局设置 → 全局监听动作」。"))
+            Stage.values().forEach { st ->
+                val hook = a.listeners[st.name]
+                box.addView(Ui.adRow(ctx, st.label,
+                    if (hook == null) "未设置" else "已设置", hook != null, st.hint) {
+                    ActionEditor.show(activity, hook) { na ->
+                        a.listeners[st.name] = na
+                        fill()
+                    }
+                })
+            }
+        }
+        fill()
+
+        Ui.dialog(activity, "监听动作").body(box)
+            .width(Theme.DIALOG_W + 10f).maxHeight(0.8f)
+            .negative("清除全部") { a.listeners.clear(); onChanged() }
+            .positive("确定") { onChanged(); true }.show()
+    }
+
     fun show(activity: Activity, flow: Flow, onChanged: () -> Unit) {
         val ctx = activity
         val box = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }

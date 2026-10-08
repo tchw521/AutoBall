@@ -18,6 +18,7 @@ import com.autoball.core.backend.ScreenResult
 import com.autoball.core.util.Display
 import com.autoball.float.FloatManager
 import com.autoball.float.FloatWindows
+import com.autoball.core.store.TemplateStore
 
 /**
  * 屏幕取色 / 取图（统一组件，解决 R-101）。
@@ -94,19 +95,15 @@ object ScreenPicker {
 
     private fun showLayer(ctx: Context, activity: Activity?, bmp: Bitmap, mode: Mode,
                           onColor: ((String) -> Unit)?, onImage: ((String) -> Unit)?) {
+        val onDone: () -> Unit = { restore(activity); removeNow() }
         val layer = PickView(ctx, bmp, mode,
-            onColor = { hex ->
-                onColor?.invoke(hex)
-                restore(activity)
-                removeNow()
-            },
+            onColor = { hex -> onColor?.invoke(hex); onDone() },
             onRegion = { l, t, r, b ->
                 val ref = TemplateStore.save(bmp, l, t, r, b)
                 onImage?.invoke(ref)
-                restore(activity)
-                removeNow()
+                onDone()
             },
-            onCancel = { restore(activity); removeNow() })
+            onCancel = onDone)
 
         val p = WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT,
@@ -127,15 +124,14 @@ object ScreenPicker {
         hostDialog = null
         FloatWindows.restore()
         FloatManager.restore()
+        val act = activity ?: return
         runCatching {
-            activity?.startActivity(Intent(ctx()).setClassName(
-                ctx().packageName, activity::class.java.name
-            ).addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or
-                    Intent.FLAG_ACTIVITY_NEW_TASK))
+            act.startActivity(
+                Intent(act, act::class.java).addFlags(
+                    Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or
+                        Intent.FLAG_ACTIVITY_NEW_TASK))
         }
     }
-
-    private fun ctx(): Context = AB.ctx
 
     fun removeNow() {
         runCatching { view?.let { wm?.removeView(it) } }

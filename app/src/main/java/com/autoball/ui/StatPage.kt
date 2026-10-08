@@ -5,6 +5,7 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 import com.autoball.AB
 import com.autoball.core.log.RunLog
+import com.autoball.core.util.Display
 import com.autoball.core.model.Script
 
 /**

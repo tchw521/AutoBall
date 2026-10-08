@@ -14,6 +14,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import com.autoball.core.model.Action
 import com.autoball.core.model.ActionPreset
+import com.autoball.core.model.KeyCode
 import com.autoball.core.model.ActionType
 import com.autoball.core.model.ControlOp
 import com.autoball.core.util.Display
@@ -350,10 +351,10 @@ object ActionEditor {
                 val et = numField(ctx, a.keyCode.takeIf { it != 0 }?.toString() ?: "", "选填")
                 readers["key"] = { a.keyCode = et.text.toString().trim().toIntOrNull() ?: 0 }
                 box.addView(zsRow(ctx, "按键码", et, null, null,
-                    help = "常用：${ActionPreset.KeyCode.HOME}=HOME  " +
-                        "${ActionPreset.KeyCode.BACK}=返回  " +
-                        "${ActionPreset.KeyCode.RECENTS}=最近任务  " +
-                        "${ActionPreset.KeyCode.EXPAND_STATUS}=下拉状态栏\n" +
+                    help = "常用：${KeyCode.HOME}=HOME  " +
+                        "${KeyCode.BACK}=返回  " +
+                        "${KeyCode.RECENTS}=最近任务  " +
+                        "${KeyCode.EXPAND_STATUS}=下拉状态栏\n" +
                         "选预设动作时会自动填好，一般无需手工输入。"))
             }
             if (g.contains(com.autoball.core.model.FieldGroup.CODE)) {
