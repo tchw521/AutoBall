@@ -51,7 +51,11 @@ object ConditionDialog {
             return "%.1f%%, %.1f%% → %.1f%%, %.1f%%".format(r[0], r[1], r[2], r[3])
         }
 
-        fun rebuild() {
+        // rebuild 与 editCond 互相调用，局部函数不支持前向引用。
+        // 用 lateinit lambda 变量声明在前，editCond 里就能引用它。
+        lateinit var rebuild: () -> Unit
+
+        rebuild = {
             box.removeAllViews()
 
             val real = set.items.filter { it.kind != ActionCondition.Kind.NONE }

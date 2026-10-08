@@ -122,6 +122,22 @@ jobs:
           echo "APK 数量: $n"
           if [ "$n" -eq 0 ]; then echo "未产出 APK"; exit 1; fi
 
+      # 编译失败时把 Kotlin 错误单独存成 artifact，便于外部读取诊断
+      # （job logs 接口对外部 token 常返回 403，只能走 artifact）
+      - name: 导出编译错误
+        if: always()
+        run: |
+          { grep -E '^e: |error:|FAILED' build-debug.log || true; } > compile-errors.txt
+          wc -l compile-errors.txt || true
+
+      - name: Upload 编译错误
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: compile-errors-${{ matrix.engine }}
+          path: compile-errors.txt
+          if-no-files-found: warn
+
       - name: Report APK size
         if: always()
         run: |
