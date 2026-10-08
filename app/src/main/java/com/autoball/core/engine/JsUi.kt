@@ -37,7 +37,7 @@ object JsUi {
     private const val DEFAULT_TIMEOUT_MS = 30_000L
 
     /** 结果：是否拿到答复 + 答复内容 */
-    private class Answer(val got: Boolean, val value: String? = null,
+    class Answer(val got: Boolean, val value: String? = null,
                          val picked: List<Int> = emptyList())
 
     fun toast(ctx: Context, msg: String, durationMs: Int) {

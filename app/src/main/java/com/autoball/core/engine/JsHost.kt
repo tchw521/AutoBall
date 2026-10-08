@@ -580,12 +580,19 @@ class JsHost(
         else -> def
     }
 
-    /** items 可能是 JSONArray，也可能是换行串 */
-    private fun parseStringList(v: Any?): List<String> = when (v) {
-        is JSONArray -> (0 until v.length()).map { v.optString(it) }
-        is Iterable<*> -> v.mapNotNull { it?.toString() }
-        is String -> split("\n").map { it.trim() }.filter { it.isNotEmpty() }
-        else -> emptyList()
+    /** items 可能是 JSONArray、数组或换行串 */
+    private fun parseStringList(v: Any?): List<String> {
+        val arr = v as? JSONArray
+        if (arr != null) {
+            val out = ArrayList<String>()
+            for (i in 0 until arr.length()) out.add(arr.optString(i))
+            return out
+        }
+        val it = v as? Iterable<*>
+        if (it != null) return it.mapNotNull { x -> x?.toString() }
+        val str = v as? String
+        if (str != null) return str.split("\n").map { x -> x.trim() }.filter { x -> x.isNotEmpty() }
+        return emptyList()
     }
 
     /** 单键名 → 键码 */
