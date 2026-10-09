@@ -329,6 +329,7 @@ object ConditionDialog {
             ActionCondition.Kind.COLOR -> "颜色 ${c.value}$tail"
             ActionCondition.Kind.TEXT -> "文字「${c.value}」"
             ActionCondition.Kind.IMAGE -> "图片匹配 ${c.sim}%"
+            ActionCondition.Kind.AI -> "AI云识别（不可用）"
             ActionCondition.Kind.NODE -> {
                 val sp = c.nodeSpec
                 val what = sp?.text ?: sp?.id ?: sp?.desc ?: sp?.className ?: "未设置"

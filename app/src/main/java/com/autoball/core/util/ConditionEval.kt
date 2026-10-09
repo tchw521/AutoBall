@@ -506,6 +506,7 @@ object ConditionEval {
             val what = sp?.text ?: sp?.id ?: sp?.desc ?: sp?.className ?: "未设置"
             "节点「$what」"
         }
+        ActionCondition.Kind.AI -> "AI云识别（需联网，当前按无法判定处理）"
         ActionCondition.Kind.VAR -> {
             val n = c.value.trimStart('$')
             if (c.cmp == ActionCondition.Cmp.EXISTS) "变量 $n 已定义"
