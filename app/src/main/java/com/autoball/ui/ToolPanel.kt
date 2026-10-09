@@ -17,7 +17,7 @@ import com.autoball.float.FloatWindows
  * 自动精灵的这一屏是 3 列宫格，点一下就把对应动作追加到脚本末尾：
  * 返回键 / 返回桌面 / 最近任务 / 屏幕截屏 / 下拉状态栏 / 打开App /
  * 图像匹配 / 节点匹配 / 颜色匹配 / 文字输入 / 文字匹配 /
- * 连续点击 / 随机点击 / 覆盖点击 / 定长滑动
+ * 连击 / 覆盖点击 / 定长滑动
  *
  * 与 [ActionEditor] 的分工：这里只做**高频、参数可缺省**的动作，
  * 一点即插入；需要精细配坐标与条件的仍走动作编辑器。
@@ -34,7 +34,7 @@ object ToolPanel {
     private val QUICK: List<ActionPreset> = listOf(
         "返回键", "返回桌面", "最近任务", "屏幕截屏", "下拉状态栏", "打开应用",
         "图像匹配", "节点匹配", "颜色匹配", "输入文字", "文字匹配",
-        "连续点击", "随机点击", "点击", "定长滑动"
+        "连击", "点击", "定长滑动"
     ).mapNotNull { lb -> ActionPreset.ALL.firstOrNull { it.label == lb } }
 
     fun show(ctx: Context, script: Script, onAdded: (Action) -> Unit) {

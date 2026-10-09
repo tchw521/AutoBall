@@ -246,6 +246,15 @@
       转换/describe 五处）、长按、随机点击。**保留**：连续点击。
       最终 25 项。
 
+- [x] ~~R-146 连击次数自由填写~~ ✅ v1.47.0（未编译验证）
+      重复次数改为**纯整数**输入（此前带 TYPE_NUMBER_FLAG_DECIMAL，
+      输入 5.5 会 toIntOrNull 失败 → 静默变 0 → 运行时兜成 1，
+      用户以为填了 5.5 次实际只点 1 次）。
+      「重复间隔」**始终显示**：此前只在 repeat > 1 时才建这一行，
+      于是"先选点击、再把次数改成 10"时根本填不了间隔（表单早建好了），
+      必须存了重开才能配。
+      连击预设不再固定 5 次，只给能看出效果的起始值；次数上限不设。
+
 - [ ] **R-128 内置 OCR 模块**（P2）：`ocr()` 当前直接报错，需引三方或自训练模型
 - [ ] **R-129 设备开关类 API**（P3）：wakeupScreen / setScreenBrightness /
       setWifiEnable / setBluetoothEnable / setCameraFlashEnable 多需系统签名权限，

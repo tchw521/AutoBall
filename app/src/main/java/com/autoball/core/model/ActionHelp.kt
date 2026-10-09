@@ -108,7 +108,9 @@ object ActionHelp {
 
     /** 重复次数 */
     fun repeat(a: Action): String = when (a.type) {
-        ActionType.CLICK -> "该动作重复执行几次。留空按 1 次。\n连续点击可填 5～20，配合间隔使用。"
+        ActionType.CLICK -> "该动作重复执行几次，**想点几次就填几次，不设上限**。\n" +
+            "留空或填 0 按 1 次。连击就是"次数 × 间隔"：如 10 次 × 200 毫秒。\n" +
+            "次数越多总耗时越长，脚本停止按钮随时可中断。"
         ActionType.SWIPE -> "重复滑动几次。\n连续翻页常填 3～10，配合间隔使用。"
         ActionType.KEY -> "重复按几次键。\n连续返回常用 2～3 次。"
         else -> "该动作重复执行几次。留空按 1 次。"
@@ -116,7 +118,7 @@ object ActionHelp {
 
     /** 重复间隔 */
     fun interval(a: Action): String =
-        "每次重复之间的间隔。\n留空则不等待——连续点击时建议填 100～500 毫秒，避免被判为连击。"
+        "每次重复之间的间隔。\n留空则不等待——连击时建议填 100～500 毫秒，间隔太小会被系统判为误触。"
 
     /** 文本字段：按类型语义差别很大 */
     fun text(a: Action): String = when (a.type) {

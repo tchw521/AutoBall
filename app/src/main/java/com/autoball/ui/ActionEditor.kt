@@ -408,21 +408,25 @@ object ActionEditor {
                     a.waitMs = ms
                 })
 
-            // 重复次数
-            val repEt = numField(ctx, a.repeat.takeIf { it > 0 }?.toString() ?: "", "选填")
+            // 重复次数：**想点几次就填几次**，不设上限。
+            // 用纯整数输入框——此前带 TYPE_NUMBER_FLAG_DECIMAL，
+            // 输入 5.5 会让 toIntOrNull 失败并静默变成 0（运行时再兜成 1），
+            // 用户以为填了 5.5 次，实际只点 1 次。
+            val repEt = intField(ctx, a.repeat.takeIf { it > 0 }?.toString() ?: "", "选填")
             readers["repeat"] = { a.repeat = repEt.text.toString().trim().toIntOrNull() ?: 0 }
             box.addView(zsRow(ctx, "重复次数", repEt, "次", null,
                 help = ActionHelp.repeat(a)))
 
-            if (a.repeat > 1) {
-                val ivEt = numField(ctx,
-                    a.repeatIntervalMs.takeIf { it > 0 }?.toString() ?: "", "选填")
-                readers["interval"] = {
-                    a.repeatIntervalMs = ivEt.text.toString().trim().toLongOrNull() ?: 0L
-                }
-                box.addView(zsRow(ctx, "重复间隔", ivEt, "毫秒", null,
-                    help = ActionHelp.interval(a)))
+            // 间隔**始终显示**：此前只在 repeat > 1 时才出现，
+            // 于是"先选点击、再把次数改成 10"的情况下根本填不了间隔
+            // ——因为表单是在改次数之前就建好的，得存了重开才能配间隔。
+            val ivEt = intField(ctx,
+                a.repeatIntervalMs.takeIf { it > 0 }?.toString() ?: "", "选填")
+            readers["interval"] = {
+                a.repeatIntervalMs = ivEt.text.toString().trim().toLongOrNull() ?: 0L
             }
+            box.addView(zsRow(ctx, "重复间隔", ivEt, "毫秒", null,
+                help = ActionHelp.interval(a)))
 
             // ---- 文本 / 包名 / 代码等 ----
             if (g.contains(com.autoball.core.model.FieldGroup.TEXT)) {
@@ -630,40 +634,20 @@ object ActionEditor {
 
         fun fill() {
             listBox.removeAllViews()
-            val opts = ActionPreset.FLAT
-            // **两列方框按钮网格**：每项一个等高等宽的方框，行列对齐。
-            // 单列列表虽然能显示说明文字，但 20+ 项要滚很久；
-            // 两列能让列表短一半，配合方框按钮一眼扫完当前分组。
-            var row: LinearLayout? = null
-            opts.forEachIndexed { i, opt ->
-                if (i % 2 == 0) {
-                    row = LinearLayout(ctx).apply {
-                        orientation = LinearLayout.HORIZONTAL
-                    }
-                    listBox.addView(row, LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.MATCH_PARENT,
-                        LinearLayout.LayoutParams.WRAP_CONTENT))
-                }
-                val r = row ?: return@forEachIndexed
+            // **单列**：一项一行、整行可点。
+            // 两列虽然列表短一半，但每项只能显示 4~5 个字，
+            // "点击图片 / 运行JS代码"这类长名会被截断成省略号。
+            ActionPreset.FLAT.forEach { opt ->
                 val btn = Ui.boxBtn(ctx, opt.label, opt.label == optionOf(a).label) {
                     a.type = opt.type
                     a.optionLabel = opt.label
                     opt.preset(a)
                     onChange()
                 }
-                val gap = Display.dpInt(ctx, 5f)
-                r.addView(btn, LinearLayout.LayoutParams(0,
-                    LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
-                    if (i % 2 == 0) marginEnd = gap / 2 else marginStart = gap / 2
-                    bottomMargin = gap
-                })
-            }
-            // 奇数项补一个占位，保证最后一个按钮也是半宽，
-            // 否则它会自动占满整行、与其他按钮不一样宽
-            if (opts.size % 2 == 1) {
-                row?.addView(View(ctx), LinearLayout.LayoutParams(0,
-                    LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
-                    marginStart = Display.dpInt(ctx, 5f) / 2
+                listBox.addView(btn, LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                    bottomMargin = Display.dpInt(ctx, 5f)
                 })
             }
         }
@@ -803,6 +787,12 @@ object ActionEditor {
         }
 
     /** 数值输入：hint 显示「选填」，不给默认值 */
+    /** 纯整数字段（次数、间隔这类不接受小数的项） */
+    private fun intField(ctx: android.content.Context, value: String, hint: String): EditText =
+        numField(ctx, value, hint).apply {
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER
+        }
+
     private fun numField(ctx: android.content.Context, value: String, hint: String): EditText =
         EditText(ctx).apply {
             setText(value)

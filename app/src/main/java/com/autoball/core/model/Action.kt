@@ -68,9 +68,9 @@ class Action {
     var id: String = ""
     var type: ActionType = ActionType.CLICK
     /**
-     * 用户在动作类型宫格里选中的标签（如「长按」「连续点击」「返回键」）。
+     * 用户在动作类型列表里选中的标签（如「连击」「返回键」）。
      *
-     * 同一 [ActionType] 可对应多个入口（点击/长按/连续点击都是 CLICK），
+     * 同一 [ActionType] 可对应多个入口（点击 与 连击 都是 CLICK），
      * 没有它就回显不出用户当初选的是哪一个。
      */
     var optionLabel: String? = null

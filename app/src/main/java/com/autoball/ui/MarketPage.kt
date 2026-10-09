@@ -48,7 +48,7 @@ class MarketPage(context: Context, private val host: PageHost) : FrameLayout(con
 
     /** 内置示例：与网络无关，作为社区页的可用内容 */
     private val samples = listOf(
-        Triple("连续点击示例", "每 500ms 点一次屏幕中央，重复 10 次。", sampleTapFlow()),
+        Triple("连击示例", "每 500ms 点一次屏幕中央，重复 10 次。", sampleTapFlow()),
         Triple("返回主页示例", "从任意界面按返回键回到桌面。", sampleBackFlow()),
         Triple("滑动等待示例", "上滑一次，等待 1 秒后点击。", sampleSwipeFlow())
     )
@@ -388,7 +388,7 @@ class MarketPage(context: Context, private val host: PageHost) : FrameLayout(con
             x = 50f; y = 50f
             repeat = 10
             repeatIntervalMs = 500
-            comment = "连续点击屏幕中央"
+            comment = "连击屏幕中央"
         })
     }
 

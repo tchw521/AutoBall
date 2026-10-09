@@ -53,9 +53,11 @@ data class ActionPreset(
             // ---- 基础触摸 ----
             ActionPreset("点击", G_TOUCH, ActionType.CLICK,
                 { it.durationMs = 60 }, "在指定位置点一下"),
-            ActionPreset("连续点击", G_TOUCH, ActionType.CLICK, {
-                it.durationMs = 60; it.repeat = 5; it.repeatIntervalMs = 200
-            }, "重复点击多次，可配间隔"),
+            // 连击：次数由用户在「重复次数」里自己填，这里只给一个能看出效果的
+            // 起始值（次数 × 间隔），不再固定为某个数——用户想点几次就填几次
+            ActionPreset("连击", G_TOUCH, ActionType.CLICK, {
+                it.durationMs = 60; it.repeat = 2; it.repeatIntervalMs = 200
+            }, "连续点多次，次数与间隔都由自己填"),
             ActionPreset("滑动", G_TOUCH, ActionType.SWIPE,
                 { it.durationMs = 500; it.x2 = 50f; it.y2 = 20f }, "从一个位置滑到另一个位置"),
             ActionPreset("单指手势", G_TOUCH, ActionType.GESTURE_SINGLE,
