@@ -248,6 +248,9 @@ object CoordPicker {
         private var pxPct = 50f
         private var pyPct = 50f
 
+        /** 底部条；调节时自动淡出，避免挡住落点 */
+        private var barView: View? = null
+
         init {
             setWillNotDraw(false)
             setBackgroundColor(Color.TRANSPARENT)   // 关键：露出真实屏幕
@@ -294,6 +297,9 @@ object CoordPicker {
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT))
 
+            // 半透明：底栏压在最常取点的屏幕下方区域，实心会挡住落点
+            PickerBar.attach(bar)
+            barView = bar
             addView(bar, LayoutParams(LayoutParams.MATCH_PARENT,
                 LayoutParams.WRAP_CONTENT).apply { gravity = Gravity.BOTTOM })
         }
@@ -330,12 +336,17 @@ object CoordPicker {
         override fun onTouchEvent(event: MotionEvent): Boolean {
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN, MotionEvent.ACTION_MOVE -> {
+                    barView?.let { PickerBar.setDragging(it, true) }
                     val w = width.toFloat(); val h = height.toFloat()
                     if (w > 0f && h > 0f) {
                         pxPct = ((event.x / w) * 100).coerceIn(0f, 100f)
                         pyPct = ((event.y / h) * 100).coerceIn(0f, 100f)
                         invalidate()
                     }
+                    return true
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    barView?.let { PickerBar.setDragging(it, false) }
                     return true
                 }
             }
@@ -412,6 +423,9 @@ object CoordPicker {
         private lateinit var leftBtn: TextView
         private lateinit var rightBtn: TextView
 
+        /** 底部条；调节时自动淡出 */
+        private var barView: View? = null
+
         init {
             setWillNotDraw(false)
             setBackgroundColor(Color.TRANSPARENT)
@@ -450,6 +464,9 @@ object CoordPicker {
             bar.addView(btns, LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT))
+            // 半透明：底栏压在最常取点的屏幕下方区域，实心会挡住落点
+            PickerBar.attach(bar)
+            barView = bar
             addView(bar, LayoutParams(LayoutParams.MATCH_PARENT,
                 LayoutParams.WRAP_CONTENT).apply { gravity = Gravity.BOTTOM })
             syncBtns()
@@ -528,9 +545,13 @@ object CoordPicker {
             if (w <= 0f || h <= 0f) return true
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN, MotionEvent.ACTION_MOVE -> {
+                    barView?.let { PickerBar.setDragging(it, true) }
                     px[cur] = ((event.x / w) * 100).coerceIn(0f, 100f)
                     py[cur] = ((event.y / h) * 100).coerceIn(0f, 100f)
                     invalidate()
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    barView?.let { PickerBar.setDragging(it, false) }
                 }
             }
             return true

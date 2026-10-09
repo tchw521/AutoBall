@@ -144,9 +144,14 @@ object RegionPicker {
             strokeWidth = Display.dp(context, 1f)
         }
         private val shade = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.parseColor("#66000000")
+            // 框外压暗**必须很淡**（0x33 ≈ 20%）：这是"取真实坐标"的场景，
+            // 压暗过重会让人看不清框外还有什么，尤其取点位置本身可能在框外
+            color = Color.parseColor("#33000000")
             style = Paint.Style.FILL
         }
+
+        /** 底部条；调节时自动淡出 */
+        private var barView: View? = null
         private val handle = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.WHITE
             style = Paint.Style.FILL
@@ -226,6 +231,8 @@ object RegionPicker {
             bar.addView(btns, LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT))
+            PickerBar.attach(bar)
+            barView = bar
             addView(bar, LayoutParams(LayoutParams.MATCH_PARENT,
                 LayoutParams.WRAP_CONTENT).apply { gravity = Gravity.BOTTOM })
         }
@@ -309,6 +316,7 @@ object RegionPicker {
             if (w <= 0f || h <= 0f) return true
             when (e.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
+                    barView?.let { PickerBar.setDragging(it, true) }
                     mode = hitHandle(e.x, e.y)
                     val p = pct(e.x, e.y)
                     sx = p[0]; sy = p[1]
@@ -321,6 +329,7 @@ object RegionPicker {
                     return true
                 }
                 MotionEvent.ACTION_MOVE -> {
+                    barView?.let { PickerBar.setDragging(it, true) }
                     val p = pct(e.x, e.y)
                     val dx = p[0] - sx
                     val dy = p[1] - sy
@@ -350,6 +359,10 @@ object RegionPicker {
                         }
                     }
                     invalidate()
+                    return true
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    barView?.let { PickerBar.setDragging(it, false) }
                     return true
                 }
             }

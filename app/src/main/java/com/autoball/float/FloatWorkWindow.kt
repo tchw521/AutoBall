@@ -92,7 +92,8 @@ object FloatWorkWindow {
         val dot: TextView,
         val title: TextView,
         val mainBar: LinearLayout,
-        val recBar: LinearLayout
+        val recBar: LinearLayout,
+        val emptyBar: LinearLayout
     )
 
     private var holder: Holder? = null
@@ -420,6 +421,33 @@ object FloatWorkWindow {
             LinearLayout.LayoutParams.MATCH_PARENT,
             LinearLayout.LayoutParams.WRAP_CONTENT))
 
+        // ---- 空态底栏：开始录制 / 添加动作（图标按钮）----
+        //
+        // 用户要求：这两个入口**改成图标**并**放到最下面**。
+        // 此前它们是列表里的文字按钮，既被 1/3 宽的容器挤变形，也不在底栏。
+        val emptyBar = LinearLayout(ctx).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            setPadding(Display.dpInt(ctx, 10f), Display.dpInt(ctx, 8f),
+                Display.dpInt(ctx, 10f), Display.dpInt(ctx, 10f))
+            visibility = View.GONE
+        }
+        emptyBar.addView(iconEntry(ctx, RecIconView.Kind.REC, "开始录制", Theme.ok()) {
+            cbRef?.onRecord(script, true)
+        }, LinearLayout.LayoutParams(0,
+            LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+            marginEnd = Display.dpInt(ctx, 5f)
+        })
+        emptyBar.addView(iconEntry(ctx, RecIconView.Kind.ADD, "添加动作", Theme.pri()) {
+            cbRef?.onAddAction(script)
+        }, LinearLayout.LayoutParams(0,
+            LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+            marginStart = Display.dpInt(ctx, 5f)
+        })
+        barSlot.addView(emptyBar, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT))
+
         // ---- 底部条 + 常驻「⋮」----
         //
         // 「⋮」必须**常驻在右下角**，不能挂进 mainBar：
@@ -460,7 +488,8 @@ object FloatWorkWindow {
         more.addView(moreRow(ctx, "清空动作") { cb.onClear(script) })
         more.addView(moreRow(ctx, "开启日志") { cb.onToggleLog(script) })
         more.addView(moreRow(ctx, "查看变量") { cb.onVars(script) })
-        more.addView(moreRow(ctx, "全局设置") { cb.onSettings(script) })
+        // 「全局设置」已删除：标题栏右上角有独立的 ⚙ 入口，
+        // 菜单里再来一条完全同名的项只会让人以为是两个不同功能
         moreWrap.addView(more, ViewGroup.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.WRAP_CONTENT))
@@ -468,7 +497,7 @@ object FloatWorkWindow {
         root.addView(moreWrap, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, 0, 0f))
 
-        holder = Holder(list, more, moreWrap, dot, title, mainBar, recBar)
+        holder = Holder(list, more, moreWrap, dot, title, mainBar, recBar, emptyBar)
         fillList(script)
         refreshState()
 
@@ -535,25 +564,9 @@ object FloatWorkWindow {
                     Display.dpInt(context, 12f),
                     Display.dpInt(context, 10f))
             })
-            val row = LinearLayout(h.list.context).apply {
-                orientation = LinearLayout.HORIZONTAL
-                setPadding(Display.dpInt(context, 12f), 0,
-                    Display.dpInt(context, 12f), Display.dpInt(context, 12f))
-            }
-            val lc = h.list.context
-            row.addView(bigBtn(lc, "开始录制", Theme.ok()) {
-                cbRef?.onRecord(script, true)
-            }, LinearLayout.LayoutParams(0,
-                LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
-                marginEnd = Display.dpInt(lc, 5f)
-            })
-            row.addView(bigBtn(lc, "添加动作", Theme.pri()) {
-                cbRef?.onAddAction(script)
-            }, LinearLayout.LayoutParams(0,
-                LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
-                marginStart = Display.dpInt(lc, 5f)
-            })
-            h.list.addView(row)
+            // 两个入口按钮**不再放这里**：它们在列表容器里，而列表被缩到 1/3 宽，
+            // 按钮会被挤变形；且中间位置不符合"操作区在底部"的分区。
+            // 已移到最底部底栏（emptyBar），见下方。
             return
         }
         acts.forEachIndexed { i, a ->
@@ -617,6 +630,7 @@ object FloatWorkWindow {
         val empty = (curScript?.flow?.actions?.size ?: 0) == 0
         h.mainBar.visibility = if (recording || empty) View.GONE else View.VISIBLE
         h.recBar.visibility = if (recording) View.VISIBLE else View.GONE
+        h.emptyBar.visibility = if (empty && !recording) View.VISIBLE else View.GONE
         if (recording) {
             val pb = h.recBar.getChildAt(0) as? TextView
             pb?.text = if (paused) "继续" else "暂停"
@@ -864,19 +878,37 @@ object FloatWorkWindow {
             width = sz
         }
 
-    /** 空态入口大按钮（比 flatBtn 更高，突出"从哪开始"） */
-    private fun bigBtn(ctx: Context, text: String, color: Int,
-                       onClick: () -> Unit): TextView =
-        TextView(ctx).apply {
-            this.text = text
-            textSize = TextSz.BIG
-            setTypeface(null, android.graphics.Typeface.BOLD)
-            setTextColor(color)
+    /**
+     * 底栏图标入口（开始录制 / 添加动作）。
+     *
+     * 图标为主、文字为辅：文字用**描述性最小字号**（[TextSz.NOTE]）放在图标下方，
+     * 既不喧宾夺主，又保证"这两个图标各是什么意思"看得懂——
+     * 纯图标没有标签，用户第一次进来只能靠试。
+     */
+    private fun iconEntry(ctx: Context, kind: RecIconView.Kind, label: String,
+                          color: Int, onClick: () -> Unit): LinearLayout =
+        LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
             background = Theme.rect(Theme.surface2(), 12f, ctx, Theme.line())
-            setPadding(Display.dpInt(ctx, 10f), Display.dpInt(ctx, 12f),
-                Display.dpInt(ctx, 10f), Display.dpInt(ctx, 12f))
+            setPadding(Display.dpInt(ctx, 6f), Display.dpInt(ctx, 9f),
+                Display.dpInt(ctx, 6f), Display.dpInt(ctx, 7f))
             setOnClickListener { onClick() }
+            val iv = RecIconView(ctx).apply {
+                this.kind = kind
+                this.iconColor = color
+            }
+            addView(iv, LinearLayout.LayoutParams(
+                Display.dpInt(ctx, 26f), Display.dpInt(ctx, 26f)))
+            addView(TextView(ctx).apply {
+                text = label
+                textSize = TextSz.NOTE
+                setTextColor(Theme.textSec())
+                gravity = Gravity.CENTER
+                setPadding(0, Display.dpInt(ctx, 4f), 0, 0)
+            }, LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT))
         }
 
     private fun moreRow(ctx: Context, text: String, onClick: () -> Unit): TextView =

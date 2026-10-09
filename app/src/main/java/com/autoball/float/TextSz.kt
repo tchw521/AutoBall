@@ -34,9 +34,6 @@ object TextSz {
     /** 圆标图标（⚙ ⋮ ✕） */
     const val GLYPH = 12.5f
 
-    /** 空态入口按钮 */
-    const val BIG = 12.5f
-
     /** 状态点 */
     const val DOT = 8.0f
 
