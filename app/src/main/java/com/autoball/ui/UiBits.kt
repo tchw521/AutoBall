@@ -143,6 +143,36 @@ object UiBits {
             setOnClickListener { onClick() }
         }
 
+    /**
+     * **方框按钮**（统一组件）：固定高度、带边框的方块，用于动作类型等"多选一"网格。
+     *
+     * 与 [chip] 的区别：chip 是胶囊形、宽度随文字，用于流式标签；
+     * 这里是**等宽等高的方框**，排成网格时行列对齐，视觉上是一排排按钮。
+     *
+     * @param selected 选中态：主色描边 + 主色文字 + 浅底色，一眼能看出当前是哪个
+     */
+    fun boxBtn(ctx: Context, text: String, selected: Boolean,
+               onClick: () -> Unit): TextView = TextView(ctx).apply {
+        this.text = text
+        textSize = com.autoball.float.TextSz.MENU
+        setTypeface(null, if (selected) Typeface.BOLD else null)
+        setTextColor(if (selected) Theme.pri() else Theme.textSec())
+        // 固定高度：同一网格里每个按钮必须一样高，否则参差不齐
+        layoutParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            Display.dpInt(ctx, BOX_H))
+        gravity = Gravity.CENTER
+        setSingleLine(true)
+        ellipsize = android.text.TextUtils.TruncateAt.END
+        background = Theme.rect(
+            if (selected) Theme.pri2() else Theme.surface(), 10f, ctx,
+            if (selected) Theme.pri() else Theme.line())
+        setOnClickListener { onClick() }
+    }
+
+    /** 方框按钮高度（dp） */
+    const val BOX_H = 36f
+
     /** 圆形运行按钮 */
     fun runButton(ctx: Context, onClick: () -> Unit): TextView = TextView(ctx).apply {
         text = "▶"

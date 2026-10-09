@@ -70,6 +70,8 @@ object Ui {
     fun tag(ctx: Context, text: String, kind: Int) : TextView = UiBits.tag(ctx, text, kind)
     fun section(ctx: Context, text: String) : TextView = UiBits.section(ctx, text)
     fun chip(ctx: Context, text: String, active: Boolean, onClick: () -> Unit) : TextView = UiBits.chip(ctx, text, active, onClick)
+    fun boxBtn(ctx: Context, text: String, selected: Boolean, onClick: () -> Unit) : TextView =
+        UiBits.boxBtn(ctx, text, selected, onClick)
     fun runButton(ctx: Context, onClick: () -> Unit) : TextView = UiBits.runButton(ctx, onClick)
     fun check(ctx: Context, on: Boolean) : TextView = UiBits.check(ctx, on)
     fun hint(ctx: Context, text: String) : TextView = UiBits.hint(ctx, text)

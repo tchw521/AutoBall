@@ -122,8 +122,6 @@ object ActionEditor {
             ActionType.CLICK, ActionType.CLICK_IMAGE, ActionType.CLICK_TEXT,
             ActionType.CLICK_COLOR, ActionType.CLICK_NODE, ActionType.AI_CLICK ->
                 "${a.optionLabel ?: "点击"}(${p(a.x)}, ${p(a.y)})"
-            ActionType.CLICK_AREA ->
-                "区域随机(${p(a.x)}, ${p(a.y)})~(${p(a.x2)}, ${p(a.y2)})"
             ActionType.SWIPE, ActionType.GESTURE_SINGLE, ActionType.GESTURE_MULTI ->
                 "滑动(${p(a.x)}, ${p(a.y)})→(${p(a.x2)}, ${p(a.y2)})"
             ActionType.INPUT_TEXT -> "输入「${a.text ?: ""}」"
@@ -619,33 +617,57 @@ object ActionEditor {
     // =====================================================================
 
     /**
-     * 动作类型选择——**列表展现**（自动精灵「更多工具」即为此形态）。
+     * 动作类型选择——**平铺两列方框按钮**，一比一复刻自动精灵。
      *
-     * 早前用宫格，22 项挤在 3 列里，每项只剩两个字，说明文字全被砍掉；
-     * 列表能同时显示图标、名称与用途，选错的概率更低。
+     * 不分组：自动精灵就是一张平铺列表。分组 tab 会让人先猜
+     * "我要的在哪一类"，而类型总共就这么多，平铺一眼能扫完。
      */
     private fun showTypeList(ctx: android.content.Context, a: Action,
                              host: android.widget.ScrollView, titleTv: TextView,
                              onChange: () -> Unit) {
         val box = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
-        val groups = ActionPreset.GROUPS
-        var cur = groups.indexOf(optionOf(a).group).takeIf { it >= 0 } ?: 0
         val listBox = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
 
         fun fill() {
             listBox.removeAllViews()
-            ActionPreset.ofGroup(groups[cur]).forEach { opt ->
-                listBox.addView(listItem(ctx, opt.label, opt.type.label,
-                    opt.label == optionOf(a).label) {
+            val opts = ActionPreset.FLAT
+            // **两列方框按钮网格**：每项一个等高等宽的方框，行列对齐。
+            // 单列列表虽然能显示说明文字，但 20+ 项要滚很久；
+            // 两列能让列表短一半，配合方框按钮一眼扫完当前分组。
+            var row: LinearLayout? = null
+            opts.forEachIndexed { i, opt ->
+                if (i % 2 == 0) {
+                    row = LinearLayout(ctx).apply {
+                        orientation = LinearLayout.HORIZONTAL
+                    }
+                    listBox.addView(row, LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT))
+                }
+                val r = row ?: return@forEachIndexed
+                val btn = Ui.boxBtn(ctx, opt.label, opt.label == optionOf(a).label) {
                     a.type = opt.type
                     a.optionLabel = opt.label
                     opt.preset(a)
                     onChange()
+                }
+                val gap = Display.dpInt(ctx, 5f)
+                r.addView(btn, LinearLayout.LayoutParams(0,
+                    LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                    if (i % 2 == 0) marginEnd = gap / 2 else marginStart = gap / 2
+                    bottomMargin = gap
+                })
+            }
+            // 奇数项补一个占位，保证最后一个按钮也是半宽，
+            // 否则它会自动占满整行、与其他按钮不一样宽
+            if (opts.size % 2 == 1) {
+                row?.addView(View(ctx), LinearLayout.LayoutParams(0,
+                    LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                    marginStart = Display.dpInt(ctx, 5f) / 2
                 })
             }
         }
 
-        box.addView(Kit.segment(ctx, groups, cur) { i -> cur = i; fill() })
         // 列表**直接交给外层 host 滚动**（host 本身就是 ScrollView）。
         //
         // 早前在这里又套了一层定高 ScrollView，形成嵌套滚动：
@@ -684,58 +706,6 @@ object ActionEditor {
             ViewGroup.LayoutParams.WRAP_CONTENT))
         titleTv.text = "选择动作类型"
     }
-
-    /** 列表项：图标 + 名称 + 说明 + 右侧选中标记 */
-    private fun listItem(ctx: android.content.Context, title: String, sub: String,
-                         selected: Boolean, onClick: () -> Unit): LinearLayout =
-        LinearLayout(ctx).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            background = Theme.rect(
-                if (selected) Theme.surface2() else Theme.surface(), 10f, ctx,
-                if (selected) Theme.pri() else Theme.line())
-            setPadding(Display.dpInt(ctx, 10f), Display.dpInt(ctx, 9f),
-                Display.dpInt(ctx, 10f), Display.dpInt(ctx, 9f))
-            val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT)
-            lp.setMargins(0, Display.dpInt(ctx, 3f), 0, Display.dpInt(ctx, 3f))
-            layoutParams = lp
-            setOnClickListener { onClick() }
-
-            addView(TextView(ctx).apply {
-                text = title.take(2)
-                textSize = 13f
-                setTypeface(null, Typeface.BOLD)
-                setTextColor(if (selected) Theme.pri() else Theme.textSec())
-                gravity = Gravity.CENTER
-                background = Theme.oval(if (selected) Theme.pri2() else Theme.surface2())
-                layoutParams = LinearLayout.LayoutParams(
-                    Display.dpInt(ctx, 32f), Display.dpInt(ctx, 32f))
-            })
-            val col = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
-            col.addView(TextView(ctx).apply {
-                text = title
-                textSize = 13f
-                setTypeface(null, Typeface.BOLD)
-                setTextColor(if (selected) Theme.pri() else Theme.textPri())
-            })
-            col.addView(TextView(ctx).apply {
-                text = sub
-                textSize = 10.5f
-                setTextColor(Theme.textTer())
-                setPadding(0, Display.dpInt(ctx, 2f), 0, 0)
-            })
-            addView(col, LinearLayout.LayoutParams(0,
-                LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
-                marginStart = Display.dpInt(ctx, 10f)
-            })
-            if (selected) addView(TextView(ctx).apply {
-                text = "✓"
-                textSize = 13f
-                setTypeface(null, Typeface.BOLD)
-                setTextColor(Theme.pri())
-            })
-        }
 
     // =====================================================================
     // 行与控件（自动精灵风格）

@@ -53,21 +53,9 @@ data class ActionPreset(
             // ---- 基础触摸 ----
             ActionPreset("点击", G_TOUCH, ActionType.CLICK,
                 { it.durationMs = 60 }, "在指定位置点一下"),
-            ActionPreset("长按", G_TOUCH, ActionType.CLICK,
-                { it.durationMs = 700 }, "按住不放，常用于唤起菜单"),
             ActionPreset("连续点击", G_TOUCH, ActionType.CLICK, {
                 it.durationMs = 60; it.repeat = 5; it.repeatIntervalMs = 200
             }, "重复点击多次，可配间隔"),
-            // 随机点击：坐标抖动由「脚本全局设置 → 全局手势变形」统一控制，
-            // 这里只标记类型，避免同一份配置散在两个地方
-            ActionPreset("随机点击", G_TOUCH, ActionType.CLICK,
-                { it.durationMs = 60 }, "点击位置带随机偏移，降低被识别的风险"),
-            // 区域随机点击（R-117）：默认给屏幕中央一块 20%×20% 的区域，
-            // 用户再去框选；给默认值是为了避免"选了却因为区域为空而点不动"
-            ActionPreset("区域随机点击", G_TOUCH, ActionType.CLICK_AREA, {
-                it.durationMs = 60
-                it.x = 40f; it.y = 40f; it.x2 = 60f; it.y2 = 60f
-            }, "每次在框选区域内随机落点，位置不固定"),
             ActionPreset("滑动", G_TOUCH, ActionType.SWIPE,
                 { it.durationMs = 500; it.x2 = 50f; it.y2 = 20f }, "从一个位置滑到另一个位置"),
             ActionPreset("单指手势", G_TOUCH, ActionType.GESTURE_SINGLE,
@@ -76,15 +64,15 @@ data class ActionPreset(
                 { it.durationMs = 400 }, "双指缩放等，需 Shizuku 或 ROM 支持"),
 
             // ---- 识别定位 ----
-            ActionPreset("图像匹配", G_RECOGNIZE, ActionType.CLICK_IMAGE,
+            ActionPreset("点击图片", G_RECOGNIZE, ActionType.CLICK_IMAGE,
                 { it.matchThreshold = 0.9f }, "按截图模板找位置再点击"),
             ActionPreset("节点匹配", G_RECOGNIZE, ActionType.CLICK_NODE,
                 hint = "按控件节点查找，无障碍通道独有"),
-            ActionPreset("颜色匹配", G_RECOGNIZE, ActionType.CLICK_COLOR,
+            ActionPreset("点击颜色", G_RECOGNIZE, ActionType.CLICK_COLOR,
                 { it.colorTolerance = 10 }, "在区域内找指定颜色并点击"),
-            ActionPreset("文字匹配", G_RECOGNIZE, ActionType.CLICK_TEXT,
+            ActionPreset("点击文字", G_RECOGNIZE, ActionType.CLICK_TEXT,
                 hint = "按屏幕文字查找并点击"),
-            ActionPreset("AI 识别", G_RECOGNIZE, ActionType.AI_CLICK,
+            ActionPreset("AI点击", G_RECOGNIZE, ActionType.AI_CLICK,
                 hint = "借助视觉模型理解界面"),
             ActionPreset("识别屏幕", G_RECOGNIZE, ActionType.RECOGNIZE_SCREEN,
                 hint = "读取当前屏幕内容供后续判断"),
@@ -104,7 +92,7 @@ data class ActionPreset(
                 hint = "按包名启动应用"),
             ActionPreset("打开链接", G_SYSTEM, ActionType.OPEN_URL,
                 hint = "用浏览器打开指定网址"),
-            ActionPreset("输入文字", G_SYSTEM, ActionType.INPUT_TEXT,
+            ActionPreset("输入内容", G_SYSTEM, ActionType.INPUT_TEXT,
                 hint = "在当前焦点输入框输入文本"),
 
             // ---- 高级 ----
@@ -112,7 +100,7 @@ data class ActionPreset(
                 hint = "暂停 / 继续 / 停止 / 等待"),
             ActionPreset("设置变量", G_ADVANCE, ActionType.SET_VAR,
                 hint = "写入变量，供后续动作或条件引用"),
-            ActionPreset("运行 JS", G_ADVANCE, ActionType.RUN_JS,
+            ActionPreset("运行JS代码", G_ADVANCE, ActionType.RUN_JS,
                 hint = "执行一段 JS 代码"),
             ActionPreset("运行脚本", G_ADVANCE, ActionType.RUN_SCRIPT,
                 hint = "调用另一个脚本"),
@@ -122,11 +110,20 @@ data class ActionPreset(
                 hint = "弹出一条提示，便于调试")
         )
 
-        /** 分组顺序（列表展示用） */
+        /** 分组顺序（仅内部归类用；列表展示已改为平铺，不分组） */
         val GROUPS: List<String> = listOf(G_TOUCH, G_RECOGNIZE, G_SYSTEM, G_ADVANCE)
 
         /** 按分组取预设 */
         fun ofGroup(group: String): List<ActionPreset> = ALL.filter { it.group == group }
+
+        /**
+         * 列表展示用的**完整平铺列表**。
+         *
+         * 一比一复刻自动精灵：所有动作类型在一个列表里，不分组、不分页。
+         * 分组 tab 会让人先猜"我要的在哪一类"，而类型总共就这么多，
+         * 平铺 + 两列方框按钮一眼能扫完。
+         */
+        val FLAT: List<ActionPreset> = ALL
 
         /**
          * 回显用：优先按 optionLabel 精确匹配，否则退回同类型第一项。

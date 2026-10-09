@@ -467,18 +467,7 @@ class FlowRunner(
                 if (fn == null) { log.warn(ctx.runId, "无法运行子脚本"); false } else fn(sid)
             }
             else -> {
-                // 区域随机点击：先在区域内随机取点，再当作普通点击下发（R-117）。
-                // 后端不认识 CLICK_AREA 类型，必须在这一层转换。
-                val eff = if (a.type == ActionType.CLICK_AREA) {
-                    val rx = a.x + Math.random().toFloat() * (a.x2 - a.x)
-                    val ry = a.y + Math.random().toFloat() * (a.y2 - a.y)
-                    Action().apply {
-                        id = a.id; type = ActionType.CLICK
-                        x = rx; y = ry
-                        durationMs = a.durationMs
-                    }
-                } else a
-                val target = CoordMapper.applyTo(morphAction(jitterAction(eff)), scale)
+                val target = CoordMapper.applyTo(morphAction(jitterAction(a)), scale)
                 val r = router.execute(target, ctx)
                 log.add(ctx.runId,
                     if (r.ok) RunLog.Level.OK else RunLog.Level.ERROR,

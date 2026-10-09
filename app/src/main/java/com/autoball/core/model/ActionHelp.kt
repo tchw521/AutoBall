@@ -27,7 +27,6 @@ object ActionHelp {
             ActionType.CLICK_TEXT -> "先在当前屏幕找文字，找到后点它所在位置。\n依赖无障碍节点树或 OCR。"
             ActionType.CLICK_COLOR -> "先在指定区域找目标颜色，找到后点该位置。\n适合纯色按钮。"
             ActionType.CLICK_NODE -> "按控件属性（文字/ID/描述/类名）找控件，找到后点它。\n比找色找图更稳，需无障碍授权。"
-            ActionType.CLICK_AREA -> "在一块区域内**随机**取一点点击。\n每次运行落点都不同。"
             ActionType.AI_CLICK -> "需云端视觉能力。本应用不联网，**该动作当前不可用**。"
             ActionType.GESTURE_SINGLE -> "单指复杂轨迹（多点连续），可录制或手填路径。"
             ActionType.GESTURE_MULTI -> "多指手势（如双指缩放）。需 Shizuku 或系统支持多指。"
