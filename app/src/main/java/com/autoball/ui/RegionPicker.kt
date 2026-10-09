@@ -166,7 +166,6 @@ object RegionPicker {
             textAlign = Paint.Align.CENTER
         }
 
-        private lateinit var sizeText: TextView
 
         private var mode = ""
         private var sx = 0f
@@ -200,14 +199,8 @@ object RegionPicker {
             }
             bar.addView(tipTv, 0)
 
-            sizeText = TextView(context).apply {
-                textSize = 12.5f
-                setTypeface(null, android.graphics.Typeface.BOLD)
-                setTextColor(Theme.pri2())
-                gravity = Gravity.CENTER
-                setPadding(0, 0, 0, Display.dpInt(context, 8f))
-            }
-            bar.addView(sizeText)
+            // 不重复显示尺寸：onDraw 已在取景框上方画了 "W × H" 小牌。
+            // 底部条多一行就多挡一片——而底部是最常框选的区域。
             val btns = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
             val cancel = Ui.button(context, "取消", false)
             cancel.setOnClickListener { close() }
@@ -220,10 +213,6 @@ object RegionPicker {
             reset.setOnClickListener {
                 lx = 30f; ty = 30f; rw = 40f; rh = 40f
                 invalidate()
-                val w = width.toFloat(); val h = height.toFloat()
-                if (w > 0f && h > 0f) {
-                    sizeText.text = "%d × %d px".format((rw / 100f * w).toInt(), (rh / 100f * h).toInt())
-                }
                 Ui.toast(context, "已重置取景框，拖动框体或四角调整")
             }
             btns.addView(reset, LinearLayout.LayoutParams(0,
@@ -361,19 +350,11 @@ object RegionPicker {
                         }
                     }
                     invalidate()
-                    sizeText.text = "%d × %d px".format((rw / 100f * w).toInt(), (rh / 100f * h).toInt())
                     return true
                 }
             }
             return true
         }
 
-        override fun onAttachedToWindow() {
-            super.onAttachedToWindow()
-            val w = width.toFloat(); val h = height.toFloat()
-            if (w > 0f && h > 0f) {
-                sizeText.text = "%d × %d px".format((rw / 100f * w).toInt(), (rh / 100f * h).toInt())
-            }
-        }
     }
 }

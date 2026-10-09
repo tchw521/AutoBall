@@ -302,8 +302,9 @@ object FloatWorkWindow {
                 gravity = Gravity.END or Gravity.CENTER_VERTICAL
             }
         }
+        // 「⋮」已移到**底部条最右**（见下方 mainBar）：标题栏右侧只留设置与关闭，
+        // 高频的"更多"离拇指更近，也更符合"下方是操作区"的分区习惯。
         rightBox.addView(roundBtn(ctx, "⚙") { cb.onSettings(script) })
-        rightBox.addView(roundBtn(ctx, "⋮") { toggleMore() })
         rightBox.addView(roundBtn(ctx, "✕") { hide() })
         head.addView(rightBox)
         dragAttach(head)
@@ -375,7 +376,14 @@ object FloatWorkWindow {
                 LinearLayout.LayoutParams.WRAP_CONTENT, 1.3f).apply {
                 marginStart = Display.dpInt(ctx, 3f)
             })
-        root.addView(mainBar)
+        // mainBar 与 recBar 是**互斥显示**的（刷新时原地切换），
+        // 直接挂到 root 会导致切换时底栏高度跳变。装进同一个 slot 更稳。
+        val barSlot = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+        barSlot.addView(mainBar, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT))
 
         // ---- 录制控制条（录制中显示，替换主条）----
         val recBar = LinearLayout(ctx).apply {
@@ -408,7 +416,29 @@ object FloatWorkWindow {
                 LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
                 marginStart = Display.dpInt(ctx, 3f)
             })
-        root.addView(recBar)
+        barSlot.addView(recBar, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT))
+
+        // ---- 底部条 + 常驻「⋮」----
+        //
+        // 「⋮」必须**常驻在右下角**，不能挂进 mainBar：
+        // 空态与录制态下 mainBar 是 GONE（那时底栏换成空态入口或录制控制条），
+        // 挂进去会让它在最常用的空态下**完全看不见**。
+        // 所以单独起一行：左边是随状态切换的底栏，右边是永远在的「⋮」。
+        val barRow = LinearLayout(ctx).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        barRow.addView(barSlot, LinearLayout.LayoutParams(0,
+            LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        barRow.addView(barMoreBtn(ctx) { toggleMore() },
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                marginEnd = Display.dpInt(ctx, 8f)
+            })
+        root.addView(barRow)
 
         // ---- 更多（默认收起）----
         // 包一层 ScrollView：菜单项多时窗口会被撑高，触发上面的最大高度限制后，
@@ -423,7 +453,8 @@ object FloatWorkWindow {
             setPadding(Display.dpInt(ctx, 10f), 0,
                 Display.dpInt(ctx, 10f), Display.dpInt(ctx, 10f))
         }
-        more.addView(moreRow(ctx, "添加动作") { cb.onAddAction(script) })
+        // 不再放「添加动作」：底部条已有一个常驻入口，菜单里再来一条
+        // 只会让人犹豫该点哪个（且两处文案完全一样，看不出区别）
         more.addView(moreRow(ctx, "更多工具") { cb.onTools(script) })
         more.addView(moreRow(ctx, "保存脚本") { cb.onSave(script) })
         more.addView(moreRow(ctx, "清空动作") { cb.onClear(script) })
@@ -805,6 +836,32 @@ object FloatWorkWindow {
             setPadding(Display.dpInt(ctx, 8f), Display.dpInt(ctx, 9f),
                 Display.dpInt(ctx, 8f), Display.dpInt(ctx, 9f))
             setOnClickListener { onClick() }
+        }
+
+    /**
+     * 底部条的「⋮」按钮。
+     *
+     * **必须给定宽高的正方形**：底部条是横排 LinearLayout，
+     * 若用 weight 或 MATCH_PARENT 宽，图标会被拉伸成椭圆。
+     * 高度与 [flatBtn] 对齐（padding 相同），视觉上才像同一排。
+     */
+    private fun barMoreBtn(ctx: Context, onClick: () -> Unit): TextView =
+        TextView(ctx).apply {
+            text = "⋮"
+            textSize = TextSz.GLYPH
+            setTypeface(null, android.graphics.Typeface.BOLD)
+            setTextColor(Theme.textSec())
+            gravity = Gravity.CENTER
+            background = Theme.rect(Theme.surface2(), 12f, ctx, Theme.line())
+            setPadding(Display.dpInt(ctx, 10f), Display.dpInt(ctx, 9f),
+                Display.dpInt(ctx, 10f), Display.dpInt(ctx, 9f))
+            setOnClickListener { onClick() }
+            // 固定正方形边长：横排 LinearLayout 里不锁死尺寸的话，
+            // 会随文字宽度变扁或被 weight 拉宽，三个点挤成一条线
+            val sz = Display.dpInt(ctx, 30f)
+            minWidth = sz
+            minHeight = sz
+            width = sz
         }
 
     /** 空态入口大按钮（比 flatBtn 更高，突出"从哪开始"） */

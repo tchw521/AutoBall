@@ -433,17 +433,22 @@ object ActionEditor {
                     help = ActionHelp.point(a)))
             }
             if (g.contains(com.autoball.core.model.FieldGroup.POINT_END)) {
+                // **必须用真实滑动拾取，不能用区域选择框**。
+                // 此前这里调用的是 RegionPicker（框选一块矩形），
+                // 界面上出现 "563×184" 的区域选择，取到的却是矩形的左上/右下角——
+                // 对滑动来说完全不是一回事：用户想表达的是"手指从哪滑到哪"，
+                // 却被要求拖出一个矩形，斜向滑动根本没法表达。
+                // 改为 CoordPicker.pickSwipe：在屏幕上真实滑一次，按下即起点、抬起即终点。
                 box.addView(zsRow(ctx, "结束位置",
                     valueView(ctx, "(${pct(a.x2)}, ${pct(a.y2)})",
                         a.x2 != 0f || a.y2 != 0f),
                     null,
                     pick = {
-                        RegionPicker.pick(ctx, ctx as? Activity, dialog) { l, t, r, b ->
-                            // RegionPicker 回调的是**像素**，而 Action 存的是百分比。
-                            // 此前直接存像素，于是出现了 "点击(612.0%, 1344.0%)" 这种值，
-                            // 且 `l + r` 把右边界当宽度相加——两个错误叠加。
-                            val (px, py) = pctOf(l, t)
-                            val (qx, qy) = pctOf(r, b)
+                        CoordPicker.pickSwipe(ctx, ctx as? Activity, dialog) { sx, sy, ex, ey ->
+                            // 回调的是**像素**，Action 存百分比，必须换算：
+                            // 直接存像素会出现 "点击(612.0%, 1344.0%)" 这种值
+                            val (px, py) = pctOf(sx, sy)
+                            val (qx, qy) = pctOf(ex, ey)
                             a.x = px; a.y = py; a.x2 = qx; a.y2 = qy; rebuild()
                         }
                     },
