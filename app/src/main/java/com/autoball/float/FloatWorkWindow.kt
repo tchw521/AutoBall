@@ -200,7 +200,15 @@ object FloatWorkWindow {
 
     /** 动作列表变化后刷新 */
     fun refresh(script: Script) {
-        handler.post { fillList(script); refreshCap() }
+        handler.post {
+            fillList(script)
+            refreshCap()
+            // 列表行数变了（4~8 行夹取）会改变窗口高度，
+            // 光改子 View 的 LayoutParams 不够——WindowManager 的窗口尺寸
+            // 必须显式 updateViewLayout 才会重算，否则窗口停在旧尺寸上，
+            // 新加的几行被裁在外面看不到。
+            runCatching { wm?.updateViewLayout(view, params) }
+        }
     }
 
     /**
@@ -239,11 +247,17 @@ object FloatWorkWindow {
     // ================= 构建 =================
 
     private fun buildView(ctx: Context, script: Script, cb: Callback): View {
+        // 窗口整体固定大小（宽高比同手机屏幕、横竖屏一致），
+        // 内容区吃掉剩下的高度并内部滚动。
+        // 此前 root 是 WRAP_CONTENT：动作多、菜单展开、脚本名长都会把窗口撑高。
         val root = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
             background = panelBg(ctx)
             elevation = Display.dp(ctx, 10f)
         }
+        root.layoutParams = LinearLayout.LayoutParams(
+            Display.dpInt(ctx, FloatWindows.windowSizeDp(ctx).first),
+            Display.dpInt(ctx, FloatWindows.windowHeightDp(ctx)))
 
         // ---- 标题栏：状态点 + 脚本名 + ✕ ----
         val head = FrameLayout(ctx).apply {
@@ -268,7 +282,7 @@ object FloatWorkWindow {
         }
         val title = TextView(ctx).apply {
             text = script.name
-            textSize = 14f
+            textSize = TextSz.TITLE
             setTypeface(null, android.graphics.Typeface.BOLD)
             setTextColor(Theme.textPri())
             setSingleLine(true)
@@ -305,20 +319,25 @@ object FloatWorkWindow {
         val scroll = ScrollView(ctx).apply {
             isFillViewport = false
             overScrollMode = View.OVER_SCROLL_NEVER
-            // 列表固定 4 行高：窗口大小恒定，超出部分内部滚动。
-            // 早前用 WRAP_CONTENT，空态时塌成一条、动作多了又顶满屏幕，
-            // 窗口忽大忽小没法用。
+            // 吃掉"窗口高度 − 头部 − 底部条"的剩余空间，超出内部滚动。
+            // 用 weight=1 而不是算好的定值：底部条在录制态会换成另一条，
+            // 高度略有差异，weight 能自动吃准确。
             layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                FloatWindows.listHeightPx(ctx))
+                LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f)
+            // 最小高度：菜单展开把列表压到 1/3 时，仍要保证 3 行可见。
+            // 不加的话窄屏上可能只剩 2 行，看不出上下文。
+            minimumHeight = FloatWindows.listMinHeightPx(ctx)
         }
         val list = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
         scroll.addView(list, ViewGroup.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.WRAP_CONTENT))
-        root.addView(scroll, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT))
+        // 注意：**不要**在 addView 里再传一个 LayoutParams。
+        // 上面 apply{} 里已经给 ScrollView 设了定高，
+        // 而 addView(view, params) 会用这个新的 params 覆盖原来的——
+        // 早前这里传的是 WRAP_CONTENT，直接把限高冲掉了，
+        // 于是动作一多窗口就一路变长（17 步时顶满屏幕）。
+        root.addView(scroll)
 
         // ---- 底部主条：运行 / 录制 / 更多 ----
         val mainBar = LinearLayout(ctx).apply {
@@ -403,9 +422,9 @@ object FloatWorkWindow {
         moreWrap.addView(more, ViewGroup.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.WRAP_CONTENT))
+        // 初始收起：权重 0 不给它空间（展开时由 toggleMore 改成 2）
         root.addView(moreWrap, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT, 0f))
+            LinearLayout.LayoutParams.MATCH_PARENT, 0, 0f))
 
         holder = Holder(list, more, moreWrap, dot, title, mainBar, recBar)
         fillList(script)
@@ -489,7 +508,7 @@ object FloatWorkWindow {
             }
             row.addView(TextView(lc).apply {
                 text = "${i + 1}. ${ActionEditor.describe(a)}"
-                textSize = 12f
+                textSize = TextSz.ROW
                 setTextColor(Theme.textSec())
                 setSingleLine(true)
                 ellipsize = android.text.TextUtils.TruncateAt.END
@@ -501,7 +520,7 @@ object FloatWorkWindow {
             // 不必进编辑框再退出
             row.addView(TextView(lc).apply {
                 text = "✕"
-                textSize = 12f
+                textSize = TextSz.ROW_MINOR
                 setTypeface(null, android.graphics.Typeface.BOLD)
                 setTextColor(Theme.textTer())
                 gravity = Gravity.CENTER
@@ -550,10 +569,39 @@ object FloatWorkWindow {
 
     private fun toggleMore() {
         val h = holder ?: return
-        h.moreWrap.visibility =
-            if (h.moreWrap.visibility == View.VISIBLE) View.GONE else View.VISIBLE
+        val show = h.moreWrap.visibility != View.VISIBLE
+        h.moreWrap.visibility = if (show) View.VISIBLE else View.GONE
+
+        // 中间那块（列表 + 菜单）的高度按 2:1 重新分配：
+        // 菜单展开时优先占满（7 项基本一眼看全），列表收缩但仍可见一点上下文。
+        // LinearLayout 的 weight：值越大分到的剩余空间越多。
+        //
+        // 注意必须**新建** LayoutParams 再赋值——直接改已有对象的 weight
+        // 不会触发重新布局（View 不知道自己变了）。
+        val listHost = h.list.parent as? android.view.View
+        if (show) {
+            // 列表给**固定 3 行**、weight=0（不再参与比例分配），
+            // 菜单 weight=1 吃掉剩余全部 → 菜单尽量占满，列表稳定 3 行。
+            //
+            // 早前两边都用 weight（2:1），但 LinearLayout 会先把
+            // minimumHeight 计入再按 weight 分剩余，结果列表反而被撑到
+            // 比 3 行更多、菜单被压缩——与"菜单优先"相反。
+            h.moreWrap.layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f)
+            listHost?.layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                FloatWindows.listMinHeightPx(h.list.context), 0f)
+        } else {
+            h.moreWrap.layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, 0, 0f)
+            // 收起时列表独占剩余空间
+            listHost?.layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f)
+        }
         runCatching { wm?.updateViewLayout(view, params) }
     }
+
+    /** 菜单展开时列表固定 3 行（见 toggleMore 说明），菜单吃掉剩余空间 */
 
     // ================= 录制胶囊（让出屏幕时的唯一界面） =================
 
@@ -582,7 +630,7 @@ object FloatWorkWindow {
             // 拖动把手：只有这一块能拖，避免和按钮点击冲突
             addView(TextView(ctx).apply {
                 text = "⠿"
-                textSize = 13f
+                textSize = TextSz.GLYPH
                 setTextColor(Theme.textTer())
                 gravity = Gravity.CENTER
                 layoutParams = LinearLayout.LayoutParams(
@@ -590,13 +638,13 @@ object FloatWorkWindow {
             })
             addView(TextView(ctx).apply {
                 text = "●"
-                textSize = 9f
+                textSize = TextSz.DOT
                 setTextColor(Theme.danger())
                 gravity = Gravity.CENTER
             })
             addView(TextView(ctx).apply {
                 text = "录制中 $steps 步"
-                textSize = 12f
+                textSize = TextSz.ROW
                 setTypeface(null, android.graphics.Typeface.BOLD)
                 setTextColor(Theme.textPri())
                 gravity = Gravity.CENTER
@@ -606,7 +654,7 @@ object FloatWorkWindow {
             // 红色停止：录制期间唯一的停止入口
             addView(TextView(ctx).apply {
                 text = "■"
-                textSize = 14f
+                textSize = TextSz.GLYPH
                 setTypeface(null, android.graphics.Typeface.BOLD)
                 setTextColor(Color.WHITE)
                 gravity = Gravity.CENTER
@@ -695,7 +743,7 @@ object FloatWorkWindow {
     private fun roundBtn(ctx: Context, glyph: String, onClick: () -> Unit): TextView =
         TextView(ctx).apply {
             text = glyph
-            textSize = 13f
+            textSize = TextSz.GLYPH
             setTypeface(null, android.graphics.Typeface.BOLD)
             setTextColor(Theme.textSec())
             gravity = Gravity.CENTER
@@ -709,13 +757,13 @@ object FloatWorkWindow {
                         onClick: () -> Unit): TextView =
         TextView(ctx).apply {
             this.text = text
-            textSize = 12.5f
+            textSize = TextSz.BAR
             setTypeface(null, android.graphics.Typeface.BOLD)
             setTextColor(color)
             gravity = Gravity.CENTER
             background = Theme.rect(Theme.surface2(), 12f, ctx, Theme.line())
-            setPadding(Display.dpInt(ctx, 8f), Display.dpInt(ctx, 11f),
-                Display.dpInt(ctx, 8f), Display.dpInt(ctx, 11f))
+            setPadding(Display.dpInt(ctx, 8f), Display.dpInt(ctx, 9f),
+                Display.dpInt(ctx, 8f), Display.dpInt(ctx, 9f))
             setOnClickListener { onClick() }
         }
 
@@ -724,24 +772,24 @@ object FloatWorkWindow {
                        onClick: () -> Unit): TextView =
         TextView(ctx).apply {
             this.text = text
-            textSize = 13f
+            textSize = TextSz.BIG
             setTypeface(null, android.graphics.Typeface.BOLD)
             setTextColor(color)
             gravity = Gravity.CENTER
             background = Theme.rect(Theme.surface2(), 12f, ctx, Theme.line())
-            setPadding(Display.dpInt(ctx, 10f), Display.dpInt(ctx, 13f),
-                Display.dpInt(ctx, 10f), Display.dpInt(ctx, 13f))
+            setPadding(Display.dpInt(ctx, 10f), Display.dpInt(ctx, 12f),
+                Display.dpInt(ctx, 10f), Display.dpInt(ctx, 12f))
             setOnClickListener { onClick() }
         }
 
     private fun moreRow(ctx: Context, text: String, onClick: () -> Unit): TextView =
         TextView(ctx).apply {
             this.text = text
-            textSize = 12f
+            textSize = TextSz.MENU
             setTextColor(Theme.textSec())
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(Display.dpInt(ctx, 10f), Display.dpInt(ctx, 9f),
-                Display.dpInt(ctx, 10f), Display.dpInt(ctx, 9f))
+            setPadding(Display.dpInt(ctx, 10f), Display.dpInt(ctx, 7f),
+                Display.dpInt(ctx, 10f), Display.dpInt(ctx, 7f))
             setOnClickListener { onClick() }
         }
 

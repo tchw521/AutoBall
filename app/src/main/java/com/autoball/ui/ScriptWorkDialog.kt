@@ -35,12 +35,22 @@ object ScriptWorkDialog {
                     FloatWorkWindow.setRecording(true)
                     // 让录制控制器能把新增动作同步回本窗口的列表
                     CreatePage.currentScript = s
-                    host.startRecording()
-                    // 录制时让出屏幕：主窗口 + 悬浮球 + 悬浮窗全部收起，
-                    // 只留贴边胶囊显示步数（也是停止录制的唯一入口）。
-                    // 否则本应用的界面会挡住目标 App 的按钮、还抢走触摸。
                     FloatWorkWindow.bindSteps { s.flow?.actions?.size ?: 0 }
+
+                    // **顺序关键：先让出屏幕，再挂采集层。**
+                    //
+                    // 早前是先 startRecording（内部立刻 addView 采集层）再 enterStealth，
+                    // 两者都走主线程 Handler，实际顺序并不确定；
+                    // 一旦采集层先挂上，它会接管整屏触摸，
+                    // 而此时本应用的窗口还叠在上面——用户看到两层 UI，
+                    // 采到的坐标也可能落在本应用自己的界面而非目标应用。
+                    //
+                    // 现在：先隐藏（主窗口 + 悬浮球 + 悬浮窗，只留胶囊），
+                    // 稍后再挂采集层，保证"获取到的坐标来自真实的目标应用界面"。
                     FloatWorkWindow.enterStealth(activity)
+                    android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                        host.startRecording()
+                    }, 300)
                 } else {
                     stopAndBackToList(activity, s)
                 }

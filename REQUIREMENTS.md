@@ -190,6 +190,43 @@
       不用笼统的「已设置 N 项」：七个阶段语义差别大，只给数字得点进去
       才知道配了什么。多项不全列是因为会被截断成省略号，反而看不清。
 
+- [x] ~~R-141 录制三连修~~ ✅ v1.43.0（未编译验证）
+      1) `AccessibilityBackend.dispatch()` 在主线程自锁（post + latch.await），
+         补发必然等满 10s 超时返回 false → 录制点不动 / 看似无障碍没生效 /
+         主线程被卡导致步数刷新 post 不出去。主线程改为直接派发不等回调。
+      2) 录制开始顺序改为：先隐藏本应用窗口，延迟 300ms 再挂采集层。
+      3) 列表限高被 `addView(view, params)` 覆盖成 WRAP_CONTENT → 窗口随动作数
+         一路变长。改为 4~8 行夹取 + 可滚动，空态收回 WRAP_CONTENT。
+
+- [x] ~~R-142 动作类型选择不生效~~ ✅ v1.44.0（未编译验证）
+      `onPickType` 是成员变量、只有 showForm 赋值 → 悬浮窗形态（showFloat）
+      点到的是上次 showForm 遗留的闭包，改的是**旧动作对象**，当前编辑的纹丝不动。
+      改为 buildForm 显式收回调参数。
+      同时 showFormPage 必须调 rebuild：字段按 `a.type.fieldGroups` 动态生成，
+      只把旧 box 挂回去的话选了「滑动」仍显示「点击」的字段。
+      showFloat 补齐类型页，FloatDialog 新增 onReady（与 Ui.dialog 对齐）。
+
+- [x] ~~R-143 所有窗口固定大小~~ ✅ v1.45.0（未编译验证）
+      `FloatWindows.windowSizeDp()`：先把屏幕归一化成"短边为宽、长边为高"，
+      宽度取短边 1/2，高度按同一宽高比推出 → **竖屏时窗口与手机同比例**，
+      **横屏时拿到同一组基准值**（转屏不跳变）。
+      当前屏幕放不下时（横屏常见）**整体等比缩小**，不是只压高度。
+      `params()` 默认写死高度（此前只写宽、高 WRAP_CONTENT → 随内容变高）。
+      内容区用 weight=1 吃掉剩余并滚动：动作列表、更多菜单都不再撑高窗口。
+      FloatDialog / Ui.dialog 高度改用同一基准，弹窗与窗口同规格。
+      动作类型列表去掉嵌套 ScrollView（host 本身就是 ScrollView，
+      嵌套滚动手感差且内层定高与窗口高度对不上）。
+
+- [x] ~~R-144 窗口字号统一 + 列表稳定 3 行~~ ✅ v1.46.0（未编译验证）
+      新增 `TextSz`（float 包，统一组件）：按**信息层级**分档，
+      必要信息略缩（TITLE 13 / ROW 11.5 / BAR 12），描述性明显更小
+      （ROW_MINOR 10.5 / MENU 11 / NOTE 9.5）。此前字号是各方法里的字面量，
+      想整体缩小要逐个改且容易漏。
+      行高 34 → 29dp；列表 ScrollView 设 minimumHeight = 3 行。
+      菜单展开时列表改**固定 3 行 + weight=0**、菜单 weight=1 吃掉剩余：
+      两边都用 weight 时 LinearLayout 会先计入 minimumHeight 再分剩余，
+      结果列表被撑大、菜单被压缩，与"菜单优先"相反。
+
 - [ ] **R-128 内置 OCR 模块**（P2）：`ocr()` 当前直接报错，需引三方或自训练模型
 - [ ] **R-129 设备开关类 API**（P3）：wakeupScreen / setScreenBrightness /
       setWifiEnable / setBluetoothEnable / setCameraFlashEnable 多需系统签名权限，

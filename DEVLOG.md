@@ -523,3 +523,137 @@ text / pkg / url / key / code / scriptRef / subActions / control / varName`，
 `ActionHookDialog` 每行的「未设置」按钮直接调 `ActionEditor.show`——
 与"添加动作"是同一个表单组件，参数口径天然一致，不另写一份。
 
+## v1.43.0：主线程死锁——"无障碍没生效 / 录制点不动 / 步数不涨"其实是同一个 bug
+
+### 现象
+
+三个看起来毫不相干的问题：
+1. 无障碍服务开了却"似乎没生效"；
+2. 录制期间点其他软件没反应；
+3. 录制期间看不到记了几步。
+
+### 根因：`AccessibilityBackend.dispatch()` 在主线程自锁
+
+```kotlin
+val posted = mainHandler.post { svc.dispatchGesture(...) }   // 必须在主线程执行
+latch.await(timeoutMs)                                        // 阻塞当前线程等回调
+```
+
+录制补发是从采集层 `dispatchTouchEvent` 发起的，**已经在主线程**。
+主线程一 `await`，那个 post 出去的 Runnable 就永远得不到执行 →
+必然等到超时（默认 `Action.timeoutMs = 10_000`）后返回 false。
+
+连锁后果：
+- 补发根本没发出去 → 录制时点目标 App 毫无反应（现象 2，也被当成"无障碍没生效"，现象 1）；
+- 每次手势卡住主线程 10 秒 → 步数刷新、坐标提示全都 post 不出去（现象 3）。
+
+### 修法
+
+`dispatch()` 先判断 `Looper.myLooper() == Looper.getMainLooper()`：
+- 主线程：直接 `dispatchGesture(gd, null, null)`，**不等回调**（补发只要求"发出去"）；
+- 后台线程：保留原来的 latch 等待（脚本执行需要确认手势完成）。
+
+顺带给 `screenshot()` 加了同样的保护：截图必须拿到 Bitmap 才能返回、
+无法"发出不管"，所以在主线程调用必死锁，直接返回 Unavailable 并说明原因，
+比冻住主线程 5 秒好——冻住之后界面卡死而日志里什么都没有。
+
+另外补发失败现在会写日志（此前只是 `clearDispatch()` 静默吞掉）。
+
+### 同轮另两处
+
+- **隐藏顺序**：此前先 `startRecording()`（内部立刻挂采集层）再 `enterStealth()`，
+  两者都走主线程 Handler，实际顺序不确定。改为先隐藏、延迟 300ms 再挂采集层，
+  保证采到的坐标来自真实的目标应用界面。
+- **列表限高被覆盖**：`ScrollView` 在 `apply{}` 里设了定高，
+  随后 `root.addView(scroll, LayoutParams(MATCH_PARENT, WRAP_CONTENT))`
+  **用新的 params 把它冲掉** → 动作一多窗口一路变长（17 步顶满屏幕）。
+  改为不在 addView 传 params，并在 `fillList` 按动作数重设（4~8 行夹取）、
+  空态收回 WRAP_CONTENT；`refresh()` 里补 `updateViewLayout`
+  （只改子 View 的 LayoutParams，窗口尺寸不会重算）。
+
+### 教训
+
+`addView(view, params)` 会**覆盖** view 上已有的 layoutParams——
+在 `apply{}` 里设布局参数是无效劳动。这个坑和"字符串转义被吃掉一层"
+一样属于"代码看着对、实际不生效"，静态检查查不出来。
+
+## v1.44.0：动作类型选了不生效——成员变量闭包跨形态串台
+
+### 现象
+
+在**悬浮窗形态**（showFloat，也就是录制/添加动作时真正走的那条路）里
+点「动作类型」，选完回到表单，类型没变。
+
+### 根因
+
+`onPickType` 是 `ActionEditor` 的**成员变量**，只有 `showForm`（应用内弹窗）
+会给它赋值；`showFloat` 从不赋值。
+
+而表单里那一行写的是 `pick = { onPickType?.invoke() }` ——
+运行时读的是成员变量的**当前值**。于是 showFloat 弹出后，
+点到的是**上一次 showForm 遗留的闭包**，那个闭包里捕获的是：
+- 旧 Activity 的宿主容器（可能已销毁）
+- **旧动作对象** `a`
+
+结果：在新类型列表里选一项，改的是旧对象的 type，
+当前正在编辑的动作纹丝不动。而且完全静默——没有任何报错。
+
+### 第二处：切回表单没有重建
+
+即使闭包是对的，`showFormPage()` 只是把 `box` 重新加回宿主，
+并不重排字段——而字段是按 `a.type.fieldGroups` 动态生成的。
+选了「滑动」回到表单，看到的还是「点击」的那些行。
+
+### 修法
+
+1. `buildForm` 显式收 `onPickType` 参数（不再用成员变量），
+   两种形态各自传自己的切页闭包；
+2. `buildForm` 第三个返回值 `rebuild`，`showFormPage()` 先重建再挂回；
+3. `showFloat` 补上类型页（此前根本没有），给 `FloatDialog` 加
+   `onReady(dlg, host, titleTv)`，与 `Ui.dialog.onReady` 对齐。
+
+### 教训（同类第二次）
+
+**用成员变量当"回调注入点"是隐患**：谁最后赋值谁生效，
+没赋值的那条路会静默用到别人的闭包，且跨形态互相污染。
+回调必须**显式传参**，不要用成员状态隐式传递。
+
+这个坑和之前"主构造参数不加 val 导致类体里用不了"一样，
+都属于"看着能跑、实际指向错对象"。
+
+## v1.45.0：窗口尺寸统一——为什么"横屏保持竖屏尺寸"要先把屏幕归一化
+
+### 需求
+
+所有窗口固定大小：竖屏时窗口宽高比 = 手机屏幕宽高比；横屏时窗口大小与竖屏时相同。
+
+### 关键一步：归一化
+
+直接按当前 `screenSize` 算的话，横屏下算出来必然和竖屏不同。
+先归一化成"短边为宽、长边为高"，横竖屏就得到同一组基准值：
+
+```
+pw = min(a, b)   // 竖屏口径的宽
+ph = max(a, b)   // 竖屏口径的高
+w  = pw / 2
+h  = w * (ph / pw)      // 与手机同宽高比
+```
+
+### 放不下时等比缩小，而不是只压高度
+
+横屏时可用高度只剩短边，基准高度往往超出。
+只压高度会把窗口拉扁，宽高比就不对了（也就违背了"同比例"的要求），
+所以必须**整体等比缩小**。
+
+### 顺带发现的一处：嵌套滚动
+
+动作类型列表此前在 host（本身就是 ScrollView）里又套了一层定高 ScrollView。
+嵌套滚动手感很差（内层滑到边界外层不动），
+而且内层定高用的是"屏高百分比"，与窗口固定高度对不上。
+既然 host 能滚，就不该再套一层——直接把 listBox 交给 host。
+
+### 教训
+
+`params()` 只写宽度、高度留 WRAP_CONTENT 是"窗口随内容变高"的源头。
+要固定窗口，宽高**都得写死**，内容区用 weight=1 吃掉剩余并滚动。
+

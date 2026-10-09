@@ -47,10 +47,19 @@ import com.autoball.ui.Theme
 class FloatDialog private constructor(private val ctx: Context, private val title: String) {
 
     private var body: View? = null
+    /**
+     * 弹窗建成后回调（宿主容器 + 标题 TextView）。
+     *
+     * 用于**就地换页**：调用方把 host 的内容换成另一屏（如动作类型列表），
+     * 而不是另开一个弹窗——另开弹窗会与本弹窗争同一窗口层级而被盖住。
+     * 用法与 [com.autoball.ui.Ui.dialog] 的 onReady 对齐。
+     */
+    private var onReady: ((FloatDialog, ScrollView, TextView) -> Unit)? = null
     private var positive: Pair<String, (() -> Boolean)?>? = null
     private var positiveColor = 0
     private var negative: Pair<String, (() -> Unit)?>? = null
-    private var widthDp = 302f
+    /** 默认宽度；实际取用时若未显式指定，则跟随窗口统一尺寸 */
+    private var widthDp = 0f
 
     fun body(v: View) = apply { body = v }
     fun positive(text: String, onClick: (() -> Boolean)? = null) =
@@ -60,11 +69,15 @@ class FloatDialog private constructor(private val ctx: Context, private val titl
     fun negative(text: String, onClick: (() -> Unit)? = null) =
         apply { negative = text to onClick }
     fun width(dp: Float) = apply { widthDp = dp }
+    fun onReady(cb: (FloatDialog, ScrollView, TextView) -> Unit) = apply { onReady = cb }
 
     fun show(): Boolean {
         if (!Display.canDrawOverlay(ctx)) return false
 
         val wm = ctx.getSystemService(Context.WINDOW_SERVICE) as WindowManager
+        // 未显式指定宽度时跟随统一窗口尺寸，弹窗与窗口看起来是同一套规格
+        val wDp = if (widthDp > 0f) widthDp
+                  else FloatWindows.windowSizeDp(ctx).first
 
         // ---- 遮罩：捕获点击，点空白处关闭 ----
         val shade = FrameLayout(ctx).apply {
@@ -84,14 +97,15 @@ class FloatDialog private constructor(private val ctx: Context, private val titl
         }
 
         // 标题
-        card.addView(TextView(ctx).apply {
+        val titleTv = TextView(ctx).apply {
             text = title
             textSize = 15f
             setTypeface(null, android.graphics.Typeface.BOLD)
             setTextColor(Theme.textPri())
             setPadding(Display.dpInt(ctx, 16f), Display.dpInt(ctx, 14f),
                 Display.dpInt(ctx, 16f), Display.dpInt(ctx, 12f))
-        })
+        }
+        card.addView(titleTv)
         card.addView(View(ctx).apply {
             setBackgroundColor(Theme.line())
             layoutParams = LinearLayout.LayoutParams(
@@ -107,21 +121,16 @@ class FloatDialog private constructor(private val ctx: Context, private val titl
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT))
         }
-        val maxH = (Display.screenSize(ctx).y * 0.70f).toInt()
+        // 与悬浮窗口同一套尺寸规则（宽高比同手机、横竖屏一致），
+        // 不再用"屏高 70%"这种随屏幕变化的比例——
+        // 那会让同一个弹窗在横竖屏下大小不一，内容一多还得靠压紧高度。
+        val maxH = Display.dpInt(ctx, com.autoball.float.FloatWindows.windowHeightDp(ctx))
         card.addView(scroll, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f).apply {
             // 内容自然高度，由外层测量后夹紧
         })
-        card.viewTreeObserver.addOnGlobalLayoutListener(object :
-            android.view.ViewTreeObserver.OnGlobalLayoutListener {
-            override fun onGlobalLayout() {
-                card.viewTreeObserver.removeOnGlobalLayoutListener(this)
-                if (card.height > maxH) {
-                    card.layoutParams = card.layoutParams.apply { height = maxH }
-                    runCatching { wm.updateViewLayout(root, rootParams) }
-                }
-            }
-        })
+        // 高度已固定，不再需要"测量后压紧"的监听器——
+        // 那段逻辑会在每次布局后改卡片高度，与固定尺寸冲突
 
         // 底部按钮
         val pos = positive
@@ -174,14 +183,15 @@ class FloatDialog private constructor(private val ctx: Context, private val titl
             card.addView(bar)
         }
 
-        val w = Display.dpInt(ctx, widthDp).coerceAtMost(
-            Display.dpInt(ctx, FloatWindows.widthDp(ctx) + 60f))
+        val w = Display.dpInt(ctx, wDp).coerceAtMost(
+            Display.dpInt(ctx, FloatWindows.windowSizeDp(ctx).first + 60f))
         root = FrameLayout(ctx).apply {
             addView(shade, FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT))
-            addView(card, FrameLayout.LayoutParams(w,
-                FrameLayout.LayoutParams.WRAP_CONTENT).apply {
+            // 高度也写死为窗口统一高度：卡片不再随内容变高，
+            // 内容超出由内部 ScrollView 滚动
+            addView(card, FrameLayout.LayoutParams(w, maxH).apply {
                 gravity = Gravity.CENTER
             })
         }
@@ -206,6 +216,7 @@ class FloatDialog private constructor(private val ctx: Context, private val titl
         // 入场
         card.scaleX = 0.94f; card.scaleY = 0.94f; card.alpha = 0f
         card.animate().scaleX(1f).scaleY(1f).alpha(1f).setDuration(180).start()
+        onReady?.invoke(this, scroll, titleTv)
         return true
     }
 

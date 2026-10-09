@@ -166,7 +166,29 @@ class AccessibilityBackend : InputBackend {
     }
 
     /** 派发统一走主线程，避免部分 ROM 在非 UI 线程注入失败 */
+    /**
+     * 派发手势。
+     *
+     * **绝不能在调用线程上等回调**——这是"录制时点其他软件没反应"的根因：
+     * 录制补发是从采集层的 `dispatchTouchEvent` 里发起的，**已经在主线程**；
+     * 而 `dispatchGesture` 必须在主线程执行，代码却用 `mainHandler.post{...}`
+     * 再 `latch.await()` 阻塞当前线程。
+     * 主线程一阻塞，那个 post 出去的 Runnable 永远得不到执行，
+     * 必然等到超时（默认 10 秒）后返回 false。
+     *
+     * 后果是连锁的：
+     * 1. 补发根本没发出去 → 录制期间点其他软件毫无反应（像无障碍没生效）；
+     * 2. 主线程每次被卡 10 秒 → 步数刷新、坐标提示全都 post 不出去
+     *    → "录制期间看不到记了几步"。
+     *
+     * 所以：已在主线程就直接派发、不等结果（补发只要求"发出去"）；
+     * 后台线程才走等待回调的路径（脚本执行需要确认手势完成）。
+     */
     private fun dispatch(svc: AutoBallAccessibilityService, gd: GestureDescription, timeoutMs: Long): Boolean {
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            // 已在主线程：直接派发，且**不传回调**——传了回调也没人有机会执行到
+            return runCatching { svc.dispatchGesture(gd, null, null) }.getOrDefault(false)
+        }
         val latch = CountDownLatch(1)
         var done = false
         var ok = false
@@ -451,6 +473,13 @@ class AccessibilityBackend : InputBackend {
     override fun screenshot(ctx: ExecContext): ScreenResult {
         if (Build.VERSION.SDK_INT < 30) return ScreenResult.Unavailable("Android 11 以下不支持无障碍截图")
         val svc = AutoBallAccessibilityService.instance ?: return ScreenResult.Unavailable("无障碍服务未启动")
+        // 与 dispatch() 同源的陷阱：截图必须拿到 Bitmap 才能返回，无法"发出不管"，
+        // 所以在主线程调用时**必定**死锁（post 出去的任务没人执行）。
+        // 这种情况直接返回不可用并说明理由，比冻住主线程 5 秒好——
+        // 冻住之后用户只会看到界面卡死，而日志里什么都没有。
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            return ScreenResult.Unavailable("截图不能在主线程调用（会与回调互相等待）")
+        }
         val latch = CountDownLatch(1)
         var bmp: Bitmap? = null
         var err: String? = null

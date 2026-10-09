@@ -113,7 +113,13 @@ class RecordController(private val context: Context) {
         val last = stroke.samples.last()
         suppressor.markDispatch(last.x, last.y, now, action.durationMs)
         val r = AB.router.execute(action, ctx)
-        if (!r.ok) suppressor.clearDispatch()
+        if (!r.ok) {
+            suppressor.clearDispatch()
+            // 必须记录：补发失败意味着"这一步只被记下来、没真正作用到目标应用"，
+            // 用户看到的现象是"点了没反应"，不写日志根本无从排查是哪个后端拒了
+            AB.log.warn("record",
+                "补发失败（${r.message ?: r.cause ?: "未知"}），该动作仅记录未生效")
+        }
 
         // 坐标提示：告知用户这一点被记下来了、记在哪个百分比位置。
         // 用**像素**点定位（提示要贴在手指位置），文案用百分比（与脚本存储一致）。

@@ -55,6 +55,48 @@ object FloatWindows {
      * 结果窗口比屏幕还宽，底部按钮被裁到屏幕外——这正是「只剩一个按钮」的原因。
      * 这里先按密度换算回 dp 再取比例。
      */
+    /**
+     * **窗口统一尺寸**（dp）：宽高比与手机屏幕一致，且不随横竖屏跳变。
+     *
+     * 两条规则：
+     * 1. **竖屏时窗口长宽比 = 手机的长宽比**——窗口宽度取屏宽 1/2，
+     *    高度按同一比例推出，看起来就是"缩小了一倍的手机屏幕"。
+     * 2. **横屏时尺寸与竖屏时相同**——先把屏幕归一化成"短边为宽、长边为高"
+     *    再算，横屏下拿到的是同一组基准值，转屏窗口不会变大变小。
+     *
+     * 唯一的例外是放不下：横屏时可用高度只剩短边，
+     * 基准高度可能超出，此时**整体等比缩小**保持宽高比，
+     * 而不是只压高度——只压高度的话窗口会被拉扁，比例就不对了。
+     */
+    fun windowSizeDp(ctx: Context): Pair<Float, Float> {
+        val sz = Display.screenSize(ctx)
+        val den = Display.density(ctx).takeIf { it > 0f } ?: 1f
+        val a = sz.x / den          // 当前屏幕宽（横屏时是长边）
+        val b = sz.y / den          // 当前屏幕高（横屏时是短边）
+        // 归一化成竖屏口径：短边当宽、长边当高。横竖屏得到同一组值。
+        val pw = minOf(a, b)
+        val ph = maxOf(a, b)
+        var w = (pw / 2f).coerceIn(240f, pw - 24f)
+        var h = w * (ph / pw)
+        // 当前屏幕放不下（横屏常见）→ 等比缩小
+        val maxH = b - 24f
+        if (h > maxH) {
+            val k = maxH / h
+            h = maxH
+            w *= k
+        }
+        val maxW = a - 24f
+        if (w > maxW) {
+            val k = maxW / w
+            w = maxW
+            h *= k
+        }
+        return w to h
+    }
+
+    /** 窗口统一高度（dp），见 [windowSizeDp] */
+    fun windowHeightDp(ctx: Context): Float = windowSizeDp(ctx).second
+
     fun widthDp(ctx: Context): Float {
         val sz = Display.screenSize(ctx)
         val den = Display.density(ctx).takeIf { it > 0f } ?: 1f
@@ -92,10 +134,54 @@ object FloatWindows {
      * 窗口要保持固定大小：列表高度不随动作数量变化，
      * 空的时候不会塌成一条，动作多了也不会把窗口顶满——超出部分内部滚动。
      */
-    fun listHeightPx(ctx: Context): Int = 4 * Display.dpInt(ctx, ROW_H_DP)
+    /**
+     * 动作列表高度（px）：行数夹在 4～8 行之间，超出部分**内部滚动**。
+     *
+     * 两条约束缺一不可：
+     * - 下限 4 行：空态或只有一两步时窗口不会塌成一条，大小可预期；
+     * - 上限 8 行：动作多时窗口不会一路顶满屏幕（17 步时曾把整个屏幕撑满）。
+     *
+     * @param count 当前动作数；0 表示空态（返回 WRAP_CONTENT 由调用方处理）
+     */
+    /**
+     * 内容区高度（px）：固定值 = 窗口高度减去头部与底部条。
+     *
+     * 早前按动作数算（4~8 行夹取），窗口还是会长短不一；
+     * 现在窗口整体固定，内容区就是"剩下的那块"，超出一律内部滚动。
+     */
+    fun contentHeightPx(ctx: Context): Int {
+        val h = windowHeightDp(ctx)
+        val chrome = HEAD_DP + BAR_DP + 2f
+        return Display.dpInt(ctx, (h - chrome).coerceAtLeast(MIN_CONTENT_DP))
+    }
+
+    /** 窗口固定框架：标题栏 + 底部条 + 分割线（dp） */
+    const val HEAD_DP = 40f
+    const val BAR_DP = 44f
+    const val MIN_CONTENT_DP = 90f
+
+    /**
+     * 列表高度（px）——保留仅为兼容旧调用点，一律返回内容区高度。
+     * @param count 已忽略
+     */
+    @Deprecated("窗口已固定大小，列表高度不再随动作数变化")
+    fun listHeightPx(ctx: Context, count: Int = 4): Int {
+        return contentHeightPx(ctx)
+    }
+
+    /** 列表最少 4 行 / 最多 8 行 */
+    const val MIN_LIST_ROWS = 4
+    const val MAX_LIST_ROWS = 8
 
     /** 列表行高（dp）：与 FloatWorkWindow 的行 padding 一致 */
-    const val ROW_H_DP = 34f
+    const val ROW_H_DP = com.autoball.float.TextSz.ROW_H
+
+    /** 列表**最少**显示行数：菜单展开、列表被压到 1/3 时也要保证看到这么多行 */
+    const val MIN_VISIBLE_ROWS = 3
+
+    /** 列表最小高度（px）：保证 [MIN_VISIBLE_ROWS] 行可见 */
+    fun listMinHeightPx(ctx: Context): Int =
+        MIN_VISIBLE_ROWS * Display.dpInt(ctx, ROW_H_DP)
 
     /** 加入一个窗口；返回 false 表示已有同名窗口或没有权限 */
     fun add(ctx: Context, view: View, params: WindowManager.LayoutParams): Boolean {
@@ -174,11 +260,19 @@ object FloatWindows {
             WindowManager.LayoutParams.TYPE_PHONE
         }
 
+    /** 是否让所有窗口使用统一固定尺寸（宽高比同手机、横竖屏一致） */
+    @Volatile
+    var fixedSize: Boolean = true
+
     fun params(ctx: Context, wDp: Float, focusable: Boolean = false)
             : WindowManager.LayoutParams {
+        // 固定尺寸：高度也写死。此前只写宽、高是 WRAP_CONTENT，
+        // 于是窗口高度随内容走——动作多、菜单展开、文案变长都会让窗口变高。
+        val h = if (fixedSize) Display.dpInt(ctx, windowHeightDp(ctx))
+                else WindowManager.LayoutParams.WRAP_CONTENT
         val p = WindowManager.LayoutParams(
-            Display.dpInt(ctx, wDp),
-            WindowManager.LayoutParams.WRAP_CONTENT,
+            Display.dpInt(ctx, if (fixedSize) windowSizeDp(ctx).first else wDp),
+            h,
             overlayType(),
             if (focusable) 0 else WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
             PixelFormat.TRANSLUCENT

@@ -152,6 +152,14 @@ object ActionEditor {
     @Volatile
     private var flowRef: com.autoball.core.model.Flow? = null
 
+    /**
+     * 当前表单视图。
+     *
+     * 必须是成员而不是局部变量：局部**函数**不能前向引用后面才声明的局部变量，
+     * 而 `showFormPage()` 需要在 `buildForm()` 之前定义（与 showTypePage 相互调用）。
+     */
+    private var boxRef: View? = null
+
     fun show(activity: Activity, existing: Action?, onSave: (Action) -> Unit) =
         show(activity, existing, null, onSave)
 
@@ -183,16 +191,53 @@ object ActionEditor {
             x = 50f; y = 50f
             optionLabel = "点击"
         }
-        val (box, submit) = buildForm(ctx, a)
+        // 与 showForm 同样的两屏切换（表单 / 类型列表），共用同一个弹窗：
+        // 悬浮窗形态此前根本没有类型页，点「动作类型」会掉进上一次
+        // showForm 遗留的闭包里（见 buildForm 注释）
+        var page = 0
+        var host: android.widget.ScrollView? = null
+        var titleTv: TextView? = null
+        var rebuild: () -> Unit = {}
+        // 先声明再赋值：局部**函数**不能前向引用尚未声明的局部变量
+        var formView: View? = null
+        var submit: () -> Unit = {}
+        fun showFormPage() {
+            page = 0
+            titleTv?.text = "编辑动作"
+            rebuild()          // 先按当前 a.type 重排字段，再挂回去
+            val b = formView ?: return
+            host?.removeAllViews()
+            host?.addView(b, ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT))
+        }
+        fun showTypePage() {
+            val h = host ?: return
+            val t = titleTv ?: return
+            page = 1
+            showTypeList(ctx, a, h, t) { showFormPage() }
+        }
+        val (box, sb, rb) = buildForm(ctx, a) { showTypePage() }
+        formView = box
+        submit = sb
+        rebuild = rb
+
         val d = com.autoball.float.FloatDialog.show(ctx, "编辑动作")
             .body(box)
             .width(Theme.DIALOG_W + 24f)
+            .onReady { _, content, tv -> host = content; titleTv = tv }
             .negative("取消") { }
             .positive("确定") {
-                submit()
-                if (a.type == ActionType.CLICK && a.durationMs <= 0L) a.durationMs = 60L
-                onSave(a)
-                true
+                if (page != 0) {
+                    // 停在类型列表页时「确定」当作返回表单，
+                    // 避免误把没确认过的类型写回
+                    showFormPage(); false
+                } else {
+                    submit()
+                    if (a.type == ActionType.CLICK && a.durationMs <= 0L) a.durationMs = 60L
+                    onSave(a)
+                    true
+                }
             }
         if (!d.show()) {
             val act = ctx as? Activity ?: return
@@ -205,18 +250,21 @@ object ActionEditor {
     // =====================================================================
 
     private fun showForm(activity: Activity, a: Action, onSave: (Action) -> Unit) {
-        val (box, submit) = buildForm(activity, a)
         // 当前显示哪一屏：表单 或 类型列表（就地换页，共用同一个 Dialog）
         var page = 0
         var dlg: Dialog? = null
         var host: android.widget.ScrollView? = null
         var titleTv: TextView? = null
+        var rebuild: () -> Unit = {}
+        var submit: () -> Unit = {}
 
         fun showFormPage() {
             page = 0
             titleTv?.text = "编辑动作"
+            rebuild()      // 类型可能刚变过，字段必须按新类型重排
+            val b = boxRef ?: return
             host?.removeAllViews()
-            host?.addView(box, ViewGroup.LayoutParams(
+            host?.addView(b, ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT))
         }
@@ -226,8 +274,10 @@ object ActionEditor {
             val t = titleTv ?: return
             showTypeList(activity, a, h, t) { showFormPage() }
         }
-        // 表单里点「动作类型」→ 切到类型列表页
-        onPickType = { showTypePage() }
+        val (box, sb, rb) = buildForm(activity, a) { showTypePage() }
+        boxRef = box
+        submit = sb
+        rebuild = rb
 
         Ui.dialog(activity, "编辑动作")
             .body(box)
@@ -254,16 +304,26 @@ object ActionEditor {
             .show()
     }
 
-    /** 由表单注入：点「动作类型」时切页（避免表单持有弹窗引用） */
-    private var onPickType: (() -> Unit)? = null
-
     /**
      * 构建表单，返回 (视图, 提交回调)。
      *
      * 抽出来让应用内弹窗与悬浮窗两种形态共用同一份表单与取值——
      * 两处各写一遍必然出现参数口径不一致。
      */
-    private fun buildForm(ctx: android.content.Context, a: Action): Pair<View, () -> Unit> {
+    /**
+     * @param onPickType 点「动作类型」时的切页回调。**必须显式传入**：
+     *   早前用的是成员变量 `onPickType`，而 showFloat（悬浮窗形态）从不给它赋值，
+     *   于是点到的是**上一次 showForm 留下的闭包**——
+     *   那个闭包持有旧 Activity 的宿主容器和**旧动作对象**，
+     *   选中新类型后改的是旧对象，当前正在编辑的动作纹丝不动。
+     *   表现就是"动作类型选了不生效"，而且完全静默（连报错都没有）。
+     * @return (表单视图, 提交回调, 重建回调)。第三个必须返回：
+     *   切换类型后表单字段要按新类型重排，只把旧 box 加回宿主
+     *   显示的仍是旧类型的字段。
+     */
+    private fun buildForm(ctx: android.content.Context, a: Action,
+                          onPickType: (() -> Unit)? = null)
+            : Triple<View, () -> Unit, () -> Unit> {
         val box = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
         var dialog: Dialog? = null
 
@@ -551,7 +611,7 @@ object ActionEditor {
         }
 
         rebuild()
-        return box to { readers.values.forEach { it() } }
+        return Triple(box, { readers.values.forEach { it() } }, { rebuild() })
     }
 
     // =====================================================================
@@ -586,33 +646,17 @@ object ActionEditor {
         }
 
         box.addView(Kit.segment(ctx, groups, cur) { i -> cur = i; fill() })
-        // 列表必须能**上下滑动**：类型多（单组最多 15 项），
-        // 不滚动的话弹窗会被撑到屏幕外，底部的项根本点不到。
-        // 限高用屏高的比例，横屏再收紧。
-        val sz = Display.screenSize(ctx)
-        val maxH = (sz.y * if (sz.x > sz.y) 0.45f else 0.52f).toInt()
-        val scroll = android.widget.ScrollView(ctx).apply {
-            isFillViewport = false
-            overScrollMode = android.view.View.OVER_SCROLL_NEVER
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT).apply {
-                topMargin = Display.dpInt(ctx, 8f)
-            }
+        // 列表**直接交给外层 host 滚动**（host 本身就是 ScrollView）。
+        //
+        // 早前在这里又套了一层定高 ScrollView，形成嵌套滚动：
+        // 内层滑到边界后外层不动，项多时手感很差，而且内层定高是"屏高百分比"，
+        // 与窗口固定高度对不上。既然 host 已经能滚，就别再套一层。
+        listBox.layoutParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+            topMargin = Display.dpInt(ctx, 8f)
         }
-        scroll.addView(listBox, ViewGroup.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT))
-        // 包一层定高容器：ScrollView 没有 maxHeight 属性（那是 View 的），
-        // 只能靠外层限制
-        val listWrap = android.widget.FrameLayout(ctx).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, maxH)
-            addView(scroll, android.widget.FrameLayout.LayoutParams(
-                android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
-                android.widget.FrameLayout.LayoutParams.WRAP_CONTENT))
-        }
-        box.addView(listWrap)
+        box.addView(listBox)
         fill()
         box.addView(TextView(ctx).apply {
             text = "坐标均为百分比，换机型与转屏都不会点偏；带预设的动作已填好常用参数。"

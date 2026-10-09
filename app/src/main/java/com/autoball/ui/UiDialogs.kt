@@ -139,10 +139,12 @@ object UiDialogs {
                 isFillViewport = false
                 overScrollMode = View.OVER_SCROLL_NEVER
             }
-            // 横屏可用高度小，弹窗要更保守，否则底部按钮被挤出屏幕
+            // 高度改用**窗口统一尺寸**：与悬浮窗口同一规格，横竖屏一致。
+            // 早前用"屏高 × 比例（横屏再压到 0.62）"，
+            // 于是同一个弹窗在横竖屏下高度不同、换了设备也不同，
+            // 而且与悬浮窗口的高度对不上，视觉上像两套东西。
             val sz = Display.screenSize(ctx)
-            val ratio = if (sz.x > sz.y) kotlin.math.min(maxHeightRatio, 0.62f)
-                        else maxHeightRatio
+            val winH = Display.dpInt(ctx, com.autoball.float.FloatWindows.windowHeightDp(ctx))
             body?.let {
                 it.setPadding(Display.dpInt(ctx, 6f), Display.dpInt(ctx, 4f),
                     Display.dpInt(ctx, 6f), Display.dpInt(ctx, 6f))
@@ -220,9 +222,8 @@ object UiDialogs {
                     val sz = Display.screenSize(ctx)
                     val nw = kotlin.math.min(Display.dpInt(ctx, widthDp),
                         (sz.x * 0.86f).toInt())
-                    val nr = if (sz.x > sz.y) kotlin.math.min(maxHeightRatio, 0.62f)
-                             else maxHeightRatio
-                    val nH = (sz.y * nr).toInt()
+                    // 与悬浮窗口同高；屏幕实在放不下时才退回按比例
+                    val nH = kotlin.math.min(winH, (sz.y * 0.9f).toInt())
                     val win = d?.window ?: return
                     if (v.height > nH) win.setLayout(nw, nH) else win.setLayout(nw,
                         ViewGroup.LayoutParams.WRAP_CONTENT)
