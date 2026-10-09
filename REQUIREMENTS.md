@@ -320,13 +320,25 @@
       当时把共用 key 拆成两个，却只改了读取端没同步写入端。
       另：滑块是 0–100，存的是 0–1 透明度，必须 /100f（此前也没除）。
 
-- [x] ~~R-158 倍速填 0 → 脚本永久卡住~~ ✅ v1.50.0
+- [x] ~~R-158a 倍速填 0 → 脚本永久卡住~~ ✅ v1.50.0
       `FlowRunner.doWait` 里 `a.preDelayMs / speed`：speed 来自**用户手输**的倍速框，
       填 0 时 Float 除零得 Infinity → `toLong()` 得 Long.MAX_VALUE → 睡到天荒地老。
       表现为"脚本卡住不动"，且**日志里没有任何相关输出**，无从判断原因。
       改为 speed <= 0.01 时按 1 处理。
 
-- [x] ~~R-160 新增字段组引用了不存在的 onChange~~ ✅ v1.50.0（**本轮自己引入，CI 抓到**）
+- [x] ~~R-160 新增字段组引用了不存在的 onChange~~ ✅ v1.50.0（**本轮自己引入，CI 抓到 2 次**）
+      `buildForm` 的重建回调叫 **`rebuild()`**（局部函数），
+      我新增 TEMPLATE / COLOR / NODE_SPEC 三组时按记忆写了 `onChange()`，
+      3 处 Unresolved reference。
+      **修的时候又错第二次**：做全局替换 `onChange→rebuild`，
+      把 `showTypeList` 里合法的参数 `onChange()` 也改了（那一处是函数参数，本来正确）。
+      两次都是同一个根因——**不看作用域就动手**：写的时候凭别的函数推断名字，
+      改的时候一把梭不看所在函数。
+      教训：① 在函数内新增代码，先 grep 该函数内已有回调名；
+            ② 全局替换后，逐个确认每一处所在的函数。
+      另：容差留空的兜底值也写成 10 了，应为 Action 默认 24。
+
+- [x] ~~R-158 倍速填 0 → 脚本永久卡住~~ ✅ v1.50.0
       `buildForm` 的重建回调叫 **`rebuild()`**（局部函数），
       我新增 TEMPLATE / COLOR / NODE_SPEC 三组时按记忆写了 `onChange()`，
       3 处 Unresolved reference，整版编译失败。

@@ -861,7 +861,10 @@ object ActionEditor {
             background = Theme.rect(Theme.surface2(), 10f, ctx, Theme.line())
             setPadding(Display.dpInt(ctx, 10f), Display.dpInt(ctx, 9f),
                 Display.dpInt(ctx, 10f), Display.dpInt(ctx, 9f))
-            setOnClickListener { rebuild() }
+            // 这里是 showTypeList，回调参数就叫 onChange（不是 buildForm 的 rebuild）。
+            // 我上一轮做全局替换时把这里也改了，属于"替换不看作用域"——
+            // 同一份文件里两个函数的回调名不同，不能一把梭
+            setOnClickListener { onChange() }
         })
 
         // 就地换页：把外层「编辑动作」的内容容器换成类型列表。
