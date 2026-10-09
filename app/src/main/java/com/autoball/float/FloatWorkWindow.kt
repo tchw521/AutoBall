@@ -2,6 +2,7 @@ package com.autoball.float
 
 import android.content.Context
 import android.content.Intent
+import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
@@ -556,17 +557,37 @@ object FloatWorkWindow {
 
     // ================= 录制胶囊（让出屏幕时的唯一界面） =================
 
+    /**
+     * 录制中的悬浮标（自动精灵同款）：**可拖动** + 显示步数 + 红色停止按钮。
+     *
+     * 两个必须满足的点：
+     * 1. **可移动**——它会盖在目标 App 上，位置不能固定；用户要能把它挪到
+     *    不挡操作的地方，否则录制时想点的按钮正好被它压住，就点不到了。
+     * 2. **红色停止按钮常驻**——录制期间本应用其它界面全部隐藏，
+     *    这枚按钮是唯一的停止入口；藏在"点一下恢复窗口再停止"里太深。
+     */
     private fun showCap(ctx: Context) {
         val steps = currentSteps()
         val v = LinearLayout(ctx).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
             background = GradientDrawable().apply {
                 setColor(Theme.surface())
-                cornerRadius = Display.dp(ctx, 20f)
+                cornerRadius = Display.dp(ctx, 18f)
                 setStroke(Display.dpInt(ctx, 1f), Theme.line())
             }
             elevation = Display.dp(ctx, 6f)
+            setPadding(Display.dpInt(ctx, 9f), Display.dpInt(ctx, 5f),
+                Display.dpInt(ctx, 5f), Display.dpInt(ctx, 5f))
+            // 拖动把手：只有这一块能拖，避免和按钮点击冲突
+            addView(TextView(ctx).apply {
+                text = "⠿"
+                textSize = 13f
+                setTextColor(Theme.textTer())
+                gravity = Gravity.CENTER
+                layoutParams = LinearLayout.LayoutParams(
+                    Display.dpInt(ctx, 16f), Display.dpInt(ctx, 26f))
+            })
             addView(TextView(ctx).apply {
                 text = "●"
                 textSize = 9f
@@ -574,29 +595,71 @@ object FloatWorkWindow {
                 gravity = Gravity.CENTER
             })
             addView(TextView(ctx).apply {
-                text = "$steps"
+                text = "录制中 $steps 步"
                 textSize = 12f
                 setTypeface(null, android.graphics.Typeface.BOLD)
                 setTextColor(Theme.textPri())
                 gravity = Gravity.CENTER
+                setPadding(Display.dpInt(ctx, 4f), 0, Display.dpInt(ctx, 6f), 0)
                 setTag(com.autoball.R.id.work_state, this)
             })
-            val sz = Display.dpInt(ctx, 54f)
-            // 点一下恢复主窗口（可继续暂停/停止）
-            setOnClickListener { exitStealth(ctx) }
-            layoutParams = FrameLayout.LayoutParams(sz, Display.dpInt(ctx, 62f))
+            // 红色停止：录制期间唯一的停止入口
+            addView(TextView(ctx).apply {
+                text = "■"
+                textSize = 14f
+                setTypeface(null, android.graphics.Typeface.BOLD)
+                setTextColor(Color.WHITE)
+                gravity = Gravity.CENTER
+                background = GradientDrawable().apply {
+                    setColor(Theme.danger())
+                    cornerRadius = Display.dp(ctx, 11f)
+                }
+                layoutParams = LinearLayout.LayoutParams(
+                    Display.dpInt(ctx, 30f), Display.dpInt(ctx, 30f))
+                setOnClickListener { cbRef?.onStopRecord(curScript ?: return@setOnClickListener) }
+            })
         }
         val p = WindowManager.LayoutParams(
-            Display.dpInt(ctx, 54f), Display.dpInt(ctx, 62f),
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            WindowManager.LayoutParams.WRAP_CONTENT,
             FloatWindows.overlayType(),
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
             PixelFormat.TRANSLUCENT
         )
-        p.gravity = Gravity.END or Gravity.CENTER_VERTICAL
-        p.x = 0
+        p.gravity = Gravity.TOP or Gravity.END
+        p.x = Display.dpInt(ctx, 8f)
+        p.y = Display.dpInt(ctx, 96f)
         capView = v
         capParams = p
         FloatWindows.add(ctx, v, p)
+        // 整块拖动：录到一半发现它挡住了要点的按钮，随手就能挪开
+        capDragAttach(v, p)
+    }
+
+    /** 录制标的拖动（独立于主窗口的 [dragAttach]，用 capParams 而不是 params） */
+    private fun capDragAttach(head: View, p: WindowManager.LayoutParams) {
+        var sx = 0f; var sy = 0f; var px = 0; var py = 0; var moved = false
+        head.setOnTouchListener { _, e ->
+            when (e.action) {
+                MotionEvent.ACTION_DOWN -> {
+                    sx = e.rawX; sy = e.rawY; px = p.x; py = p.y; moved = false
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    val dx = (e.rawX - sx).toInt()
+                    val dy = (e.rawY - sy).toInt()
+                    if (Math.abs(dx) > 6 || Math.abs(dy) > 6) {
+                        moved = true
+                        // gravity 是 TOP|END：x 越大越靠左，别搞反
+                        p.x = px - dx
+                        p.y = py + dy
+                        runCatching { wm?.updateViewLayout(head, p) }
+                    }
+                }
+                MotionEvent.ACTION_UP -> if (moved) return@setOnTouchListener true
+            }
+            // 返回 false 让子 View（停止按钮）还能收到点击
+            !moved
+        }
     }
 
     private fun removeCap() {
@@ -609,7 +672,7 @@ object FloatWorkWindow {
     private fun refreshCap() {
         val v = capView ?: return
         (v.findViewWithTag<TextView>(com.autoball.R.id.work_state))
-            ?.text = currentSteps().toString()
+            ?.text = "录制中 ${currentSteps()} 步"
     }
 
     private var stepsRef: (() -> Int)? = null

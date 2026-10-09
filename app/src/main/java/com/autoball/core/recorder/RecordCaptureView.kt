@@ -48,6 +48,54 @@ class RecordCaptureView(
         // 叠在一起：既挡住目标应用，也互相挡住按钮。录制控制已并入
         // FloatWorkWindow 的录制控制条，采集层只负责接管触摸。
         setBackgroundColor(Color.parseColor("#08000000"))
+        // 范围标记框：录制期间必须让用户**看得见**采集范围。
+        // 此前采集层完全透明，用户无从判断哪片区域的触摸会被记录，
+        // 点在框外就会静默丢动作——表现为"录制不灵"。
+        willNotDraw = false
+    }
+
+    /**
+     * 画采集范围的边框（自动精灵录制态同款：屏幕四周一圈标记）。
+     *
+     * 用 onDraw 而不是再叠一层边框窗口：采集层本来就是整屏的，
+     * 多一个窗口就多一份被系统判为"不可信遮挡"的风险。
+     */
+    override fun onDraw(canvas: android.graphics.Canvas) {
+        super.onDraw(canvas)
+        val w = width.toFloat(); val h = height.toFloat()
+        if (w <= 0f || h <= 0f) return
+        val i = Display.dp(context, 3f)
+        framePaint.strokeWidth = Display.dp(context, 2f)
+        // 四角用亮色描出 L 形，四边用细线连起来——
+        // 纯细线在浅色壁纸上几乎看不见
+        canvas.drawLine(i, i, w - i, i, framePaint)
+        canvas.drawLine(w - i, i, w - i, h - i, framePaint)
+        canvas.drawLine(w - i, h - i, i, h - i, framePaint)
+        canvas.drawLine(i, h - i, i, i, framePaint)
+        val L = Display.dp(context, 22f)
+        cornerPaint.strokeWidth = Display.dp(context, 4f)
+        // 左上
+        canvas.drawLine(i, i + L, i, i, cornerPaint)
+        canvas.drawLine(i, i, i + L, i, cornerPaint)
+        // 右上
+        canvas.drawLine(w - i - L, i, w - i, i, cornerPaint)
+        canvas.drawLine(w - i, i, w - i, i + L, cornerPaint)
+        // 左下
+        canvas.drawLine(i, h - i - L, i, h - i, cornerPaint)
+        canvas.drawLine(i, h - i, i + L, h - i, cornerPaint)
+        // 右下
+        canvas.drawLine(w - i - L, h - i, w - i, h - i, cornerPaint)
+        canvas.drawLine(w - i, h - i, w - i, h - i - L, cornerPaint)
+    }
+
+    private val framePaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+        color = 0x662FA2DA
+        style = android.graphics.Paint.Style.STROKE
+    }
+    private val cornerPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+        color = 0xEE2FA2DA.toInt()
+        style = android.graphics.Paint.Style.STROKE
+        strokeCap = android.graphics.Paint.Cap.ROUND
     }
 
     private fun reset() {

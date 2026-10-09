@@ -14,7 +14,6 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import com.autoball.core.model.Action
 import com.autoball.core.model.ActionPreset
-import com.autoball.core.model.KeyCode
 import com.autoball.core.model.ActionType
 import com.autoball.core.model.ControlOp
 import com.autoball.core.model.FailOp
@@ -278,14 +277,16 @@ object ActionEditor {
                 valueView(ctx, opt.label, opt.label != "未设置"),
                 null,
                 pick = { onPickType?.invoke() },
-                help = "共 ${ActionPreset.ALL.size} 种动作，按 " +
-                    ActionPreset.GROUPS.joinToString(" / ") + " 分组；\n" +
-                    "选中即套用预设参数（如长按 700ms、返回键 code 4）。"))
+                help = ActionHelp.type(a)))
 
             // ---- 坐标类字段 ----
             val g = a.type.fieldGroups
             if (g.contains(com.autoball.core.model.FieldGroup.POINT)) {
-                box.addView(zsRow(ctx, "点击位置",
+                // 标签也随类型变：「滑动」下叫「开始位置」更准确
+                val posLabel = if (a.type == ActionType.SWIPE ||
+                    a.type == ActionType.GESTURE_SINGLE ||
+                    a.type == ActionType.GESTURE_MULTI) "开始位置" else "点击位置"
+                box.addView(zsRow(ctx, posLabel,
                     valueView(ctx, "(${pct(a.x)}, ${pct(a.y)})", true),
                     null,
                     pick = {
@@ -293,8 +294,7 @@ object ActionEditor {
                             a.x = px; a.y = py; rebuild()
                         }
                     },
-                    help = "百分比坐标，换机型与转屏都不会点偏。\n" +
-                        "点右侧「⋯」在全屏选点：按住拖动可微调，底部显示实时坐标。"))
+                    help = ActionHelp.point(a)))
             }
             if (g.contains(com.autoball.core.model.FieldGroup.POINT_END)) {
                 box.addView(zsRow(ctx, "结束位置",
@@ -311,7 +311,7 @@ object ActionEditor {
                             a.x = px; a.y = py; a.x2 = qx; a.y2 = qy; rebuild()
                         }
                     },
-                    help = "框选终点区域：一次填满起点与终点两个坐标。"))
+                    help = ActionHelp.pointEnd(a)))
             }
 
             if (g.contains(com.autoball.core.model.FieldGroup.AREA)) {
@@ -326,8 +326,7 @@ object ActionEditor {
                             a.x = px; a.y = py; a.x2 = qx; a.y2 = qy; rebuild()
                         }
                     },
-                    help = "框选一块区域，每次运行都在区域内**随机取一点**点击。\n" +
-                        "与「坐标随机微调」不同：那个是围绕固定点抖动，这个是整块区域任意落点。"))
+                    help = ActionHelp.area(a)))
             }
 
             // ---- 数值字段：一律「选填」，不给默认值 ----
@@ -338,16 +337,14 @@ object ActionEditor {
                     a.type == ActionType.GESTURE_MULTI) "滑动时长" else "按下时间"
                 // 统一时长组件：数值 + 单位下拉（毫秒/秒/分钟），内部按毫秒存
                 box.addView(DurationField.row(ctx, lbl, a.durationMs,
-                    "留空则用脚本全局设置的默认时长。\n" +
-                    "长按建议 500～800 毫秒，滑动建议 300～600 毫秒。") { ms ->
+                    ActionHelp.duration(a)) { ms ->
                         a.durationMs = ms
                     })
             }
 
             // 运行等待：自动精灵带单位下拉，此前固定按秒——想等 2 分钟得填 120
             box.addView(DurationField.row(ctx, "运行等待", a.waitMs,
-                "该动作执行完后再等待多久才继续下一个。\n" +
-                "单位可在右侧切换（毫秒 / 秒 / 分钟）。留空表示不额外等待。") { ms ->
+                ActionHelp.wait(a)) { ms ->
                     a.waitMs = ms
                 })
 
@@ -355,8 +352,7 @@ object ActionEditor {
             val repEt = numField(ctx, a.repeat.takeIf { it > 0 }?.toString() ?: "", "选填")
             readers["repeat"] = { a.repeat = repEt.text.toString().trim().toIntOrNull() ?: 0 }
             box.addView(zsRow(ctx, "重复次数", repEt, "次", null,
-                help = "该动作重复执行几次。留空按 1 次。\n" +
-                    "连续点击可填 5～20，配合间隔使用。"))
+                help = ActionHelp.repeat(a)))
 
             if (a.repeat > 1) {
                 val ivEt = numField(ctx,
@@ -365,7 +361,7 @@ object ActionEditor {
                     a.repeatIntervalMs = ivEt.text.toString().trim().toLongOrNull() ?: 0L
                 }
                 box.addView(zsRow(ctx, "重复间隔", ivEt, "毫秒", null,
-                    help = "每次重复之间的间隔。留空则不等待。"))
+                    help = ActionHelp.interval(a)))
             }
 
             // ---- 文本 / 包名 / 代码等 ----
@@ -375,15 +371,14 @@ object ActionEditor {
                 box.addView(zsRow(ctx,
                     if (a.type == ActionType.CLICK_TEXT) "目标文字" else "输入内容",
                     et, null, null,
-                    help = "留空则运行时提示输入。"))
+                    help = ActionHelp.text(a)))
             }
             // 识别屏幕：结果要存进变量，否则后续动作拿不到（R-120）
             if (a.type == ActionType.RECOGNIZE_SCREEN) {
                 val et = textField(ctx, a.varName ?: "", "screen")
                 readers["varName"] = { a.varName = et.text.toString().trim().ifEmpty { null } }
                 box.addView(zsRow(ctx, "存到变量", et, null, null,
-                    help = "识别结果写入该变量，后续可用运行条件判断。\n" +
-                        "同时写入 \${变量名}_w / _h 两个尺寸变量。"))
+                    help = ActionHelp.varName(a)))
                 // 实时预览：这个动作此前只有参数、没有反馈，
                 // 用户无法确认"到底识别出了什么"，等于盲配
                 // pick 必须显式命名：zsRow 的尾随 lambda 会绑到 pick 参数，
@@ -398,7 +393,7 @@ object ActionEditor {
                 val et = textField(ctx, a.pkg ?: "", "选填")
                 readers["pkg"] = { a.pkg = et.text.toString() }
                 box.addView(zsRow(ctx, "目标应用", et, null, null,
-                    help = "包名，如 com.tencent.mm。留空则打开当前应用。"))
+                    help = ActionHelp.pkg(a)))
             }
             if (g.contains(com.autoball.core.model.FieldGroup.SCRIPT_REF)) {
                 val names = com.autoball.AB.store.all().associateBy { it.id }
@@ -419,14 +414,13 @@ object ActionEditor {
                             }
                         }
                     },
-                    help = "选择要调用的本机脚本。\n" +
-                        "被调用脚本结束后回到本动作继续执行。"))
+                    help = ActionHelp.scriptRef(a)))
             }
             if (g.contains(com.autoball.core.model.FieldGroup.URL)) {
                 val et = textField(ctx, a.url ?: "", "https://…")
                 readers["url"] = { a.url = et.text.toString().trim() }
                 box.addView(zsRow(ctx, "链接地址", et, null, null,
-                    help = "以 http:// 或 https:// 开头，用浏览器打开。"))
+                    help = ActionHelp.url(a)))
             }
             if (g.contains(com.autoball.core.model.FieldGroup.SUB_ACTIONS)) {
                 // 子动作不在这里逐条编辑——那需要一个完整的子列表编辑器。
@@ -439,24 +433,19 @@ object ActionEditor {
                     pick = {
                         Ui.toast(ctx, "子动作请在编辑页的步骤列表中管理")
                     },
-                    help = "内联执行的一组动作，共用同一个执行上下文。\n" +
-                        "适合把「点+等+点」打包成一个可复用的步骤。"))
+                    help = ActionHelp.subActions(a)))
             }
             if (g.contains(com.autoball.core.model.FieldGroup.KEYCODE)) {
                 val et = numField(ctx, a.keyCode.takeIf { it != 0 }?.toString() ?: "", "选填")
                 readers["key"] = { a.keyCode = et.text.toString().trim().toIntOrNull() ?: 0 }
                 box.addView(zsRow(ctx, "按键码", et, null, null,
-                    help = "常用：${KeyCode.HOME}=HOME  " +
-                        "${KeyCode.BACK}=返回  " +
-                        "${KeyCode.RECENTS}=最近任务  " +
-                        "${KeyCode.EXPAND_STATUS}=下拉状态栏\n" +
-                        "选预设动作时会自动填好，一般无需手工输入。"))
+                    help = ActionHelp.key(a)))
             }
             if (g.contains(com.autoball.core.model.FieldGroup.CODE)) {
                 val et = textField(ctx, a.code ?: "", "JS 代码")
                 readers["code"] = { a.code = et.text.toString() }
                 box.addView(zsRow(ctx, "JS 代码", et, null, null,
-                    help = "可调用 click / swipe / key / wait 等宿主 API。"))
+                    help = ActionHelp.code(a)))
             }
             if (g.contains(com.autoball.core.model.FieldGroup.CONTROL)) {
                 box.addView(zsRow(ctx, "控制方式",
@@ -468,7 +457,7 @@ object ActionEditor {
                             rebuild()
                         }
                     },
-                    help = "暂停 / 继续 / 停止 / 跳转 / 等待。"))
+                    help = ActionHelp.control(a)))
             }
 
             // ---- 运行条件（自动精灵独立一行）----
@@ -482,24 +471,26 @@ object ActionEditor {
                         ConditionDialog.show(act, a) { rebuild() }
                     }
                 },
-                help = "不检测 / 图片存在 / 文字存在 / 颜色存在 / JS 表达式。\n" +
-                    "条件不成立时可跳过、等待重试或停止脚本。"))
+                help = "不检测 / 图片存在 / 文字存在 / 颜色存在 / 节点 / 变量 / JS 表达式。\n" +
+                    "条件不成立时可跳过、等待重试或停止脚本。\n" +
+                    "能力不足时按不满足跳过，不会静默当作成立。"))
 
             // ---- 监听动作（自动精灵同款：动作级钩子）----
             // 脚本级 9 个时机在「脚本全局设置」里；这里是**本动作**的钩子，
             // 两者粒度不同，不能互相替代。
-            val lc = a.listeners?.size ?: 0
+            val lc = ActionHookStage.countOf(a)
             box.addView(zsRow(ctx, "监听动作",
-                valueView(ctx, if (lc > 0) "已设置 $lc 项" else "未设置", lc > 0),
+                valueView(ctx, ActionHookStage.summaryOf(a), lc > 0),
                 null,
                 pick = {
                     (ctx as? Activity)?.let { act ->
-                        ListenerDialog.show(act, a) { rebuild() }
+                        ActionHookDialog.show(act, a) { rebuild() }
                     }
                 },
-                help = "本动作执行前后挂载的动作（截图、日志、兜底）。\n" +
+                help = "本动作执行前后挂载的动作（截图、日志、兜底），共 7 个时机。\n" +
                     "与「脚本全局设置 → 全局监听动作」的区别：那作用于整段脚本，" +
-                    "这里只作用于当前动作。"))
+                    "这里只作用于当前动作。\n" +
+                    "每个时机的说明不同，打开后点各行的「?」查看。"))
 
             // ---- 每步失败处理（R-113）----
             box.addView(Ui.adSec(ctx))
@@ -593,11 +584,33 @@ object ActionEditor {
         }
 
         box.addView(Kit.segment(ctx, groups, cur) { i -> cur = i; fill() })
-        box.addView(listBox, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT).apply {
-            topMargin = Display.dpInt(ctx, 8f)
-        })
+        // 列表必须能**上下滑动**：类型多（单组最多 15 项），
+        // 不滚动的话弹窗会被撑到屏幕外，底部的项根本点不到。
+        // 限高用屏高的比例，横屏再收紧。
+        val sz = Display.screenSize(ctx)
+        val maxH = (sz.y * if (sz.x > sz.y) 0.45f else 0.52f).toInt()
+        val scroll = android.widget.ScrollView(ctx).apply {
+            isFillViewport = false
+            overScrollMode = android.view.View.OVER_SCROLL_NEVER
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                topMargin = Display.dpInt(ctx, 8f)
+            }
+        }
+        scroll.addView(listBox, ViewGroup.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT))
+        // 包一层定高容器：ScrollView 没有 maxHeight 属性（那是 View 的），
+        // 只能靠外层限制
+        val listWrap = android.widget.FrameLayout(ctx).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, maxH)
+            addView(scroll, android.widget.FrameLayout.LayoutParams(
+                android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+                android.widget.FrameLayout.LayoutParams.WRAP_CONTENT))
+        }
+        box.addView(listWrap)
         fill()
         box.addView(TextView(ctx).apply {
             text = "坐标均为百分比，换机型与转屏都不会点偏；带预设的动作已填好常用参数。"

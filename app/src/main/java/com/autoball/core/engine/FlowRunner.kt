@@ -50,6 +50,22 @@ class FlowRunner(
         val speed = if (flow.speed > 0f) flow.speed else 1f
         val hooks = flow.hooks
 
+        /**
+         * 执行**动作级**监听钩子（R-139）。
+         *
+         * 此前 `Action.listeners` 只是被 UI 写入、从未被运行时读取——
+         * 又一个"界面显示已设置、执行时完全不生效"的静默失效。
+         * 而且它早前复用脚本级 9 时机的 key（SB/LT/BR…），
+         * 两类语义完全不同的钩子会互相覆盖；现改用 [ActionHookStage] 独立 key。
+         */
+        fun fireAction(a: com.autoball.core.model.Action, st: com.autoball.core.model.ActionHookStage) {
+            val ha = a.listeners[st.key] ?: return
+            if (!ha.enabled) return
+            if (control.canceled) return
+            runCatching { execOne(ha) }
+                .onFailure { log.warn(ctx.runId, "监听动作[${st.label}]异常：${it.message}") }
+        }
+
         /** 执行某个时机的全部监听动作（v3 9 钩子） */
         fun fire(stage: String) {
             val list = hooks[stage] ?: return
@@ -128,6 +144,7 @@ class FlowRunner(
                 }
 
                 if (a.condition != null) {
+                    fireAction(a, com.autoball.core.model.ActionHookStage.BEFORE_COND)
                     val set = com.autoball.core.model.ConditionSet.parse(a.condition)
                     // 默认「等待后检查」：先跑完等待再判定，界面更可能已稳定
                     val before = set.items.any { it.checkBefore }
@@ -138,6 +155,9 @@ class FlowRunner(
                     when (out) {
                         ConditionEval.Outcome.NOT_SATISFIED -> {
                             ctx.log("跳过 ${a.type.label}（${ConditionEval.describe(a.condition)}）")
+                            // 条件失败 → 触发 cf，然后 re（条件跳过也进"结束后"）
+                            fireAction(a, com.autoball.core.model.ActionHookStage.COND_FAIL)
+                            fireAction(a, com.autoball.core.model.ActionHookStage.AFTER_END)
                             continue
                         }
                         ConditionEval.Outcome.UNKNOWN -> {
@@ -147,14 +167,20 @@ class FlowRunner(
                             log.warn(ctx.runId, "条件无法判定（$why），按不满足跳过")
                             AB.log.warn(ctx.runId,
                                 "运行条件需要对应能力：${howToFix(a.condition)}")
+                            fireAction(a, com.autoball.core.model.ActionHookStage.COND_FAIL)
+                            fireAction(a, com.autoball.core.model.ActionHookStage.AFTER_END)
                             continue
                         }
-                        ConditionEval.Outcome.SATISFIED -> { /* 继续 */ }
+                        ConditionEval.Outcome.SATISFIED -> {
+                            fireAction(a, com.autoball.core.model.ActionHookStage.COND_OK)
+                        }
                     }
                 }
                 if (!doWait()) {
                     return Outcome(false, executed, failed, "已停止")
                 }
+
+                fireAction(a, com.autoball.core.model.ActionHookStage.BEFORE_RUN)
 
                 val reps = a.repeat.coerceAtLeast(1)
                 var okAll = true
@@ -166,6 +192,9 @@ class FlowRunner(
                         if (control.sleep(200)) ok = execOne(a)
                     }
                     executed++
+                    // 每次重复都触发：成功后每次成功触发、失败后每次失败触发
+                    fireAction(a, if (ok) com.autoball.core.model.ActionHookStage.AFTER_OK
+                    else com.autoball.core.model.ActionHookStage.AFTER_FAIL)
                     if (!ok) { failed++; okAll = false }
                     if (r < reps - 1) {
                         if (!control.sleep((a.repeatIntervalMs / speed).toLong())) {
@@ -207,6 +236,8 @@ class FlowRunner(
                     return Outcome(false, executed, failed, "已停止")
                 }
                 fire("ae")        // 每个动作运行结束后
+                // 动作级「结束后」：重复全部完成后只触发一次
+                fireAction(a, com.autoball.core.model.ActionHookStage.AFTER_END)
             }
 
             fire("le")            // 列表结尾
