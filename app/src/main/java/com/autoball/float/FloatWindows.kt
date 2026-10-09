@@ -78,6 +78,13 @@ object FloatWindows {
         val ph = maxOf(a, b)
         var w = (pw / 2f).coerceIn(240f, pw - 24f)
         var h = w * (ph / pw)
+
+        // **在基准尺寸上再收缩**（用户要求）：高度减半、宽度减 1/5。
+        // 收缩后再做边界夹取——顺序反了的话，"放不下就等比缩小"
+        // 会把用户指定的收缩比例冲掉。
+        h *= HEIGHT_SCALE
+        w *= WIDTH_SCALE
+
         // 当前屏幕放不下（横屏常见）→ 等比缩小
         val maxH = b - 24f
         if (h > maxH) {
@@ -93,6 +100,26 @@ object FloatWindows {
         }
         return w to h
     }
+
+    /**
+     * 窗口高度相对"与手机同宽高比"基准的缩放：**减半**。
+     *
+     * 注意这会让窗口不再与手机同比例（变成扁的）——这是用户明确要求的，
+     * 目的是少挡住被操作的界面。
+     */
+    const val HEIGHT_SCALE = 0.5f
+
+    /** 窗口宽度缩放：**减少 1/5**（即取基准的 0.8） */
+    const val WIDTH_SCALE = 0.8f
+
+    /**
+     * 动作列表相对内容区的缩放：**宽 1/3、高 1/2**。
+     *
+     * 列表远小于窗口是有意为之：窗口里还有标题栏、底部条、更多菜单，
+     * 列表只作为"当前进度提示"存在，不需要占满。
+     */
+    const val LIST_WIDTH_SCALE = 1f / 3f
+    const val LIST_HEIGHT_SCALE = 0.5f
 
     /** 窗口统一高度（dp），见 [windowSizeDp] */
     fun windowHeightDp(ctx: Context): Float = windowSizeDp(ctx).second

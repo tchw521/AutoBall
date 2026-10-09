@@ -255,6 +255,16 @@
       必须存了重开才能配。
       连击预设不再固定 5 次，只给能看出效果的起始值；次数上限不设。
 
+- [x] ~~R-147 窗口与列表按指定比例收缩~~ ✅ v1.48.0（未编译验证）
+      窗口：高度 ×0.5（减半）、宽度 ×0.8（减 1/5），新增
+      `FloatWindows.HEIGHT_SCALE / WIDTH_SCALE`。
+      **顺序关键**：先按屏幕算基准尺寸，再乘收缩比例，最后做边界夹取。
+      反了的话"放不下就等比缩小"会把用户指定的比例冲掉。
+      列表：宽取窗口的 1/3、高取内容区的 1/2（`LIST_WIDTH_SCALE` /
+      `LIST_HEIGHT_SCALE`），外面包 FrameLayout 做**居中**——偏在一角不好看。
+      菜单展开时宿主容器要取**两层父**（list → ScrollView → listWrap），
+      只取一层改的是 ScrollView 自己的 LayoutParams，窗口不会收缩。
+
 - [ ] **R-128 内置 OCR 模块**（P2）：`ocr()` 当前直接报错，需引三方或自训练模型
 - [ ] **R-129 设备开关类 API**（P3）：wakeupScreen / setScreenBrightness /
       setWifiEnable / setBluetoothEnable / setCameraFlashEnable 多需系统签名权限，

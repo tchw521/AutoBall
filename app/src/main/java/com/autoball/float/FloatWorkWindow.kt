@@ -316,17 +316,16 @@ object FloatWorkWindow {
         })
 
         // ---- 动作列表（限高，动作多时内部滚动）----
+        //
+        // 尺寸按用户要求**明显缩小**：宽取窗口的 1/3、高取内容区的 1/2。
+        // 窗口里还有标题栏、底部条、更多菜单，列表只作为"当前进度提示"，
+        // 不必占满。外面再包一层容器做**居中**——列表偏在一角不好看。
         val scroll = ScrollView(ctx).apply {
             isFillViewport = false
             overScrollMode = View.OVER_SCROLL_NEVER
-            // 吃掉"窗口高度 − 头部 − 底部条"的剩余空间，超出内部滚动。
-            // 用 weight=1 而不是算好的定值：底部条在录制态会换成另一条，
-            // 高度略有差异，weight 能自动吃准确。
             layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f)
-            // 最小高度：菜单展开把列表压到 1/3 时，仍要保证 3 行可见。
-            // 不加的话窄屏上可能只剩 2 行，看不出上下文。
-            minimumHeight = FloatWindows.listMinHeightPx(ctx)
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.MATCH_PARENT)
         }
         val list = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
         scroll.addView(list, ViewGroup.LayoutParams(
@@ -337,7 +336,16 @@ object FloatWorkWindow {
         // 而 addView(view, params) 会用这个新的 params 覆盖原来的——
         // 早前这里传的是 WRAP_CONTENT，直接把限高冲掉了，
         // 于是动作一多窗口就一路变长（17 步时顶满屏幕）。
-        root.addView(scroll)
+        val listWrap = android.widget.FrameLayout(ctx).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f)
+            addView(scroll, android.widget.FrameLayout.LayoutParams(
+                (Display.dpInt(ctx, FloatWindows.windowSizeDp(ctx).first)
+                        * FloatWindows.LIST_WIDTH_SCALE).toInt(),
+                android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+                Gravity.CENTER_HORIZONTAL or Gravity.CENTER_VERTICAL))
+        }
+        root.addView(listWrap)
 
         // ---- 底部主条：运行 / 录制 / 更多 ----
         val mainBar = LinearLayout(ctx).apply {
@@ -578,7 +586,11 @@ object FloatWorkWindow {
         //
         // 注意必须**新建** LayoutParams 再赋值——直接改已有对象的 weight
         // 不会触发重新布局（View 不知道自己变了）。
-        val listHost = h.list.parent as? android.view.View
+        // h.list 的父是 ScrollView，ScrollView 的父才是参与 weight 分配的
+        // listWrap 容器。只取一层的话改的是 ScrollView 自己的 LayoutParams，
+        // window 尺寸不会变——菜单展开时列表不会收缩。
+        val listHost = h.list.parent?.let { (it as? android.view.View)?.parent }
+                as? android.view.View
         if (show) {
             // 列表给**固定 3 行**、weight=0（不再参与比例分配），
             // 菜单 weight=1 吃掉剩余全部 → 菜单尽量占满，列表稳定 3 行。
@@ -588,9 +600,11 @@ object FloatWorkWindow {
             // 比 3 行更多、菜单被压缩——与"菜单优先"相反。
             h.moreWrap.layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f)
+            // 列表按用户要求保持"内容区的 1/2"：这里用 0.5f 权重即可
+            // （菜单也是 1f，两者 1:0.5 = 2:1，正好是列表占一半）
             listHost?.layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                FloatWindows.listMinHeightPx(h.list.context), 0f)
+                LinearLayout.LayoutParams.MATCH_PARENT, 0,
+                FloatWindows.LIST_HEIGHT_SCALE)
         } else {
             h.moreWrap.layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, 0, 0f)
