@@ -45,6 +45,20 @@ object ScriptLauncher {
         val ctx = coordinator.context(runId, control, seed)
         FloatManager.setRunning(true)
 
+        // 防误触层（guardTouch）：默认关闭，用户主动开才生效。
+        // 它会挡住用户对手机的一切操作，默认开启等于替用户做决定（见 RunGuard 注释）。
+        val guard = com.autoball.AB.store.getBool("guardTouch", false) &&
+            !needsScreenOrNodes(script)
+        if (com.autoball.AB.store.getBool("guardTouch", false) && !guard) {
+            // 不静默降级：用户开了开关却没生效，如果不说，他会以为功能坏了或没开对
+            AB.log.info(runId, "防误触层已跳过：本脚本用到截图/节点，覆盖层会干扰")
+        }
+        if (guard) {
+            com.autoball.float.RunGuard.show(context, script.name) {
+                coordinator.stop()
+            }
+        }
+
         // 单步：必须在启动线程**之前**置位，否则前几个动作会直接跑过去
         val useStep = step && script.kind != com.autoball.core.model.ScriptKind.JS
         if (useStep) {
@@ -75,12 +89,45 @@ object ScriptLauncher {
             } finally {
                 // 单步条必须收掉：它挂在屏幕上会一直挡着，且持有 control 引用
                 if (useStep) com.autoball.float.FloatStepBar.hide()
+                com.autoball.float.RunGuard.hide()
                 FloatManager.setRunning(false)
             }
         }
         t.name = "autoball-run-$runId"
         t.isDaemon = true
         t.start()
+    }
+
+    /**
+     * 脚本是否用到**截图或控件节点**——这两类能力会被防误触覆盖层干扰。
+     *
+     * - 截图：覆盖层是 window 层，可能被合进截图像素（找色 / 找图条件）
+     * - 节点：`TYPE_APPLICATION_OVERLAY` 窗口会被无障碍服务遍历到，
+     *   `rootInActiveWindow` 有可能返回**我们自己的覆盖层**而非目标应用——
+     *   那样 findNode 全部失效，属于最难排查的一类失败。
+     *
+     * 所以宁可让防误触不生效，也不能让脚本的识别能力失效。
+     */
+    private fun needsScreenOrNodes(script: com.autoball.core.model.Script): Boolean {
+        val acts = script.flow?.actions ?: return false
+        val kinds = setOf(
+            com.autoball.core.model.ActionCondition.Kind.IMAGE.name,
+            com.autoball.core.model.ActionCondition.Kind.NODE.name,
+            com.autoball.core.model.ActionCondition.Kind.TEXT.name,
+            com.autoball.core.model.ActionCondition.Kind.COLOR.name)
+        acts.forEach { a ->
+            com.autoball.core.model.ConditionSet.parse(a.condition)
+                .items.forEach { if (it.kind.name in kinds) return true }
+            if (a.type in setOf(
+                    com.autoball.core.model.ActionType.CLICK_IMAGE,
+                    com.autoball.core.model.ActionType.CLICK_TEXT,
+                    com.autoball.core.model.ActionType.CLICK_COLOR,
+                    com.autoball.core.model.ActionType.CLICK_NODE,
+                    com.autoball.core.model.ActionType.AI_CLICK,
+                    com.autoball.core.model.ActionType.RECOGNIZE_SCREEN)) return true
+        }
+        // JS 脚本无法静态判断，保守当作"需要"
+        return script.kind == com.autoball.core.model.ScriptKind.JS
     }
 
     /**

@@ -542,8 +542,12 @@ class JsHost(
                 val tpl = com.autoball.core.store.TemplateStore.load(id) ?: return null
                 // R-130：现在返回**模板实际所在位置**，不再是区域中心
                 val m = com.autoball.core.util.ConditionEval.matchTemplatePos(
-                    sr, tpl, (o?.optDouble("similarity", 0.9) ?: 0.9).toFloat(), region)
+                    sr, tpl, (o?.optDouble("similarity", 0.9) ?: 0.9).toFloat(), region,
+                    com.autoball.core.store.TemplateStore.ratioOf(id))
                 if (m == null) null else {
+                    // 扫描超时：结果是局部最优，坐标可能不准——必须告知（R-003）
+                    if (!m.complete) log.warn(ctx.runId,
+                        "模板匹配扫描超时，返回局部最优（相似度 ${"%.2f".format(m.similarity)}）")
                     lastImageSimilarity = m.similarity
                     m.x to m.y
                 }

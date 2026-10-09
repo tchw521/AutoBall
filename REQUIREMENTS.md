@@ -110,6 +110,24 @@
       **只对动作流有效**，JS 脚本如实提示而非静默忽略。
       脚本结束 1.5s 后自动收起控制台（若未再手动打开）。
 
+- [x] ~~R-132 模板图跨设备匹配~~ ✅ v1.35.0（未编译验证）
+      模板是**像素尺寸**，跨分辨率设备必然匹配失败且失败得很安静：
+      1080 宽裁 100×100，在 720 宽设备上对应区域只有 67×67，NCC 要求同尺寸。
+      修法：存 `.ratio`（模板相对录制屏幕的比例），匹配前按当前屏幕缩放。
+      分享码导出时把 ratio 一起带走（新格式 `{b,wr,hr}`，兼容旧裸字符串）。
+      **坐标 v0.4 就做了百分比归一化，模板图当时漏了**——同一件事的另一半。
+      另加扫描时间预算 3s：大图找小图会非常慢，超时返回局部最优并记日志。
+
+- [x] ~~R-133 6 个"只写不读"的设置项~~ ✅ v1.35.0（未编译验证）
+      扫描发现 autoFind / bgRun / guardTouch / mockLoc / showGrid / snapAlign
+      **写入后全工程无人读取**——典型的"能开但没效果"。
+      更糟的是 v1.32 设置页重构后这 6 项连 UI 都不在了，只剩默认值表里当孤儿。
+      处理：showGrid / snapAlign / autoFind / guardTouch **接上并加回 UI**；
+      bgRun 与前台服务语义重合、mockLoc 需系统权限拿不到 → 从默认值表删除。
+      guardTouch **默认关闭**且脚本用到截图/节点时自动跳过：
+      TYPE_APPLICATION_OVERLAY 会被无障碍遍历到，rootInActiveWindow 可能返回
+      我们自己的覆盖层，那会让 findNode 全部失效。
+
 - [ ] **R-128 内置 OCR 模块**（P2）：`ocr()` 当前直接报错，需引三方或自训练模型
 - [ ] **R-129 设备开关类 API**（P3）：wakeupScreen / setScreenBrightness /
       setWifiEnable / setBluetoothEnable / setCameraFlashEnable 多需系统签名权限，

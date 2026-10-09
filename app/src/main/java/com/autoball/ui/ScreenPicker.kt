@@ -19,6 +19,7 @@ import com.autoball.core.util.Display
 import com.autoball.float.FloatManager
 import com.autoball.float.FloatWindows
 import com.autoball.core.store.TemplateStore
+import kotlin.math.roundToInt
 
 /**
  * 屏幕取色 / 取图（统一组件，解决 R-101）。
@@ -103,8 +104,22 @@ object ScreenPicker {
                           onColor: ((String) -> Unit)?, onImage: ((String) -> Unit)?,
                           onRegionPct: ((FloatArray) -> Unit)?) {
         val onDone: () -> Unit = { restore(activity); removeNow() }
+        // 网格与吸附此前是设置项里能开、代码里没人读的开关（只写不读）。
+        // 现在真正接上：网格是视觉参考，吸附只在足够接近网格线时生效。
+        val gridOn = com.autoball.AB.store.getBool("showGrid", false)
+        val snapOn = com.autoball.AB.store.getBool("snapAlign", true)
         val layer = PickView(ctx, bmp, mode,
-            onColor = { hex -> onColor?.invoke(hex); onDone() },
+            onColor = { hex ->
+                onColor?.invoke(hex)
+                // 自动识别控件（autoFind）：取色后顺带告诉用户这里是什么控件。
+                // 有价值的原因是：很多脚本用坐标点击，但该位置其实有稳定控件——
+                // 换成节点匹配后，界面缩放/换机型都不会失效。
+                if (com.autoball.AB.store.getBool("autoFind", false)) {
+                    val info = nodeAt(lastPct.first, lastPct.second)
+                    if (!info.isNullOrBlank()) Ui.toast(ctx, "该位置控件：$info\n可改用「节点匹配」更稳")
+                }
+                onDone()
+            },
             onRegion = { l, t, r, b ->
                 if (mode == Mode.REGION) {
                     // 区域模式：换算成屏幕百分比（截图即整屏，比例一致）
@@ -115,7 +130,7 @@ object ScreenPicker {
                 }
                 onDone()
             },
-            onCancel = onDone)
+            onCancel = onDone, showGrid = gridOn, snapAlign = snapOn)
 
         val p = WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT,
@@ -165,8 +180,39 @@ object ScreenPicker {
         private val mode: Mode,
         private val onColor: (String) -> Unit,
         private val onRegion: (Float, Float, Float, Float) -> Unit,
-        private val onCancel: () -> Unit
+        private val onCancel: () -> Unit,
+        /** 显示坐标网格（设置项 showGrid） */
+        private val showGrid: Boolean,
+        /** 吸附到网格线（设置项 snapAlign） */
+        private val snapAlign: Boolean
     ) : FrameLayout(ctx) {
+
+        companion object {
+            /** 网格间距（屏幕百分比）：10% 一格，与百分比坐标体系对齐 */
+            const val GRID_STEP = 10f
+            /** 吸附触发距离（百分比）：离网格线超过这个距离就不吸附，避免坐标失真 */
+            const val SNAP_TOL = 2.5f
+        }
+
+        /** 网格线覆盖层：只画不响应触摸 */
+        private val grid = object : View(ctx) {
+            private val paint = android.graphics.Paint().apply {
+                color = Color.parseColor("#55FFFFFF")
+                strokeWidth = Display.dpInt(ctx, 1f).toFloat()
+            }
+            override fun onDraw(c: android.graphics.Canvas) {
+                super.onDraw(c)
+                if (!this@PickView.showGrid) return
+                var i = GRID_STEP
+                while (i < 100f) {
+                    val x = width * i / 100f
+                    c.drawLine(x, 0f, x, height.toFloat(), paint)
+                    val y = height * i / 100f
+                    c.drawLine(0f, y, width.toFloat(), y, paint)
+                    i += GRID_STEP
+                }
+            }
+        }
 
         private val preview = android.widget.ImageView(ctx).apply {
             setImageBitmap(bmp)
@@ -206,6 +252,9 @@ object ScreenPicker {
             setOnClickListener { onCancel() }
         }
 
+        /** 最近一次操作的屏幕百分比坐标（供 autoFind 查询控件） */
+        private var lastPct: Pair<Float, Float> = 0f to 0f
+
         // 框选状态（像素）
         private var sx = 0f; private var sy = 0f
         private var ex = 0f; private var ey = 0f
@@ -222,6 +271,8 @@ object ScreenPicker {
             setBackgroundColor(Color.parseColor("#66000000"))
             addView(preview, LayoutParams(LayoutParams.MATCH_PARENT,
                 LayoutParams.MATCH_PARENT))
+            addView(grid, LayoutParams(LayoutParams.MATCH_PARENT,
+                LayoutParams.MATCH_PARENT))
             addView(box)
 
             val bar = android.widget.LinearLayout(ctx).apply {
@@ -237,6 +288,31 @@ object ScreenPicker {
                 LayoutParams.WRAP_CONTENT).apply {
                 gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
                 topMargin = Display.dpInt(ctx, 40f) })
+        }
+
+        /**
+         * 查询该屏幕百分比位置上的控件；查不到或无权限返回 null。
+         *
+         * 用百分比坐标而非像素——后端按当前屏幕换算，换机型也一致。
+         */
+        private fun nodeAt(pctX: Float, pctY: Float): String? {
+            val svc = com.autoball.service.AutoBallAccessibilityService.instance ?: return null
+            return runCatching {
+                com.autoball.service.AutoBallAccessibilityService.nodeAtPct(pctX, pctY)?.let { n ->
+                    buildString {
+                        n.text?.takeIf { it.isNotBlank() }?.let { append("「$it」") }
+                        n.className?.let { append(" ${it.substringAfterLast('.')}") }
+                    }.trim().takeIf { it.isNotBlank() }
+                }
+            }.getOrNull()
+        }
+
+        /** 把像素坐标吸附到最近的网格线；不够近就原样返回 */
+        private fun snap(v: Float, size: Float): Float {
+            if (size <= 0f) return v
+            val pct = v / size * 100f
+            val near = (pct / GRID_STEP).roundToInt() * GRID_STEP
+            return if (kotlin.math.abs(pct - near) <= SNAP_TOL) near / 100f * size else v
         }
 
         override fun dispatchTouchEvent(ev: android.view.MotionEvent): Boolean {
@@ -259,7 +335,14 @@ object ScreenPicker {
                 }
                 android.view.MotionEvent.ACTION_UP -> {
                     dragging = false
-                    val px = ev.x; val py = ev.y
+                    // 吸附：把坐标对齐到最近的网格线。
+                    // 只在**足够接近**时才吸附——否则等于凭空挪动用户的选择，
+                    // 且挪动后的坐标与用户看到的界面不符，比不吸附更糟。
+                    val (rawX, rawY) = ev.x to ev.y
+                    val px = if (snapAlign) snap(rawX, width.toFloat()) else rawX
+                    val py = if (snapAlign) snap(rawY, height.toFloat()) else rawY
+                    lastPct = px / width.coerceAtLeast(1) * 100f to
+                        py / height.coerceAtLeast(1) * 100f
                     if (mode == Mode.COLOR) {
                         val hex = colorAt(px, py)
                         if (hex != null) onColor(hex) else onCancel()

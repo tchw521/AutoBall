@@ -28,9 +28,9 @@ class SetPage(context: Context, private val host: PageHost) : FrameLayout(contex
     /** 截图目录 / 日志条数等文本项的输入弹窗 */
     private val SET_DEFAULTS = mapOf(
         "volKey" to true, "hideFloat" to false, "pauseCall" to true,
-        "guardTouch" to true, "backHome" to false,
-        "netPerm" to true, "clipPerm" to false, "bgRun" to true,
-        "ignoreBattery" to true, "mockLoc" to false,
+        "guardTouch" to false, "backHome" to false,
+        "netPerm" to true, "clipPerm" to false,
+        "ignoreBattery" to true,
         "snapAlign" to true, "showGrid" to false, "autoFind" to false,
         "shotDir" to "/sdcard/AutoBall/shots/",
         "recWait" to "800ms", "logKeep" to "200 条"
@@ -74,6 +74,12 @@ class SetPage(context: Context, private val host: PageHost) : FrameLayout(contex
             "⌂", Theme.textTer()))
         g1.addView(sw("ignoreBattery", "忽略省电优化", "避免系统休眠杀掉脚本进程",
             "⚡", Theme.warn()))
+        // 防误触默认**关闭**：它会挡住用户对手机的一切操作，
+        // 默认开启等于替用户做决定，不知情的人会以为手机卡死。
+        // 且脚本用到截图/节点时会自动跳过（覆盖层会干扰识别）。
+        g1.addView(sw("guardTouch", "运行时防误触",
+            "盖一层透明层挡住误触。注意：会挡住全部操作，脚本用到找图/找节点时自动跳过",
+            "✋", Theme.warn()))
         wrap.addView(Kit.settingCard(context, g1))
 
         // ================= 脚本 =================
@@ -88,6 +94,13 @@ class SetPage(context: Context, private val host: PageHost) : FrameLayout(contex
             "▤", Theme.pri()))
         g2.addView(txt("shotDir", "截图保存目录", "运行与监听动作的截图保存位置",
             "▣", Theme.warn()))
+        // 以下三项此前只在默认值表里、代码里没人读（只写不读），现已真正接上
+        g2.addView(sw("showGrid", "拾取时显示网格", "取色/取图时叠加 10% 网格线辅助定位",
+            "▦", Theme.pri2()))
+        g2.addView(sw("snapAlign", "坐标吸附对齐", "靠近网格线时自动吸附，坐标更规整",
+            "⊞", Theme.pri()))
+        g2.addView(sw("autoFind", "自动识别控件", "取色后提示该位置的控件，可改用更稳的节点匹配",
+            "⌖", Theme.ok()))
         wrap.addView(Kit.settingCard(context, g2))
 
         // ================= 界面与性能 =================

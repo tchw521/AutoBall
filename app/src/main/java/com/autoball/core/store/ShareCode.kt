@@ -59,7 +59,13 @@ object ShareCode {
                 val bytes = bos.toByteArray()
                 if (bytes.size > MAX_TPL_EACH) return@forEach
                 if (total + bytes.size > MAX_TPL_TOTAL) return@forEach
-                out.put(id, Base64.encodeToString(bytes, Base64.NO_WRAP))
+                // 连同**相对屏幕的比例**一起带走（R-132）：
+                // 只给图不给比例的话，导入方屏幕分辨率不同就永远匹配不上。
+                val obj = org.json.JSONObject().put("b", Base64.encodeToString(bytes, Base64.NO_WRAP))
+                TemplateStore.ratioOf(id)?.let { (wr, hr) ->
+                    obj.put("wr", wr.toDouble()).put("hr", hr.toDouble())
+                }
+                out.put(id, obj)
                 total += bytes.size
             }
         }
@@ -110,13 +116,22 @@ object ShareCode {
             var changed = false
             set.items.forEach { c ->
                 if (c.kind != ActionCondition.Kind.IMAGE) return@forEach
-                val b64 = tpl.optString(c.value, null) ?: return@forEach
+                // 兼容两种格式：旧分享码是裸字符串，新的是 {b, wr, hr}
+                val v = tpl.opt(c.value)
+                val (b64, wr, hr) = when (v) {
+                    is org.json.JSONObject -> Triple(
+                        v.optString("b", ""),
+                        v.optDouble("wr", 0.0).takeIf { it > 0.0 },
+                        v.optDouble("hr", 0.0).takeIf { it > 0.0 })
+                    else -> Triple(tpl.optString(c.value, ""), null, null)
+                }
+                if (b64.isEmpty()) return@forEach
                 val bytes = runCatching { Base64.decode(b64, Base64.DEFAULT) }
                     .getOrNull() ?: return@forEach
                 val bmp = android.graphics.BitmapFactory
                     .decodeByteArray(bytes, 0, bytes.size) ?: return@forEach
                 // 重写为本机新 id，避免与导入方已有模板撞 id
-                c.value = TemplateStore.saveBitmap(bmp)
+                c.value = TemplateStore.saveBitmap(bmp, wr?.toFloat(), hr?.toFloat())
                 changed = true
             }
             if (changed) a.condition = ConditionSet.serialize(set)

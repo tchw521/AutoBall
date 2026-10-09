@@ -302,7 +302,10 @@ class FlowRunner(
             // 模板由取图器存本机；取不到就是没有配过或被清了，无法判定
             val tpl = com.autoball.core.store.TemplateStore.load(path) ?: return null
             val sr = screen() ?: return null
-            return ConditionEval.matchTemplate(sr, tpl, threshold.coerceIn(0.5f, 1f), region)
+            // 传 ratio：模板按录制比例投影到当前屏幕，否则跨分辨率必然匹配失败
+            return ConditionEval.matchTemplatePos(
+                sr, tpl, threshold.coerceIn(0.5f, 1f), region,
+                com.autoball.core.store.TemplateStore.ratioOf(path)) != null
         }
 
         override fun evalJs(expr: String): Boolean? =

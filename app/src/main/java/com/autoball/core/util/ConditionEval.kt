@@ -220,20 +220,42 @@ object ConditionEval {
      * @return 最佳匹配（中心点像素坐标 + 相似度）；未达阈值返回 null
      */
     fun matchTemplatePos(sr: ScreenResult.Ok, tpl: android.graphics.Bitmap,
-                         threshold: Float, region: FloatArray?): Match? {
+                         threshold: Float, region: FloatArray?): Match? =
+        matchTemplatePos(sr, tpl, threshold, region, null, DEFAULT_MATCH_BUDGET_MS)
+
+    /**
+     * @param ratio 模板相对于**录制时屏幕**的宽高比例；非空时按当前屏幕缩放到目标尺寸（R-132）
+     * @param budgetMs 扫描时间预算，超时提前结束（返回已找到的最优，[Match.complete] 会标 false）
+     */
+    fun matchTemplatePos(sr: ScreenResult.Ok, tpl: android.graphics.Bitmap,
+                         threshold: Float, region: FloatArray?,
+                         ratio: Pair<Float, Float>?,
+                         budgetMs: Long = DEFAULT_MATCH_BUDGET_MS): Match? {
         val w = sr.width; val h = sr.height
-        if (tpl.width > w || tpl.height > h) return null
+
+        // 跨设备缩放：模板按录制比例投影到当前屏幕。
+        // 不做这步的话，分辨率不同的设备上模板与待匹配区域尺寸对不上，
+        // NCC 必然失败且失败得很安静——用户只会觉得"导入的脚本不灵"。
+        val use = if (ratio == null) tpl else {
+            val tw = (ratio.first * w).toInt().coerceIn(4, w)
+            val th = (ratio.second * h).toInt().coerceIn(4, h)
+            if (tw == tpl.width && th == tpl.height) tpl
+            else runCatching {
+                android.graphics.Bitmap.createScaledBitmap(tpl, tw, th, true)
+            }.getOrDefault(tpl)
+        }
+        if (use.width > w || use.height > h) return null
 
         val rx0 = ((region?.get(0) ?: 0f) / 100f * w).toInt().coerceIn(0, w - 1)
         val ry0 = ((region?.get(1) ?: 0f) / 100f * h).toInt().coerceIn(0, h - 1)
-        val rx1 = ((region?.get(2) ?: 100f) / 100f * w).toInt().coerceIn(rx0 + tpl.width, w)
-        val ry1 = ((region?.get(3) ?: 100f) / 100f * h).toInt().coerceIn(ry0 + tpl.height, h)
+        val rx1 = ((region?.get(2) ?: 100f) / 100f * w).toInt().coerceIn(rx0 + use.width, w)
+        val ry1 = ((region?.get(3) ?: 100f) / 100f * h).toInt().coerceIn(ry0 + use.height, h)
         if (rx1 <= rx0 || ry1 <= ry0) return null
 
-        val tw = tpl.width; val th = tpl.height
+        val tw = use.width; val th = use.height
         val tg = FloatArray(tw * th)
         for (y in 0 until th) for (x in 0 until tw) {
-            val c = tpl.getPixel(x, y)
+            val c = use.getPixel(x, y)
             tg[y * tw + x] = gray(c)
         }
         val tMean = tg.average().toFloat()
@@ -248,6 +270,8 @@ object ConditionEval {
 
         var best = -1f
         var bx = -1; var by = -1
+        var complete = true
+        val t0 = System.currentTimeMillis()
         var py = ry0
         while (py + th <= ry1) {
             var px = rx0
@@ -277,13 +301,28 @@ object ConditionEval {
                 px += step
             }
             py += step
+            // 超时：大图找小图可能非常慢，必须给脚本一个可预期的上限。
+            // 不中断的话一个 findLocation 就能把脚本卡住几十秒。
+            if (System.currentTimeMillis() - t0 > budgetMs) {
+                complete = false
+                break
+            }
         }
         if (bx < 0 || best < threshold) return null
-        return Match(bx + tw / 2f, by + th / 2f, best)
+        return Match(bx + tw / 2f, by + th / 2f, best, complete)
     }
 
-    /** 模板匹配结果：中心点像素坐标 + 相似度 0–1 */
-    class Match(val x: Float, val y: Float, val similarity: Float)
+    /** 模板匹配默认时间预算：超出后返回已找到的最优 */
+    const val DEFAULT_MATCH_BUDGET_MS = 3000L
+
+    /**
+     * 模板匹配结果：中心点像素坐标 + 相似度 0–1。
+     *
+     * @param complete false 表示**扫描超时提前结束**，结果是已扫过区域里的局部最优。
+     *                 调用方应据此决定是否可信——"没找到"与"没找全"是两回事。
+     */
+    class Match(val x: Float, val y: Float, val similarity: Float,
+                val complete: Boolean = true)
 
     private fun gray(c: Int): Float =
         android.graphics.Color.red(c) * 0.299f +
