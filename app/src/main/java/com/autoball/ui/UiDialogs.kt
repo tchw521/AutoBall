@@ -209,8 +209,8 @@ object UiDialogs {
             // 就绪回调：交给调用方做「就地换页」等后续操作
             onReady?.invoke(d!!, scroll, titleTv)
 
-            // 限制最大高度（横屏已收紧比例，见上方 ratio）
-            val maxH = (ctx.resources.displayMetrics.heightPixels * ratio).toInt()
+            // 限制最大高度：用窗口统一高度（见上方 winH），不再按比例算
+            val maxH = winH
             scroll.post {
                 if (box.height > maxH) d?.window?.setLayout(w, maxH)
             }
