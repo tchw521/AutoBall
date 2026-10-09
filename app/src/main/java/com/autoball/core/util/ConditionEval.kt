@@ -32,7 +32,9 @@ object ConditionEval {
         /** 在屏幕文字里找子串；不支持返回 null */
         fun findText(text: String, region: FloatArray?): Boolean?
         /** 图像模板匹配；不支持返回 null */
-        fun findImage(path: String, threshold: Float, region: FloatArray?): Boolean?
+        fun findImage(path: String, threshold: Float, region: FloatArray?,
+                      res: com.autoball.core.model.ActionCondition.MultiRes,
+                      fast: Boolean, minCount: Int): Boolean?
         /** 求值 JS 表达式；无引擎返回 null */
         fun evalJs(expr: String): Boolean?
         /**
@@ -116,9 +118,16 @@ object ConditionEval {
                     null -> Outcome.UNKNOWN
                 }
             }
+            ActionCondition.Kind.AI -> {
+                // AI 云识别需要云端能力。本应用不联网（README 定位），
+                // 所以这里**明确返回 UNKNOWN**并让调用方跳过——
+                // 若返回 false，脚本会永远跳过该动作；若返回 true 更糟。
+                Outcome.UNKNOWN
+            }
             ActionCondition.Kind.IMAGE -> {
                 if (c.value.isBlank()) return Outcome.UNKNOWN
-                when (probe?.findImage(c.value, c.sim / 100f, c.region)) {
+                when (probe?.findImage(c.value, c.sim / 100f, c.region,
+                    c.multiRes, c.fast, c.matchIndex.coerceAtLeast(1))) {
                     true -> Outcome.SATISFIED
                     false -> Outcome.NOT_SATISFIED
                     null -> Outcome.UNKNOWN
@@ -137,7 +146,13 @@ object ConditionEval {
             ActionCondition.Kind.VAR -> if (matchVar(c, vars)) Outcome.SATISFIED
             else Outcome.NOT_SATISFIED
         }
-        return base
+        // 条件反相：成立↔不成立。**UNKNOWN 不参与反相**——
+        // "无法判定"反相仍是"无法判定"，若当成成立就会在能力缺失时继续执行。
+        return if (c.invert) when (base) {
+            Outcome.SATISFIED -> Outcome.NOT_SATISFIED
+            Outcome.NOT_SATISFIED -> Outcome.SATISFIED
+            Outcome.UNKNOWN -> Outcome.UNKNOWN
+        } else base
     }
 
     /**
@@ -221,29 +236,92 @@ object ConditionEval {
      */
     fun matchTemplatePos(sr: ScreenResult.Ok, tpl: android.graphics.Bitmap,
                          threshold: Float, region: FloatArray?): Match? =
-        matchTemplatePos(sr, tpl, threshold, region, null, DEFAULT_MATCH_BUDGET_MS)
+        matchTemplatePos(sr, tpl, threshold, region, null)
 
     /**
-     * @param ratio 模板相对于**录制时屏幕**的宽高比例；非空时按当前屏幕缩放到目标尺寸（R-132）
+     * @param meta 模板元数据（相对屏幕比例 + 录制密度）；null 表示按原尺寸匹配
+     * @param res 多分辨率适配策略（R-135）
+     * @param fast 快速搜图：抽稀步长翻倍，约快 4 倍、略降精度
+     * @param minCount 需要至少几个**互不重叠**的命中（对应「匹配第几」）
      * @param budgetMs 扫描时间预算，超时提前结束（返回已找到的最优，[Match.complete] 会标 false）
      */
     fun matchTemplatePos(sr: ScreenResult.Ok, tpl: android.graphics.Bitmap,
                          threshold: Float, region: FloatArray?,
-                         ratio: Pair<Float, Float>?,
+                         meta: com.autoball.core.store.TemplateStore.Meta?,
+                         res: com.autoball.core.model.ActionCondition.MultiRes =
+                             com.autoball.core.model.ActionCondition.MultiRes.BOTH,
+                         fast: Boolean = false,
+                         minCount: Int = 1,
                          budgetMs: Long = DEFAULT_MATCH_BUDGET_MS): Match? {
         val w = sr.width; val h = sr.height
+        val cands = candidates(tpl, w, h, meta, res)
+        if (cands.isEmpty()) return null
 
-        // 跨设备缩放：模板按录制比例投影到当前屏幕。
-        // 不做这步的话，分辨率不同的设备上模板与待匹配区域尺寸对不上，
-        // NCC 必然失败且失败得很安静——用户只会觉得"导入的脚本不灵"。
-        val use = if (ratio == null) tpl else {
-            val tw = (ratio.first * w).toInt().coerceIn(4, w)
-            val th = (ratio.second * h).toInt().coerceIn(4, h)
-            if (tw == tpl.width && th == tpl.height) tpl
-            else runCatching {
-                android.graphics.Bitmap.createScaledBitmap(tpl, tw, th, true)
+        var best: Match? = null
+        for (use in cands) {
+            val m = scan(sr, use, region, threshold, fast, minCount, budgetMs) ?: continue
+            // 多策略时取**最优**结果，而不是首个命中——TRY_ALL 的意义就在这里
+            if (best == null || m.similarity > best!!.similarity) best = m
+            // 单策略（或已达标）无需继续尝试
+            if (cands.size == 1) break
+            if (best!!.similarity >= 0.98f) break
+        }
+        return best
+    }
+
+    /**
+     * 按策略算出候选模板尺寸（R-135 多分辨率适配）。
+     *
+     * 模板是**像素**尺寸，跨设备必须缩放（R-132）。但界面缩放规律不一：
+     * 有的整体等比、有的只按宽度、有的随密度变化，所以交给用户选，
+     * 「尝试以上全部」则把各策略都试一遍取最优。
+     */
+    private fun candidates(tpl: android.graphics.Bitmap, w: Int, h: Int,
+                           meta: com.autoball.core.store.TemplateStore.Meta?,
+                           res: com.autoball.core.model.ActionCondition.MultiRes)
+            : List<android.graphics.Bitmap> {
+        val bw = tpl.width; val bh = tpl.height
+        if (meta == null || res == com.autoball.core.model.ActionCondition.MultiRes.OFF) {
+            return listOf(tpl)
+        }
+        fun scaled(tw: Int, th: Int): android.graphics.Bitmap? {
+            val w2 = tw.coerceIn(4, w); val h2 = th.coerceIn(4, h)
+            if (w2 == bw && h2 == bh) return tpl
+            return runCatching {
+                android.graphics.Bitmap.createScaledBitmap(tpl, w2, h2, true)
             }.getOrDefault(tpl)
         }
+        fun byWidth() = scaled((meta.wRatio * w).toInt(),
+            (bh * ((meta.wRatio * w) / bw)).toInt())
+        fun byHeight() = scaled((bw * ((meta.hRatio * h) / bh)).toInt(),
+            (meta.hRatio * h).toInt())
+        fun byBoth() = scaled((meta.wRatio * w).toInt(), (meta.hRatio * h).toInt())
+        fun byDensity(): android.graphics.Bitmap? {
+            // 需要录制时的密度；导入的脚本没有这个值，退化为按宽高
+            if (meta.density <= 0f) return byBoth()
+            val cur = com.autoball.App.get().resources.displayMetrics.density
+            val k = (cur / meta.density).coerceIn(0.25f, 4f)
+            return scaled((bw * k).toInt(), (bh * k).toInt())
+        }
+        val out = ArrayList<android.graphics.Bitmap>()
+        when (res) {
+            com.autoball.core.model.ActionCondition.MultiRes.OFF -> out.add(tpl)
+            com.autoball.core.model.ActionCondition.MultiRes.WIDTH -> byWidth()?.let { out.add(it) }
+            com.autoball.core.model.ActionCondition.MultiRes.HEIGHT -> byHeight()?.let { out.add(it) }
+            com.autoball.core.model.ActionCondition.MultiRes.BOTH -> byBoth()?.let { out.add(it) }
+            com.autoball.core.model.ActionCondition.MultiRes.DENSITY -> byDensity()?.let { out.add(it) }
+            com.autoball.core.model.ActionCondition.MultiRes.TRY_ALL -> {
+                listOf(byDensity(), byWidth(), byHeight(), byBoth())
+                    .forEach { b -> if (b != null && out.none { it.width == b.width && it.height == b.height }) out.add(b) }
+            }
+        }
+        return out
+    }
+
+    private fun scan(sr: ScreenResult.Ok, use: android.graphics.Bitmap,
+                     region: FloatArray?, threshold: Float,
+                     fast: Boolean, minCount: Int, budgetMs: Long): Match? {
+        val w = sr.width; val h = sr.height
         if (use.width > w || use.height > h) return null
 
         val rx0 = ((region?.get(0) ?: 0f) / 100f * w).toInt().coerceIn(0, w - 1)
@@ -264,14 +342,17 @@ object ConditionEval {
         tNorm = kotlin.math.sqrt(tNorm)
         if (tNorm <= 0f) return null   // 纯色模板无法匹配（归一化后无信息）
 
-        // 全屏逐像素太慢：按搜索面积抽稀，步长上限保证不漏过小目标
+        // 全屏逐像素太慢：按搜索面积抽稀，步长上限保证不漏过小目标。
+        // 「快速搜图」再翻倍——约快 4 倍，代价是可能漏检边缘位置。
         val step = kotlin.math.max(1,
-            kotlin.math.min(4, ((rx1 - rx0) * (ry1 - ry0)) / 40_000))
+            kotlin.math.min(4, ((rx1 - rx0) * (ry1 - ry0)) / 40_000)) * (if (fast) 2 else 1)
 
         var best = -1f
         var bx = -1; var by = -1
         var complete = true
         val t0 = System.currentTimeMillis()
+        val need = minCount.coerceAtLeast(1)
+        val hits = ArrayList<Pair<Int, Int>>()
         var py = ry0
         while (py + th <= ry1) {
             var px = rx0
@@ -297,6 +378,14 @@ object ConditionEval {
                     // 取**全局最优**而非首个超阈值的位置：
                     // 首个命中可能是误匹配，取最优能显著提高点击准确度
                     if (r > best) { best = r; bx = px; by = py }
+                    // 「匹配第几」= 区域内至少存在 N 个互不重叠的命中。
+                    // 去重判据：与已记录命中距离超过半个模板才算新命中，
+                    // 否则同一目标周围的重叠窗口会被重复计数。
+                    if (r >= threshold && hits.size < need) {
+                        val far = hits.none { (hx, hy) ->
+                            kotlin.math.abs(hx - px) < tw / 2 && kotlin.math.abs(hy - py) < th / 2 }
+                        if (far) hits.add(px to py)
+                    }
                 }
                 px += step
             }
@@ -309,8 +398,19 @@ object ConditionEval {
             }
         }
         if (bx < 0 || best < threshold) return null
+        // 命中数不够「匹配第几」的要求 → 视为未找到（第 N 个根本不存在）
+        if (hits.size < need) return null
         return Match(bx + tw / 2f, by + th / 2f, best, complete)
     }
+
+    /** 兼容旧调用：ratio 形式等价于 BOTH 策略 */
+    fun matchTemplatePos(sr: ScreenResult.Ok, tpl: android.graphics.Bitmap,
+                         threshold: Float, region: FloatArray?,
+                         ratio: Pair<Float, Float>?,
+                         budgetMs: Long): Match? =
+        matchTemplatePos(sr, tpl, threshold, region,
+            ratio?.let { com.autoball.core.store.TemplateStore.Meta(it.first, it.second, 0f) },
+            com.autoball.core.model.ActionCondition.MultiRes.BOTH, false, 1, budgetMs)
 
     /** 模板匹配默认时间预算：超出后返回已找到的最优 */
     const val DEFAULT_MATCH_BUDGET_MS = 3000L

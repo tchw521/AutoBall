@@ -92,8 +92,49 @@ class FlowRunner(
                 // 早前直接用 Condition.eval() 把整段 JSON 当字符串判空——
                 // 非空即真，等于所有识别类条件（图片/文字/颜色）**从不生效**，
                 // 而界面上还显示「已设置」。
+                /**
+                 * 「重复检查直到成功」：不成立时按间隔重试。
+                 *
+                 * 只对 NOT_SATISFIED 重试——UNKNOWN 是**能力缺失**，
+                 * 重试多少次还是 UNKNOWN，只会白白拖慢脚本。
+                 */
+                fun evalWithRetry(a: com.autoball.core.model.Action,
+                                  set: com.autoball.core.model.ConditionSet)
+                        : ConditionEval.Outcome {
+                    val first = ConditionEval.eval(a.condition, ctx.vars, probe())
+                    if (first != ConditionEval.Outcome.NOT_SATISFIED) return first
+                    val cfg = set.items.firstOrNull { it.retry } ?: return first
+                    var n = 0
+                    while (true) {
+                        if (control.canceled) return first
+                        n++
+                        if (cfg.retryMax > 0 && n > cfg.retryMax) {
+                            log.warn(ctx.runId,
+                                "重复检查 ${cfg.retryMax} 次仍未满足，跳过该动作")
+                            return first
+                        }
+                        if (!control.sleep(cfg.retryIntervalMs)) return first
+                        val out = ConditionEval.eval(a.condition, ctx.vars, probe())
+                        if (out != ConditionEval.Outcome.NOT_SATISFIED) return out
+                    }
+                }
+
+                // 等待只执行一次：「等待前检查」决定它发生在判定之前还是之后
+                var waited = false
+                fun doWait(): Boolean {
+                    if (waited) return true
+                    waited = true
+                    return control.sleep((a.preDelayMs / speed).toLong())
+                }
+
                 if (a.condition != null) {
-                    val out = ConditionEval.eval(a.condition, ctx.vars, probe())
+                    val set = com.autoball.core.model.ConditionSet.parse(a.condition)
+                    // 默认「等待后检查」：先跑完等待再判定，界面更可能已稳定
+                    val before = set.items.any { it.checkBefore }
+                    if (!before && !doWait()) {
+                        return Outcome(false, executed, failed, "已停止")
+                    }
+                    val out = evalWithRetry(a, set)
                     when (out) {
                         ConditionEval.Outcome.NOT_SATISFIED -> {
                             ctx.log("跳过 ${a.type.label}（${ConditionEval.describe(a.condition)}）")
@@ -111,8 +152,7 @@ class FlowRunner(
                         ConditionEval.Outcome.SATISFIED -> { /* 继续 */ }
                     }
                 }
-
-                if (!control.sleep((a.preDelayMs / speed).toLong())) {
+                if (!doWait()) {
                     return Outcome(false, executed, failed, "已停止")
                 }
 
@@ -298,14 +338,17 @@ class FlowRunner(
             return null
         }
 
-        override fun findImage(path: String, threshold: Float, region: FloatArray?): Boolean? {
+        override fun findImage(path: String, threshold: Float, region: FloatArray?,
+                               res: com.autoball.core.model.ActionCondition.MultiRes,
+                               fast: Boolean, minCount: Int): Boolean? {
             // 模板由取图器存本机；取不到就是没有配过或被清了，无法判定
             val tpl = com.autoball.core.store.TemplateStore.load(path) ?: return null
             val sr = screen() ?: return null
-            // 传 ratio：模板按录制比例投影到当前屏幕，否则跨分辨率必然匹配失败
+            // 传 meta：模板按策略投影到当前屏幕，否则跨分辨率必然匹配失败
             return ConditionEval.matchTemplatePos(
                 sr, tpl, threshold.coerceIn(0.5f, 1f), region,
-                com.autoball.core.store.TemplateStore.ratioOf(path)) != null
+                com.autoball.core.store.TemplateStore.metaOf(path),
+                res, fast, minCount) != null
         }
 
         override fun evalJs(expr: String): Boolean? =

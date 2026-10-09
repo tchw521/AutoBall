@@ -123,10 +123,10 @@ class ScriptPage(
 
         val right = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
         right.addView(searchBar())
+        // 内边距交给 Kit.segment 自带的外边距，避免内外边距叠加
         chipRow = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
-            setPadding(Display.dpInt(context, 14f), Display.dpInt(context, 12f),
-                Display.dpInt(context, 14f), Display.dpInt(context, 8f))
+            setPadding(0, Display.dpInt(context, 10f), 0, 0)
         }
         right.addView(chipRow)
 
@@ -269,51 +269,34 @@ class ScriptPage(
     }
 
     /** 气泡小框：全部=渐变实心；其余 .bub.cN */
+    /**
+     * 分组气泡直接用 [Ui.bubbleChip]。
+     *
+     * 这里原本私有一份几乎相同的实现（同字号 / 同圆角 / 同最大宽 / 同配色），
+     * 与 UiBits 里的 bubbleChip 重复——R-001 的重复而非抽象。
+     * 唯一差异是描边色，统一后各页一致。
+     */
     private fun bubble(name: String, colorIdx: Int, all: Boolean): TextView =
-        TextView(context).apply {
-            text = name
-            textSize = 11.5f
-            setTypeface(null, Typeface.BOLD)
-            setSingleLine(true)
-            maxWidth = Display.dpInt(context, Theme.BUB_MAX)
-            ellipsize = android.text.TextUtils.TruncateAt.END
-            setPadding(Display.dpInt(context, 9f), Display.dpInt(context, 4f),
-                Display.dpInt(context, 9f), Display.dpInt(context, 4f))
-            background = if (all) {
-                Theme.grad(context, 9f)
-            } else {
-                val k = if (colorIdx < 0) 0 else colorIdx
-                GradientDrawable().apply {
-                    cornerRadius = Display.dp(context, 9f)
-                    setColor(Theme.gTint(k))
-                    setStroke(Display.dpInt(context, 1f), Theme.gEdge(k))
-                }
-            }
-            setTextColor(if (all) Color.WHITE else Theme.gInk(if (colorIdx < 0) 0 else colorIdx))
+        Ui.bubbleChip(context, name, if (colorIdx < 0) 0 else colorIdx, all).apply {
+            // 侧栏里每行的气泡等宽铺满，权重由调用处决定
             layoutParams = LinearLayout.LayoutParams(0,
                 LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
 
+    /**
+     * 筛选分段器。
+     *
+     * 原本手搓一份 chip（自绘背景、自管选中态），与 [Kit.segment] 完全同职责——
+     * 而 segment 已在 MarketPage / FloatSetPage / ActionEditor 三处使用。
+     * 换成统一组件后，分段器的观感与其余页面自动保持一致。
+     */
     private fun renderChips() {
         chipRow.removeAllViews()
-        CHIPS.forEachIndexed { i, t ->
-            chipRow.addView(TextView(context).apply {
-                text = t
-                textSize = 11.5f
-                setTypeface(null, if (i == chipIdx) Typeface.BOLD else Typeface.NORMAL)
-                setTextColor(if (i == chipIdx) Color.WHITE else Theme.textSec())
-                setPadding(Display.dpInt(context, 11f), Display.dpInt(context, 5f),
-                    Display.dpInt(context, 11f), Display.dpInt(context, 5f))
-                background = if (i == chipIdx) Theme.grad(context, 9f)
-                else Theme.rect(Theme.surface(), 9f, context, Theme.line())
-                val lp = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT)
-                if (i > 0) lp.marginStart = Display.dpInt(context, 6f)
-                layoutParams = lp
-                setOnClickListener { chipIdx = i; renderChips(); renderList() }
-            })
-        }
+        chipRow.addView(Kit.segment(context, CHIPS.toList(), chipIdx) { i ->
+            chipIdx = i
+            renderChips()
+            renderList()
+        })
     }
 
     private fun filtered(): List<Script> {
@@ -502,20 +485,8 @@ class ScriptPage(
             lp.marginEnd = Display.dpInt(context, 11f)
         }
 
-        // 徽标 40dp
-        c.addView(TextView(context).apply {
-            text = if (rec) "录" else "JS"
-            textSize = 11f
-            setTypeface(null, Typeface.BOLD)
-            setTextColor(Color.WHITE)
-            gravity = Gravity.CENTER
-            background = GradientDrawable(Theme.orientation(),
-                if (rec) intArrayOf(Theme.ok(), Color.parseColor("#0E9F5D"))
-                else intArrayOf(Theme.pri2(), Color.parseColor("#5B8DEF"))
-            ).apply { cornerRadius = Display.dp(context, 12f) }
-            layoutParams = LinearLayout.LayoutParams(Display.dpInt(context, 40f),
-                Display.dpInt(context, 40f))
-        })
+        // 徽标 40dp：UiBits 里已有同规格实现，此前在这里又抄了一遍
+        c.addView(Ui.badge(context, if (rec) "录" else "JS", rec))
 
         val main = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
         val nameRow = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
@@ -717,25 +688,9 @@ class ScriptPage(
 
     private fun groupNameDialog(g: com.autoball.core.model.Group) {
         val act = context as? android.app.Activity ?: return
-        val et = android.widget.EditText(act).apply {
-            setText(g.name)
-            setTextColor(Theme.textPri())
-            textSize = 14f
-            setSingleLine(true)
+        Kit.inputDialog(act, "重命名分组", initial = g.name) { n ->
+            g.name = n; AB.store.saveGroup(g); renderGroups(); true
         }
-        val box = LinearLayout(act).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(Display.dpInt(act, 20f), Display.dpInt(act, 12f),
-                Display.dpInt(act, 20f), 0)
-            addView(et)
-        }
-        Ui.dialog(act, "重命名分组").body(box)
-            .negative("取消")
-            .positive("确定") {
-                val n = et.text.toString().trim()
-                if (n.isEmpty()) { Ui.toast(act, "名称不能为空"); false }
-                else { g.name = n; AB.store.saveGroup(g); renderGroups(); true }
-            }.show()
     }
 
     private fun groupColorDialog(g: com.autoball.core.model.Group) {
@@ -778,37 +733,18 @@ class ScriptPage(
 
     private fun newGroupDialog() {
         val act = context as? android.app.Activity ?: return
-        val et = android.widget.EditText(act).apply {
-            hint = "分组名称"
-            setHintTextColor(Theme.textTer())
-            setTextColor(Theme.textPri())
-            textSize = 14f
-            setSingleLine(true)
+        val colorIdx = AB.store.groups().size % 7
+        Kit.inputDialog(act, "新建分组", hint = "分组名称", okText = "创建") { n ->
+            val g = com.autoball.core.model.Group().apply {
+                id = "g" + System.nanoTime().toString(36)
+                name = n
+                kind = "custom"
+                this.colorIndex = colorIdx
+            }
+            AB.store.saveGroup(g)
+            renderGroups()
+            true
         }
-        var colorIdx = AB.store.groups().size % 7
-        val box = LinearLayout(act).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(Display.dpInt(act, 20f), Display.dpInt(act, 12f),
-                Display.dpInt(act, 20f), 0)
-            addView(et)
-        }
-        Ui.dialog(act, "新建分组").body(box)
-            .negative("取消")
-            .positive("创建") {
-                val n = et.text.toString().trim()
-                if (n.isEmpty()) { Ui.toast(act, "名称不能为空"); false }
-                else {
-                    val g = com.autoball.core.model.Group().apply {
-                        id = "g" + System.nanoTime().toString(36)
-                        name = n
-                        kind = "custom"
-                        this.colorIndex = colorIdx
-                    }
-                    AB.store.saveGroup(g)
-                    renderGroups()
-                    true
-                }
-            }.show()
     }
 
     // ---------- 批量 ----------
@@ -857,25 +793,9 @@ class ScriptPage(
 
     private fun renameDialog(s: Script) {
         val act = context as? android.app.Activity ?: return
-        val et = android.widget.EditText(act).apply {
-            setText(s.name)
-            setTextColor(Theme.textPri())
-            textSize = 14f
-            setSingleLine(true)
+        Kit.inputDialog(act, "重命名", initial = s.name) { n ->
+            s.name = n; AB.store.save(s); renderList(); true
         }
-        val box = LinearLayout(act).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(Display.dpInt(act, 20f), Display.dpInt(act, 12f),
-                Display.dpInt(act, 20f), 0)
-            addView(et)
-        }
-        Ui.dialog(act, "重命名").body(box)
-            .negative("取消")
-            .positive("确定") {
-                val n = et.text.toString().trim()
-                if (n.isEmpty()) { Ui.toast(act, "名称不能为空"); false }
-                else { s.name = n; AB.store.save(s); renderList(); true }
-            }.show()
     }
 
     fun refresh() { shown.clear(); renderGroups(); renderChips(); renderList() }

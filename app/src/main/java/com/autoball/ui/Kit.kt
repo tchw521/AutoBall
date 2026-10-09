@@ -659,6 +659,43 @@ object Kit {
             setOnClickListener { onClick() }
         }
 
+    /**
+     * 单行文本输入弹窗（统一组件）。
+     *
+     * 触发 R-001 三次法则：ScriptPage 里「重命名 / 新建分组 / 重命名分组」
+     * 三处各抄了一遍完全相同的 EditText + 容器 + 空值校验，
+     * 改一处样式要改三遍。收口后页面只提供标题与回调。
+     *
+     * @param onOk 返回 true 关闭弹窗；返回 false 保持打开（校验未通过）
+     */
+    fun inputDialog(ctx: Context, title: String, hint: String = "", initial: String = "",
+                    okText: String = "确定", emptyMsg: String = "名称不能为空",
+                    onOk: (String) -> Boolean) {
+        val et = android.widget.EditText(ctx).apply {
+            setText(initial)
+            if (hint.isNotEmpty()) {
+                this.hint = hint
+                setHintTextColor(Theme.textTer())
+            }
+            setTextColor(Theme.textPri())
+            textSize = 14f
+            setSingleLine(true)
+            if (initial.isNotEmpty()) setSelection(initial.length)
+        }
+        val box = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(Display.dpInt(ctx, 20f), Display.dpInt(ctx, 12f),
+                Display.dpInt(ctx, 20f), 0)
+            addView(et)
+        }
+        Ui.dialog(ctx, title).body(box)
+            .negative("取消")
+            .positive(okText) {
+                val v = et.text.toString().trim()
+                if (v.isEmpty()) { Ui.toast(ctx, emptyMsg); false } else onOk(v)
+            }.show()
+    }
+
     fun pill(ctx: Context, text: String, onClick: () -> Unit): TextView =
         TextView(ctx).apply {
             this.text = text

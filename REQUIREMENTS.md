@@ -128,6 +128,38 @@
       TYPE_APPLICATION_OVERLAY 会被无障碍遍历到，rootInActiveWindow 可能返回
       我们自己的覆盖层，那会让 findNode 全部失效。
 
+- [x] ~~R-134 录制动作完全无效~~ ✅ v1.36.0（未编译验证）
+      采集层 RecordCaptureView **没有任何触摸处理**（只有背景色）→
+      onStroke 永不调用 → 录不到任何动作，而界面一切正常（第 4 类失效模式）。
+      同时补：FLAG_NOT_TOUCH_MODAL（否则吞掉全屏触摸）、
+      暂停改为真正移除窗口、采样用 raw 屏幕坐标（窗口带 7%/20% 偏移）、多指分支。
+- [x] ~~崩溃：setTag 非资源 id~~ ✅ v1.36.0：`setTag(1, v)` → `R.id.work_state`
+- [x] ~~ScriptPage 组件化欠账~~ ✅ v1.36.0：893 → 836 行
+      复用 Ui.badge / Ui.bubbleChip / Kit.segment（此前各私有一份同规格实现）；
+      新增 Kit.inputDialog，收口重命名 / 新建分组 / 重命名分组三处重复。
+
+- [x] ~~R-135 运行条件弹窗复刻（自动精灵同款）~~ ✅ v1.37.0（未编译验证）
+      新增字段：matchIndex / fast / searchMode / multiRes / filter /
+      invert / checkBefore / retry + retryMax + retryIntervalMs / desc；
+      新增条件类型 AI 云识别（求值返回 UNKNOWN → 跳过，不假装支持）。
+      新增统一组件：Ui.adCheck（开关行）、Ui.adSlider（滑块行）、
+      Ui.dialog().trailing()（标题栏右侧动作，放「从屏幕测试找图…」）。
+      多分辨率适配**接到 R-132 的 ratio 缩放**上：DENSITY/WIDTH/HEIGHT/BOTH/TRY_ALL/OFF，
+      并为此在模板元数据里补存录制时的屏幕密度。
+      「匹配第几」语义 = 区域内至少 N 个互不重叠命中（去重判据：距离 > 半个模板）。
+      「重复检查直到成功」只对 NOT_SATISFIED 重试——UNKNOWN 是能力缺失，重试无意义。
+
+- [x] ~~R-136 录制流程改造~~ ✅ v1.38.0（未编译验证）
+      1) 开始录制收起**全部**本应用界面（主窗口+悬浮球+悬浮窗），只留贴边胶囊；
+         隐身前先 FloatManager.markShown()，否则 restore 只还原"记录过"的组件。
+      2) 每次手势在触点右上方弹出坐标提示（**百分比**，与脚本存储一致，不是像素）。
+      3) 采集窗由 86%×72% 改为**整屏**（底部留 40dp 给系统手势条）——
+         原尺寸导致顶部返回箭头、底部导航栏这类位置的点击录不到。
+         机制是"整屏接管 + 立即补发"，用户在目标 App 上看到的是实时生效的操作。
+      4) 结束录制**不再弹对话框**，直接回到动作列表窗口：整行可点编辑、
+         行尾 ✕ 删除、底部有「添加动作」。同步落盘避免关窗丢录制结果。
+         RecordController 新增 finish()（区别于 interrupt：后者才弹窗说明原因）。
+
 - [ ] **R-128 内置 OCR 模块**（P2）：`ocr()` 当前直接报错，需引三方或自训练模型
 - [ ] **R-129 设备开关类 API**（P3）：wakeupScreen / setScreenBrightness /
       setWifiEnable / setBluetoothEnable / setCameraFlashEnable 多需系统签名权限，

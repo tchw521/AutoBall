@@ -32,9 +32,6 @@ import org.json.JSONObject
  */
 object ConditionDialog {
 
-    private val SIMS = intArrayOf(70, 80, 90, 95)
-    private val TOLS = intArrayOf(5, 10, 24, 48)
-
     fun show(activity: Activity, a: Action, onChanged: () -> Unit) {
         val ctx = activity
         val set = ConditionSet.parse(a.condition)
@@ -217,36 +214,102 @@ object ConditionDialog {
                 }
 
                 if (c.kind == ActionCondition.Kind.IMAGE) {
-                    inner.addView(Ui.adRow(ctx, "相似度", "${c.sim}%", true,
-                        "越高越严格，越容易漏检") {
-                        Ui.popMenu(ctx, inner, SIMS.map { "$it%" },
-                            SIMS.indexOf(c.sim).coerceAtLeast(0)) { k ->
-                            c.sim = SIMS[k]; fill()
-                        }
+                    // 相似度用滑块：50–100 需要微调，四档固定值不够用
+                    inner.addView(Ui.adSlider(ctx, "相似度", c.sim, 50, 100, "%",
+                        "越高越严格、越不容易误命中；但太高会漏检。一般 85–95") {
+                        c.sim = it
                     })
                 }
                 if (c.kind == ActionCondition.Kind.COLOR) {
-                    inner.addView(Ui.adRow(ctx, "颜色容差", "${c.tol}", true,
+                    inner.addView(Ui.adSlider(ctx, "容差", c.tol, 0, 120, "",
                         "越大越宽松；抗锯齿与渐变会让像素色值有偏差") {
-                        Ui.popMenu(ctx, inner, TOLS.map { "$it" },
-                            TOLS.indexOf(c.tol).coerceAtLeast(0)) { k ->
-                            c.tol = TOLS[k]; fill()
-                        }
+                        c.tol = it
                     })
                 }
+
+                // ---- 找图高级项（R-135，对齐自动精灵运行条件弹窗）----
+                if (c.kind == ActionCondition.Kind.IMAGE) {
+                    inner.addView(Ui.adSec(ctx))
+                    textRow("匹配第几（选填）",
+                        if (c.matchIndex > 0) c.matchIndex.toString() else "") {
+                        c.matchIndex = it.toIntOrNull()?.coerceAtLeast(0) ?: 0
+                    }
+                    inner.addView(Ui.adCheck(ctx, "快速搜图", c.fast,
+                        "抽稀步长翻倍，速度约快 4 倍。代价是可能漏检，"
+                        + "仅在大区域找小图、明显变慢时才值得开") {
+                        c.fast = it
+                    })
+                    inner.addView(Ui.adRow(ctx, "搜图模式", c.searchMode.label,
+                        c.searchMode != ActionCondition.SearchMode.DEFAULT,
+                        c.searchMode.desc + "（当前内核只有「默认」一种实现）") {
+                        Ui.popMenu(ctx, inner,
+                            ActionCondition.SearchMode.values().map { it.label },
+                            ActionCondition.SearchMode.values().indexOf(c.searchMode)) { i ->
+                            c.searchMode = ActionCondition.SearchMode.values()[i]
+                            fill()
+                        }
+                    })
+                    inner.addView(Ui.adRow(ctx, "多分辨率适配", c.multiRes.label,
+                        c.multiRes != ActionCondition.MultiRes.BOTH, c.multiRes.desc) {
+                        Ui.popMenu(ctx, inner,
+                            ActionCondition.MultiRes.values().map { it.label },
+                            ActionCondition.MultiRes.values().indexOf(c.multiRes)) { i ->
+                            c.multiRes = ActionCondition.MultiRes.values()[i]
+                            fill()
+                        }
+                    })
+                    inner.addView(Ui.adRow(ctx, "滤镜",
+                        c.filter.ifEmpty { "未设置" }, c.filter.isNotEmpty(),
+                        "图像预处理（灰度/二值化等）需要图像处理模块，当前未内置。\n"
+                        + "留空即不处理——不做假装支持的选项。") {
+                        Ui.toast(ctx, "滤镜需要图像处理模块，当前版本未内置")
+                    })
+                }
+
+                // ---- 通用高级项 ----
+                inner.addView(Ui.adSec(ctx))
+                inner.addView(Ui.adCheck(ctx, "条件反相", c.invert,
+                    "成立变不成立：例如「出现图片」反相后是「图片消失才执行」。\n"
+                    + "注意：能力不足无法判定时仍按不满足跳过，不会反相成成立") {
+                    c.invert = it
+                })
+                inner.addView(Ui.adCheck(ctx, "等待前检查", c.checkBefore,
+                    "默认先跑完本动作的等待时间再判定条件（界面更可能已稳定）。\n"
+                    + "勾上则先判定、再等待") {
+                    c.checkBefore = it
+                })
+                inner.addView(Ui.adCheck(ctx, "重复检查直到成功", c.retry,
+                    "条件不成立时按间隔反复检查，直到成立或用尽上限。\n"
+                    + "判定为「无法判定」时不重试——能力缺失重试也没用") {
+                    c.retry = it
+                    fill()
+                })
+                if (c.retry) {
+                    inner.addView(Ui.adRow(ctx, "重复设置",
+                        if (c.retryMax > 0) "${c.retryMax} 次 / ${c.retryIntervalMs}ms"
+                        else "不限 / ${c.retryIntervalMs}ms", true,
+                        "点开可设置重复上限与间隔") { editRetry(ctx, c) { fill() } })
+                }
+                textRow("条件描述（选填）", c.desc) { c.desc = it }
             }
             fill()
 
-            Ui.dialog(ctx, "编辑条件").body(inner)
+            var dlg: android.app.AlertDialog? = null
+            val b = Ui.dialog(ctx, "编辑条件").body(inner)
                 .width(Theme.DIALOG_W + 10f).maxHeight(0.8f)
-                .negative("删除本条") {
-                    set.items.remove(c)
-                    commit(); rebuild()
-                }
-                .positive("确定") {
-                    readers.forEach { runCatching { it() } }
-                    commit(); rebuild(); true
-                }.show()
+            if (c.kind == ActionCondition.Kind.IMAGE) {
+                // 「从屏幕测试找图」必须同屏可见——藏在菜单里用户根本发现不了。
+                // 这是自动精灵特意放在标题栏右上角的原因。
+                b.trailing("从屏幕测试找图…") { testFromScreen(ctx, activity, c, dlg) }
+            }
+            b.negative("删除本条") {
+                set.items.remove(c)
+                commit(); rebuild()
+            }.positive("确定") {
+                readers.forEach { runCatching { it() } }
+                commit(); rebuild(); true
+            }.onReady { d, _, _ -> dlg = d }
+            dlg = b.show()
         }
 
         rebuild()
@@ -277,6 +340,100 @@ object ConditionDialog {
                 else "变量 $n ${c.cmp.symbol} ${c.cmpValue}"
             }
         }
+    }
+
+    /**
+     * 从屏幕测试找图：隐藏界面 → 回桌面 → 截图 → 按当前条件求值。
+     *
+     * 走的是**与运行时完全相同的求值路径**（同一个 [ConditionEval.eval]），
+     * 否则"测试通过"不代表脚本里也能过——那测试就白做了。
+     */
+    private fun testFromScreen(ctx: android.app.Activity, act: android.app.Activity,
+                               c: ActionCondition, dlg: android.app.AlertDialog?) {
+        if (c.value.isBlank()) {
+            Ui.toast(ctx, "请先选择模板图"); return
+        }
+        val handler = android.os.Handler(android.os.Looper.getMainLooper())
+        dlg?.hide()
+        com.autoball.float.FloatManager.hideAll()
+        com.autoball.float.FloatWindows.hideAll()
+        handler.postDelayed({
+            runCatching {
+                act.startActivity(android.content.Intent(android.content.Intent.ACTION_MAIN).apply {
+                    addCategory(android.content.Intent.CATEGORY_HOME)
+                    addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                })
+            }
+            handler.postDelayed({
+                val sr = runCatching {
+                    com.autoball.AB.router.screenshot(
+                        com.autoball.core.backend.ExecContext("condtest"))
+                }.getOrNull()
+                val ok = sr as? com.autoball.core.backend.ScreenResult.Ok
+                dlg?.show()
+                if (ok == null) {
+                    val why = (sr as? com.autoball.core.backend.ScreenResult.Unavailable)?.reason
+                        ?: "截图失败"
+                    Ui.toast(ctx, "无法测试：$why")
+                    return@postDelayed
+                }
+                val probe = object : com.autoball.core.util.ConditionEval.Probe {
+                    override fun screen(): com.autoball.core.backend.ScreenResult? = ok
+                    override fun findColor(hex: String, tol: Int, region: FloatArray?): Boolean? = null
+                    override fun findText(text: String, region: FloatArray?): Boolean? = null
+                    override fun findImage(path: String, threshold: Float, region: FloatArray?,
+                                           res: com.autoball.core.model.ActionCondition.MultiRes,
+                                           fast: Boolean, minCount: Int): Boolean? {
+                        val tpl = com.autoball.core.store.TemplateStore.load(path) ?: return null
+                        val m = com.autoball.core.util.ConditionEval.matchTemplatePos(
+                            ok, tpl, threshold, region,
+                            com.autoball.core.store.TemplateStore.metaOf(path),
+                            res, fast, minCount)
+                        lastSim = m?.similarity
+                        return m != null
+                    }
+                    override fun evalJs(expr: String): Boolean? = null
+                }
+                val one = com.autoball.core.model.ConditionSet().apply { items.add(c) }
+                val raw = com.autoball.core.model.ConditionSet.serialize(one)
+                val out = com.autoball.core.util.ConditionEval.eval(raw, emptyMap(), probe)
+                val sim = lastSim?.let { "（相似度 ${(it * 100).toInt()}%）" } ?: ""
+                Ui.toast(ctx, when (out) {
+                    com.autoball.core.util.ConditionEval.Outcome.SATISFIED -> "找到匹配 $sim"
+                    com.autoball.core.util.ConditionEval.Outcome.NOT_SATISFIED ->
+                        "未找到匹配 $sim\n可降低相似度或改用其他多分辨率策略"
+                    com.autoball.core.util.ConditionEval.Outcome.UNKNOWN -> "无法判定：模板图缺失"
+                })
+            }, 420)
+        }, 80)
+    }
+
+    /** 测试时回填的相似度，供提示文案使用 */
+    @Volatile private var lastSim: Float? = null
+
+    /** 重复检查设置：上限 + 间隔 */
+    private fun editRetry(ctx: android.app.Activity, c: ActionCondition,
+                          onChanged: () -> Unit) {
+        val box = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
+        val maxRow = Ui.adNumber(ctx,
+            if (c.retryMax > 0) c.retryMax.toString() else "", "次",
+            "0 或留空表示不限次数")
+        val gapRow = Ui.adNumber(ctx, c.retryIntervalMs.toString(), "毫秒", "")
+        box.addView(maxRow)
+        box.addView(gapRow)
+        box.addView(Kit.note(ctx,
+            "上限填 0 表示一直重试到条件成立或脚本被停止——请谨慎，"
+            + "条件永远不成立时脚本不会自动结束。"))
+        Ui.dialog(ctx, "重复检查直到成功").body(box)
+            .width(Theme.DIALOG_W + 10f)
+            .negative("取消")
+            .positive("确定") {
+                c.retryMax = Ui.adNumberValue(maxRow).trim().toIntOrNull()
+                    ?.coerceAtLeast(0) ?: 0
+                c.retryIntervalMs = Ui.adNumberValue(gapRow).trim().toLongOrNull()
+                    ?.coerceIn(100L, 60_000L) ?: 1000L
+                onChanged(); true
+            }.show()
     }
 
     /** 位置周围条件编辑器：增删探针，每个探针含偏移与颜色 */

@@ -21,6 +21,7 @@ class ActionCondition {
         TEXT("文字存在", "在节点树或 OCR 结果里能找到指定文字才执行"),
         COLOR("颜色存在", "指定点或区域内出现目标颜色才执行"),
         NODE("节点存在", "无障碍控件树里能找到指定控件才执行（比找色/找图更稳）"),
+        AI("AI云识别", "需云端视觉能力；本应用不联网，选中后按「无法判定」跳过该动作"),
         VAR("变量判断", "指定变量满足比较条件才执行（可用 \$ok / \$last / \$stepN）"),
         JS("JS 表达式", "脚本返回 true 才执行"),
         ;
@@ -93,6 +94,83 @@ class ActionCondition {
 
     /** 节点选择器（kind=NODE）。复用 [NodeSpec]，不另造一套字段 */
     var nodeSpec: NodeSpec? = null
+
+    // =================================================================
+    // 以下为自动精灵「运行条件」弹窗里的高级项（R-135）
+    // =================================================================
+
+    /**
+     * 匹配第几（选填，1 起）。
+     *
+     * 语义：区域内至少存在 N 个**互不重叠**的匹配才算成立。
+     * 之所以不实现成"取第 N 个的坐标"：条件只判断存在性，
+     * 而"至少 N 个"才是"第 N 个存在"的准确含义。
+     */
+    var matchIndex: Int = 0
+
+    /**
+     * 快速搜图：抽稀步长翻倍，速度约 4 倍、精度略降。
+     * 大区域找小图时用得上，代价是可能漏检。
+     */
+    var fast: Boolean = false
+
+    /** 搜图模式。当前内核只有一种实现，其余选项选中后会明确降级说明 */
+    var searchMode: SearchMode = SearchMode.DEFAULT
+
+    /** 多分辨率适配：决定模板图如何投影到当前屏幕（与 R-132 的 ratio 联动） */
+    var multiRes: MultiRes = MultiRes.BOTH
+
+    /** 滤镜：需图像处理模块，当前未内置——选中即明确告知，不假装支持 */
+    var filter: String = ""
+
+    /** 条件反相：成立变不成立。无法判定（UNKNOWN）**不**反相，仍按不满足处理 */
+    var invert: Boolean = false
+
+    /** 等待前检查：在动作等待之前先判定条件，而不是等完再判 */
+    var checkBefore: Boolean = false
+
+    /** 重复检查直到成功：不成立时按间隔重试，直到成立或用尽上限 */
+    var retry: Boolean = false
+    /** 重复上限；0 表示不限（只受脚本停止控制） */
+    var retryMax: Int = 0
+    /** 重复间隔（毫秒） */
+    var retryIntervalMs: Long = 1000L
+
+    /** 条件描述：只给作者自己看的备注 */
+    var desc: String = ""
+
+    enum class SearchMode(val label: String, val desc: String) {
+        DEFAULT("默认", "标准直方图归一化匹配，通用性最好"),
+        CONTOUR("轮廓", "按边缘轮廓匹配；当前内核未实现，按「默认」执行"),
+        DEFAULT_OLD("默认(旧)", "早期版本算法；当前内核未实现，按「默认」执行"),
+        HOG_OLD("HOG(旧)", "梯度直方图；当前内核未实现，按「默认」执行"),
+        ;
+        companion object {
+            fun byName(s: String?): SearchMode =
+                values().firstOrNull { it.name.equals(s?.trim(), true) } ?: DEFAULT
+        }
+    }
+
+    /**
+     * 多分辨率适配策略。
+     *
+     * 模板图是**像素尺寸**，跨设备必须缩放才能匹配（R-132）。
+     * 不同界面缩放规律不同（有的按宽度等比、有的按高度、有的整体拉伸），
+     * 所以给用户选择权，而不是替他定死一种。
+     */
+    enum class MultiRes(val label: String, val desc: String) {
+        DENSITY("基于像素密度缩放", "按屏幕密度比例缩放模板；适合图标、按钮等随密度变化的界面"),
+        WIDTH("基于屏幕宽缩放", "只按屏幕宽度等比缩放，保持模板宽高比"),
+        HEIGHT("基于屏幕高缩放", "只按屏幕高度等比缩放，保持模板宽高比"),
+        BOTH("基于屏幕宽和高缩放", "宽高分别按屏幕比例缩放；横竖屏不同比例时可能变形"),
+        TRY_ALL("尝试以上全部", "依次尝试各策略取最佳；最稳但最慢"),
+        OFF("关闭", "不做任何缩放，按模板原图匹配（仅同机型可用）"),
+        ;
+        companion object {
+            fun byName(s: String?): MultiRes =
+                values().firstOrNull { it.name.equals(s?.trim(), true) } ?: BOTH
+        }
+    }
     /** 变量比较符（kind=VAR） */
     var cmp: Cmp = Cmp.EXISTS
     /** 变量比较的右值（kind=VAR；EXISTS 时不用） */
@@ -114,6 +192,19 @@ class ActionCondition {
             put("cmp", cmp.name)
             put("cv", cmpValue)
         }
+        if (matchIndex > 0) put("mi", matchIndex)
+        if (fast) put("fast", true)
+        if (searchMode != SearchMode.DEFAULT) put("sm", searchMode.name)
+        if (multiRes != MultiRes.BOTH) put("mr", multiRes.name)
+        if (filter.isNotEmpty()) put("fl", filter)
+        if (invert) put("inv", true)
+        if (checkBefore) put("cbw", true)
+        if (retry) {
+            put("rt", true)
+            put("rtm", retryMax)
+            put("rti", retryIntervalMs)
+        }
+        if (desc.isNotEmpty()) put("ds", desc)
     }
 
     companion object {
@@ -144,6 +235,17 @@ class ActionCondition {
             nodeSpec = o.optJSONObject("ns")?.let { runCatching { NodeSpec.fromJson(it) }.getOrNull() }
             cmp = Cmp.byName(o.optString("cmp"))
             cmpValue = o.optString("cv", "")
+            matchIndex = o.optInt("mi", 0)
+            fast = o.optBoolean("fast", false)
+            searchMode = SearchMode.byName(o.optString("sm"))
+            multiRes = MultiRes.byName(o.optString("mr", "BOTH"))
+            filter = o.optString("fl", "")
+            invert = o.optBoolean("inv", false)
+            checkBefore = o.optBoolean("cbw", false)
+            retry = o.optBoolean("rt", false)
+            retryMax = o.optInt("rtm", 0)
+            retryIntervalMs = o.optLong("rti", 1000L)
+            desc = o.optString("ds", "")
         }
     }
 }

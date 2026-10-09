@@ -56,6 +56,8 @@ object FloatWorkWindow {
         /** willRecord 表示操作**后**的状态 */
         fun onRecord(script: Script, willRecord: Boolean)
         fun onAddAction(script: Script)
+        /** 点击列表中某一步：编辑该动作 */
+        fun onEditAction(script: Script, index: Int)
         fun onSave(script: Script)
         fun onClear(script: Script)
         fun onToggleLog(script: Script)
@@ -165,6 +167,14 @@ object FloatWorkWindow {
         handler.post {
             if (stealth) return@post
             stealth = true
+            // 悬浮球 / 悬浮窗也要一并收起。
+            // 录制的是**别的 App**上的操作，本应用的任何界面留在屏幕上都会：
+            // 1) 挡住目标 App 的按钮；2) 自己抢走触摸（尤其是悬浮球可拖动的命中区）。
+            // 只留贴边胶囊——它是停止录制的唯一入口，不能收。
+            // 先记录"哪些本来是开着的"——restore() 只还原确实显示过的组件，
+            // 不记的话录制结束会凭空冒出一个用户根本没开的悬浮球
+            FloatManager.markShown()
+            FloatManager.hideAll()
             val v = view
             // 只从窗口摘下，**保留 view 引用**——否则 exitStealth 拿不回原窗口，
             // 只能重建，已填的表单和滚动位置都会丢
@@ -182,6 +192,8 @@ object FloatWorkWindow {
             val v = view
             val p = params
             if (v != null && p != null) FloatWindows.add(ctx, v, p)
+            // 录制结束后把悬浮球 / 悬浮窗放回来（按用户原本的开关状态）
+            FloatManager.restore()
         }
     }
 
@@ -461,20 +473,46 @@ object FloatWorkWindow {
         }
         acts.forEachIndexed { i, a ->
             val lc = h.list.context
-            h.list.addView(TextView(lc).apply {
-                text = "${i + 1}. ${ActionEditor.describe(a)}"
-                textSize = 12f
-                setTextColor(Theme.textSec())
-                setSingleLine(true)
-                ellipsize = android.text.TextUtils.TruncateAt.END
+            val row = LinearLayout(lc).apply {
+                orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
                 // 行高固定，保证"至少四行"是可预期的
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     Display.dpInt(lc, FloatWindows.ROW_H_DP))
                 setPadding(Display.dpInt(lc, 12f), 0,
-                    Display.dpInt(lc, 12f), 0)
+                    Display.dpInt(lc, 6f), 0)
+                // 录制结束后要在这里逐条改参数，所以整行可点
+                setOnClickListener { cbRef?.onEditAction(script, i) }
+                background = Theme.rect(android.graphics.Color.TRANSPARENT, 6f, lc)
+            }
+            row.addView(TextView(lc).apply {
+                text = "${i + 1}. ${ActionEditor.describe(a)}"
+                textSize = 12f
+                setTextColor(Theme.textSec())
+                setSingleLine(true)
+                ellipsize = android.text.TextUtils.TruncateAt.END
+                gravity = Gravity.CENTER_VERTICAL
+                layoutParams = LinearLayout.LayoutParams(0,
+                    LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             })
+            // 删除这一步：录制时误触的一步直接在列表里删掉，
+            // 不必进编辑框再退出
+            row.addView(TextView(lc).apply {
+                text = "✕"
+                textSize = 12f
+                setTypeface(null, android.graphics.Typeface.BOLD)
+                setTextColor(Theme.textTer())
+                gravity = Gravity.CENTER
+                val sz = Display.dpInt(lc, 24f)
+                layoutParams = LinearLayout.LayoutParams(sz, sz)
+                setOnClickListener {
+                    script.flow?.actions?.removeAt(i)
+                    com.autoball.AB.store.save(script)
+                    refresh(script)
+                }
+            })
+            h.list.addView(row)
         }
     }
 
@@ -541,7 +579,7 @@ object FloatWorkWindow {
                 setTypeface(null, android.graphics.Typeface.BOLD)
                 setTextColor(Theme.textPri())
                 gravity = Gravity.CENTER
-                setTag(1, this)
+                setTag(com.autoball.R.id.work_state, this)
             })
             val sz = Display.dpInt(ctx, 54f)
             // 点一下恢复主窗口（可继续暂停/停止）
@@ -570,7 +608,8 @@ object FloatWorkWindow {
 
     private fun refreshCap() {
         val v = capView ?: return
-        (v.findViewWithTag<TextView>(1))?.text = currentSteps().toString()
+        (v.findViewWithTag<TextView>(com.autoball.R.id.work_state))
+            ?.text = currentSteps().toString()
     }
 
     private var stepsRef: (() -> Int)? = null

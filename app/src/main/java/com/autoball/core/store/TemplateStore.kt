@@ -42,7 +42,8 @@ object TemplateStore {
         File(dir(), "$id.png").outputStream().use {
             crop.compress(Bitmap.CompressFormat.PNG, 100, it)
         }
-        saveRatio(id, w.toFloat() / src.width, h.toFloat() / src.height)
+        saveRatio(id, w.toFloat() / src.width, h.toFloat() / src.height,
+            com.autoball.App.get().resources.displayMetrics.density)
         return id
     }
 
@@ -56,21 +57,32 @@ object TemplateStore {
      *
      * 坐标早已做了百分比归一化（v0.4 起），模板图没有——这是同一个疏漏的另一半。
      */
-    private fun saveRatio(id: String, wRatio: Float, hRatio: Float) {
+    /**
+     * @param density 录制时的屏幕密度（供「基于像素密度缩放」策略换算）。
+     *                旧模板无此值时按 0 处理，DENSITY 策略退化为 BOTH。
+     */
+    private fun saveRatio(id: String, wRatio: Float, hRatio: Float, density: Float) {
         runCatching {
-            File(dir(), "$id.ratio").writeText("$wRatio $hRatio")
+            File(dir(), "$id.ratio").writeText("$wRatio $hRatio $density")
         }
     }
 
     /** 模板在屏幕上的相对尺寸；无记录（旧模板）返回 null，调用方按原尺寸处理 */
-    fun ratioOf(id: String): Pair<Float, Float>? = runCatching {
+    /** 模板元数据：相对屏幕的宽高比例 + 录制时密度 */
+    class Meta(val wRatio: Float, val hRatio: Float, val density: Float)
+
+    /** 读不到（旧模板）返回 null，调用方按"原尺寸"处理 */
+    fun metaOf(id: String): Meta? = runCatching {
         val t = File(dir(), "$id.ratio").takeIf { it.exists() }?.readText() ?: return null
         val p = t.trim().split(Regex("\\s+"))
         if (p.size < 2) return null
         val w = p[0].toFloat(); val h = p[1].toFloat()
         if (w <= 0f || h <= 0f || w > 1f || h > 1f) return null
-        w to h
+        Meta(w, h, p.getOrNull(2)?.toFloat() ?: 0f)
     }.getOrNull()
+
+    /** 兼容旧调用：只要宽高比例 */
+    fun ratioOf(id: String): Pair<Float, Float>? = metaOf(id)?.let { it.wRatio to it.hRatio }
 
     /** 直接保存一张位图（导入端还原内联模板图时用） */
     fun saveBitmap(bmp: Bitmap): String = saveBitmap(bmp, null, null)
@@ -85,8 +97,9 @@ object TemplateStore {
         File(dir(), "$id.png").outputStream().use {
             bmp.compress(Bitmap.CompressFormat.PNG, 100, it)
         }
+        // 导入方无法得知导出设备的密度，DENSITY 策略在这种情况下退化为 BOTH
         if (wr != null && hr != null && wr > 0f && hr > 0f && wr <= 1f && hr <= 1f) {
-            saveRatio(id, wr, hr)
+            saveRatio(id, wr, hr, 0f)
         }
         return id
     }

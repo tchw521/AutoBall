@@ -4,6 +4,7 @@ import android.app.Activity
 import com.autoball.AB
 import com.autoball.core.model.Script
 import com.autoball.core.recorder.GlobalSettingsDialog
+import com.autoball.core.recorder.RecordOverlay
 import com.autoball.core.util.Display
 import com.autoball.float.FloatWorkWindow
 
@@ -35,16 +36,24 @@ object ScriptWorkDialog {
                     // 让录制控制器能把新增动作同步回本窗口的列表
                     CreatePage.currentScript = s
                     host.startRecording()
-                    // 录制时让出屏幕：隐藏主窗口，只留贴边胶囊显示步数。
-                    // 自动精灵如此——否则浮层盖住目标应用，采集层也易判为不可信遮挡
+                    // 录制时让出屏幕：主窗口 + 悬浮球 + 悬浮窗全部收起，
+                    // 只留贴边胶囊显示步数（也是停止录制的唯一入口）。
+                    // 否则本应用的界面会挡住目标 App 的按钮、还抢走触摸。
                     FloatWorkWindow.bindSteps { s.flow?.actions?.size ?: 0 }
                     FloatWorkWindow.enterStealth(activity)
                 } else {
-                    FloatWorkWindow.setRecording(false)
-                    FloatWorkWindow.exitStealth(activity)
-                    // 控制器没有 stop()：interrupt 会触发 onInterrupted 回调，
-                    // 由 CreatePage 弹出「放弃 / 继续 / 保存」三选一并结束录制
-                    CreatePage.controller?.interrupt("用户停止")
+                    stopAndBackToList(activity, s)
+                }
+            }
+
+            override fun onEditAction(s: Script, index: Int) {
+                val flow = s.flow ?: return
+                val a = flow.actions.getOrNull(index) ?: return
+                // 同样在悬浮窗层弹编辑框：用户此刻还在目标 App 上，
+                // 跳回应用会把目标 App 切走，改完还得再切回来
+                ActionEditor.showFloat(activity, a, flow) { edited ->
+                    flow.actions[index] = edited
+                    com.autoball.AB.store.save(s)
                     FloatWorkWindow.refresh(s)
                 }
             }
@@ -65,12 +74,7 @@ object ScriptWorkDialog {
                 FloatWorkWindow.refresh(s)
             }
 
-            override fun onStopRecord(s: Script) {
-                FloatWorkWindow.setRecording(false)
-                FloatWorkWindow.exitStealth(activity)
-                CreatePage.controller?.interrupt("用户停止")
-                FloatWorkWindow.refresh(s)
-            }
+            override fun onStopRecord(s: Script) = stopAndBackToList(activity, s)
 
             override fun onAddAction(s: Script) {
                 // 直接在悬浮窗层弹出动作编辑框（仿自动精灵）：
@@ -129,6 +133,30 @@ object ScriptWorkDialog {
                 GlobalSettingsDialog.showFloat(activity, flow) { AB.store.save(s) }
             }
         })
+    }
+
+    /**
+     * 结束录制 → 回到**添加动作的列表窗口**。
+     *
+     * 不弹「放弃 / 继续 / 保存」对话框：用户点停止的预期是接着编辑刚才录到的东西，
+     * 中间插一个对话框只会打断。录到的动作已经在脚本里（onActionAdded 同步过），
+     * 这里再落一次盘，避免用户直接关窗口导致录制结果丢失。
+     */
+    private fun stopAndBackToList(activity: Activity, s: Script) {
+        val c = CreatePage.controller
+        c?.finish()
+        RecordOverlay.hide()
+        com.autoball.float.FloatManager.setRecording(false)
+        FloatWorkWindow.setRecording(false)
+        FloatWorkWindow.setPaused(false)
+        // 动作已经在 s.flow 里，落盘保底
+        com.autoball.AB.store.save(s)
+        FloatWorkWindow.exitStealth(activity)
+        FloatWorkWindow.refresh(s)
+        val n = s.flow?.actions?.size ?: 0
+        Ui.toast(activity,
+            if (n > 0) "录制结束，共 $n 步 · 可继续编辑或添加动作"
+            else "录制结束，没有录到动作")
     }
 
     /** 动作列表变化后同步悬浮窗 */

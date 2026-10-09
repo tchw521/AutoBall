@@ -44,6 +44,8 @@ object UiDialogs {
         private var negative: Pair<String, (() -> Unit)?>? = null
         private var widthDp = 302f
         private var maxHeightRatio = 0.76f
+        /** 标题栏右侧的小动作（如「从屏幕测试找图…」） */
+        private var trailing: Pair<String, () -> Unit>? = null
 
         /**
          * 弹窗就绪回调：(弹窗, 内容容器, 标题控件)。
@@ -66,6 +68,15 @@ object UiDialogs {
             apply { positive = text to onClick; positiveColor = Theme.danger() }
         fun negative(text: String, onClick: (() -> Unit)? = null) =
             apply { negative = text to onClick }
+        /**
+         * 标题栏右侧小动作。
+         *
+         * 自动精灵的运行条件弹窗在右上角放了「从屏幕测试找图…」——
+         * 测试入口必须**同屏可见**，藏在菜单里用户根本发现不了。
+         */
+        fun trailing(text: String, onClick: () -> Unit) =
+            apply { trailing = text to onClick }
+
         fun width(dp: Float) = apply { widthDp = dp }
         fun maxHeight(ratio: Float) = apply { maxHeightRatio = ratio }
 
@@ -77,15 +88,46 @@ object UiDialogs {
             }
 
             // 头
-            val titleTv = TextView(ctx).apply {
-                text = title
-                textSize = 15f
-                setTypeface(null, Typeface.BOLD)
-                setTextColor(Theme.textPri())
-                setPadding(Display.dpInt(ctx, 16f), Display.dpInt(ctx, 14f),
-                    Display.dpInt(ctx, 16f), Display.dpInt(ctx, 12f))
+            val tr = trailing
+            if (tr == null) {
+                box.addView(TextView(ctx).apply {
+                    text = title
+                    textSize = 15f
+                    setTypeface(null, Typeface.BOLD)
+                    setTextColor(Theme.textPri())
+                    setPadding(Display.dpInt(ctx, 16f), Display.dpInt(ctx, 14f),
+                        Display.dpInt(ctx, 16f), Display.dpInt(ctx, 12f))
+                })
+            } else {
+                val head = LinearLayout(ctx).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    setPadding(Display.dpInt(ctx, 16f), Display.dpInt(ctx, 12f),
+                        Display.dpInt(ctx, 10f), Display.dpInt(ctx, 10f))
+                }
+                head.addView(TextView(ctx).apply {
+                    text = title
+                    textSize = 15f
+                    setTypeface(null, Typeface.BOLD)
+                    setTextColor(Theme.textPri())
+                    layoutParams = LinearLayout.LayoutParams(0,
+                        LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                })
+                head.addView(TextView(ctx).apply {
+                    text = tr.first
+                    textSize = 11f
+                    setTextColor(Theme.pri2())
+                    gravity = Gravity.CENTER
+                    setPadding(Display.dpInt(ctx, 8f), Display.dpInt(ctx, 5f),
+                        Display.dpInt(ctx, 8f), Display.dpInt(ctx, 5f))
+                    background = Theme.rect(Theme.surface2(), 9f, ctx, Theme.line())
+                    setOnClickListener { tr.second() }
+                })
+                box.addView(head)
             }
-            box.addView(titleTv)
+            val titleTv = (box.getChildAt(0) as? TextView)
+                ?: ((box.getChildAt(0) as? LinearLayout)?.getChildAt(0) as? TextView)
+                ?: TextView(ctx)
             box.addView(View(ctx).apply {
                 setBackgroundColor(Theme.line())
                 layoutParams = LinearLayout.LayoutParams(
@@ -251,6 +293,132 @@ object UiDialogs {
                 setOnClickListener { UiOverlays.tip(this, "说明", help) }
             })
         }
+        return row
+    }
+
+    /**
+     * 紧凑弹窗内的**开关行**（复选框 + 标签 + 问号）。
+     *
+     * 触发 R-001 三次法则：运行条件里有「快速搜图 / 条件反相 / 等待前检查 /
+     * 重复检查直到成功」四项开关，各写一遍就是四份重复，样式还会走样。
+     */
+    fun adCheck(ctx: Context, label: String, on: Boolean, help: String?,
+                onToggle: (Boolean) -> Unit): LinearLayout {
+        val row = LinearLayout(ctx).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(Display.dpInt(ctx, 5f), 0, Display.dpInt(ctx, 5f), 0)
+            val lp = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                Display.dpInt(ctx, 23f))
+            lp.setMargins(0, Display.dpInt(ctx, 1f), 0, Display.dpInt(ctx, 1f))
+            layoutParams = lp
+        }
+        var cur = on
+        val box = UiBits.check(ctx, on)
+        row.addView(box)
+        (box.layoutParams as? LinearLayout.LayoutParams)?.let {
+            it.width = Display.dpInt(ctx, 15f); it.height = Display.dpInt(ctx, 15f)
+        }
+        row.addView(TextView(ctx).apply {
+            text = label
+            textSize = 11.5f
+            setTextColor(if (on) Theme.textPri() else Theme.textSec())
+            layoutParams = LinearLayout.LayoutParams(0,
+                LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                marginStart = Display.dpInt(ctx, 6f)
+            }
+        })
+        if (help != null) {
+            row.addView(TextView(ctx).apply {
+                text = "?"
+                textSize = 9.5f
+                setTypeface(null, Typeface.BOLD)
+                setTextColor(Theme.textTer())
+                gravity = Gravity.CENTER
+                background = Theme.rect(Theme.surface2(), 9f, ctx)
+                val sz = Display.dpInt(ctx, 17f)
+                layoutParams = LinearLayout.LayoutParams(sz, sz).apply {
+                    marginStart = Display.dpInt(ctx, 4f)
+                }
+                setOnClickListener { UiOverlays.tip(this, "说明", help) }
+            })
+        }
+        row.setOnClickListener {
+            cur = !cur
+            // 直接改文字颜色比重建整行省事，也避免重建时丢失滚动位置
+            UiBits.setCheck(box, cur)
+            ((row.getChildAt(1)) as? TextView)?.setTextColor(
+                if (cur) Theme.textPri() else Theme.textSec())
+            onToggle(cur)
+        }
+        return row
+    }
+
+    /**
+     * 紧凑弹窗内的**滑块行**（标签 + 数值 + 滑杆 + 问号）。
+     *
+     * 自动精灵的相似度是滑块（50–100）而不是离散选项——
+     * 相似度需要微调，给四档固定值不够用。
+     */
+    fun adSlider(ctx: Context, label: String, value: Int, min: Int, max: Int,
+                 suffix: String = "%", help: String?,
+                 onChange: (Int) -> Unit): LinearLayout {
+        val row = LinearLayout(ctx).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(Display.dpInt(ctx, 5f), 0, Display.dpInt(ctx, 5f), 0)
+            val lp = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                Display.dpInt(ctx, 25f))
+            lp.setMargins(0, Display.dpInt(ctx, 1f), 0, Display.dpInt(ctx, 1f))
+            layoutParams = lp
+        }
+        row.addView(TextView(ctx).apply {
+            text = label
+            textSize = 11.5f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(Theme.textSec())
+        })
+        var cur = value.coerceIn(min, max)
+        val num = TextView(ctx).apply {
+            text = "$cur$suffix"
+            textSize = 11.5f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(Theme.pri2())
+            setPadding(Display.dpInt(ctx, 6f), 0, Display.dpInt(ctx, 6f), 0)
+        }
+        row.addView(num)
+        val bar = android.widget.SeekBar(ctx).apply {
+            this.max = max - min
+            progress = cur - min
+            layoutParams = LinearLayout.LayoutParams(0,
+                LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        row.addView(bar)
+        if (help != null) {
+            row.addView(TextView(ctx).apply {
+                text = "?"
+                textSize = 9.5f
+                setTypeface(null, Typeface.BOLD)
+                setTextColor(Theme.textTer())
+                gravity = Gravity.CENTER
+                background = Theme.rect(Theme.surface2(), 9f, ctx)
+                val sz = Display.dpInt(ctx, 17f)
+                layoutParams = LinearLayout.LayoutParams(sz, sz).apply {
+                    marginStart = Display.dpInt(ctx, 4f)
+                }
+                setOnClickListener { UiOverlays.tip(this, "说明", help) }
+            })
+        }
+        bar.setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(sb: android.widget.SeekBar?, p: Int, fromUser: Boolean) {
+                cur = p + min
+                num.text = "$cur$suffix"
+            }
+            override fun onStartTrackingTouch(sb: android.widget.SeekBar?) {}
+            override fun onStopTrackingTouch(sb: android.widget.SeekBar?) { onChange(cur) }
+        })
         return row
     }
 

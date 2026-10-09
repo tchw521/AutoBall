@@ -179,6 +179,22 @@ object UiBits {
             Display.dpInt(ctx, 22f))
     }
 
+    /** 就地切换勾选框外观（避免重建整行） */
+    fun setCheck(v: TextView, on: Boolean) {
+        v.text = if (on) "✓" else ""
+        v.background = if (on) {
+            GradientDrawable(Theme.orientation(), Theme.gradStops()).apply {
+                cornerRadius = Display.dp(v.context, 7f)
+            }
+        } else {
+            GradientDrawable().apply {
+                cornerRadius = Display.dp(v.context, 7f)
+                setColor(Color.TRANSPARENT)
+                setStroke(2, Theme.line2())
+            }
+        }
+    }
+
     /** 空态 / 说明文字 */
     fun hint(ctx: Context, text: String): TextView = TextView(ctx).apply {
         this.text = text

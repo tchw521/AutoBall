@@ -32,6 +32,12 @@ object Ui {
     fun note(ctx: Context, text: String) : TextView = UiSheets.note(ctx, text)
     fun sheetOption(ctx: Context, icon: String, iconColor: Int, title: String,
                     desc: String, onClick: () -> Unit) = UiSheets.sheetOption(ctx, icon, iconColor, title, desc, onClick)
+    fun adCheck(ctx: Context, label: String, on: Boolean, help: String? = null,
+                onToggle: (Boolean) -> Unit) = UiDialogs.adCheck(ctx, label, on, help, onToggle)
+    fun adSlider(ctx: Context, label: String, value: Int, min: Int, max: Int,
+                 suffix: String = "%", help: String? = null,
+                 onChange: (Int) -> Unit) =
+        UiDialogs.adSlider(ctx, label, value, min, max, suffix, help, onChange)
     fun adRow(ctx: Context, label: String, value: String, set: Boolean,
               help: String? = null, onValue: () -> Unit) = UiDialogs.adRow(ctx, label, value, set, help, onValue)
     fun adSec(ctx: Context) : android.view.View = UiDialogs.adSec(ctx)

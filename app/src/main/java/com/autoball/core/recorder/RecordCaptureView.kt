@@ -18,11 +18,11 @@ import com.autoball.core.util.Display
 /**
  * 录制采集层。
  *
- * 设计取舍（研究报告 4）：使用**可移动的小区域采集窗**而不是全屏拦截层。
- * Android 12+ 会阻止应用以"不可信遮挡"方式消费触摸，全屏透明层既可能被判为遮挡，
- * 也会与手势导航边缘区、输入法冲突。窗口内由 AutoBall 消费并补发，窗口外直接穿透到目标应用。
+ * 工作方式：**整屏接管 + 立即补发**（底部留 40dp 给系统手势条）。
+ * 窗口内触摸由 AutoBall 消费，随即用无障碍 / Shizuku 通道把同一个手势补发给目标应用；
+ * 于是用户在目标 App 上看到的是**实时生效**的操作，AutoBall 只是在旁边记了一笔。
  *
- * 已知限制：录制时请避开屏幕边缘起手（系统会抢手势区）。
+ * 已知限制：底部 40dp 内的起手会直接穿透给系统（不录），这是刻意留给手势导航的。
  */
 class RecordCaptureView(
     context: Context,
@@ -35,9 +35,6 @@ class RecordCaptureView(
     private var activePointer = -1
     private var multi = false
 
-    private var dragStartX = 0f
-    private var dragStartY = 0f
-    private var dragging = false
     var windowParams: WindowManager.LayoutParams? = null
     var windowManager: WindowManager? = null
 
@@ -60,8 +57,128 @@ class RecordCaptureView(
         multi = false
     }
 
+    /**
+     * 接管窗口内的触摸并编译为动作——**录制功能的核心**。
+     *
+     * 此前这里只有背景色、没有任何触摸处理，采集层是个纯摆设：
+     * `controller.onStroke()` 永远不会被调用，于是录制期间怎么点都录不到东西，
+     * 而界面上一切正常（状态、控制条都在），表现为"录制没有效果"。
+     */
+    @SuppressLint("ClickableViewAccessibility")
+    override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+        if (!active) return false
+        when (ev.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                reset()
+                activePointer = ev.getPointerId(ev.actionIndex)
+                addSample(activePointer, ev, ev.actionIndex)
+                return true
+            }
+            MotionEvent.ACTION_POINTER_DOWN -> {
+                addSample(ev.getPointerId(ev.actionIndex), ev, ev.actionIndex)
+                if (pointerMap.size > 1) multi = true
+                return true
+            }
+            MotionEvent.ACTION_MOVE -> {
+                for (i in 0 until ev.pointerCount) {
+                    addSample(ev.getPointerId(i), ev, i)
+                }
+                return true
+            }
+            MotionEvent.ACTION_POINTER_UP -> {
+                addSample(ev.getPointerId(ev.actionIndex), ev, ev.actionIndex)
+                return true
+            }
+            MotionEvent.ACTION_UP -> {
+                // 抬手时把手上所有指针都补最后一帧，再统一编译
+                for (i in 0 until ev.pointerCount) {
+                    addSample(ev.getPointerId(i), ev, i)
+                }
+                flush()
+                return true
+            }
+        }
+        return true
+    }
+
+    /**
+     * 采样并用 **raw 屏幕坐标**。
+     *
+     * 不能用 getX/getY：那是视图内局部坐标，而采集窗带偏移（x=7%、y=20%），
+     * 直接用会整体平移，录出来的点全偏。
+     */
+    private fun addSample(id: Int, ev: MotionEvent, idx: Int) {
+        val list = pointerMap.getOrPut(id) { ArrayList() }
+        val t = System.currentTimeMillis()
+        val last = list.lastOrNull()
+        if (last != null && t - last.t < GestureCompiler.SAMPLE_MIN_INTERVAL_MS) return
+        list.add(GestureCompiler.Sample(ev.getRawX(idx), ev.getRawY(idx), t))
+    }
+
+    /** 一次手势结束：编译并交给控制器（补发 + 追加到动作流） */
+    private fun flush() {
+        val now = System.currentTimeMillis()
+        val strokes = pointerMap.values
+            .filter { it.isNotEmpty() }
+            .map { pts -> GestureCompiler.Stroke(pts.first().t, now, ArrayList(pts)) }
+        reset()
+        if (strokes.isEmpty()) return
+        if (strokes.size > 1) controller.onStrokeMulti(strokes)
+        else controller.onStroke(strokes[0])
+    }
+
+    /**
+     * 坐标提示：在触摸点旁短暂显示该点坐标。
+     *
+     * 录制时用户点下去，需要一个即时反馈确认"这一点被记下来了、记在哪"。
+     * 没有它的话，录制过程完全黑盒——用户只能结束录制后回列表才知道有没有录上。
+     * 显示**百分比**（与脚本里存的一致），而不是像素：脚本换机型靠百分比生效，
+     * 给像素会误导用户以为坐标是绝对的。
+     */
+    fun showHint(rawX: Float, rawY: Float, text: String) {
+        val p = windowParams
+        val lx = rawX - (p?.x ?: 0)
+        val ly = rawY - (p?.y ?: 0)
+        val tv = TextView(context).apply {
+            this.text = "◎ $text"
+            textSize = 11f
+            setTypeface(null, android.graphics.Typeface.BOLD)
+            setTextColor(Color.WHITE)
+            setPadding(Display.dpInt(context, 7f), Display.dpInt(context, 3f),
+                Display.dpInt(context, 7f), Display.dpInt(context, 3f))
+            background = android.graphics.drawable.GradientDrawable().apply {
+                cornerRadius = Display.dp(context, 9f)
+                setColor(0xCC2F6BFF.toInt())
+            }
+            alpha = 0f
+        }
+        addView(tv, FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.WRAP_CONTENT,
+            FrameLayout.LayoutParams.WRAP_CONTENT).apply {
+            gravity = Gravity.TOP or Gravity.START
+        })
+        // 放在触点右上方：手指本身会盖住触点正下方
+        tv.translationX = (lx + Display.dp(context, 16f))
+            .coerceIn(0f, (width - Display.dp(context, 60f)).coerceAtLeast(0f))
+        tv.translationY = (ly - Display.dp(context, 34f)).coerceAtLeast(0f)
+        tv.animate().alpha(1f).setDuration(90).start()
+        postDelayed({
+            tv.animate().alpha(0f).setDuration(260)
+                .withEndAction { removeView(tv) }.start()
+        }, 720)
+    }
+
     companion object {
-        /** 采集窗尺寸：屏幕的 86% × 72%，居中偏下，避开手势导航边缘 */
+        /**
+         * 采集窗尺寸：**整屏**（底部留 40dp 给系统手势条）。
+         *
+         * 早前是屏幕 86% × 72%（居中偏下），代价是顶部状态栏附近与底部区域
+         * 的点击录不到——而"点其他 App 的按钮"恰恰常在这两处（返回箭头在上、
+         * 底部导航在下）。录不到就是静默丢动作，用户只会觉得录制不灵。
+         *
+         * 底部留 40dp 是为了不抢系统手势区（上滑返回/回桌面），
+         * 否则录制期间连退出都做不到，只能靠胶囊停止。
+         */
         fun createParams(context: Context): WindowManager.LayoutParams {
             val p = Display.screenSize(context)
             val type = if (Build.VERSION.SDK_INT >= 26)
@@ -70,16 +187,21 @@ class RecordCaptureView(
                 @Suppress("DEPRECATION")
                 WindowManager.LayoutParams.TYPE_PHONE
             }
+            val bottom = Display.dpInt(context, 40f)
             return WindowManager.LayoutParams(
-                (p.x * 0.86f).toInt(), (p.y * 0.72f).toInt(),
+                p.x, (p.y - bottom).coerceAtLeast(p.y / 2),
                 type,
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                    // 必须加：不加的话窗口是模态的，会吞掉**整个屏幕**的触摸，
+                    // 窗口外的操作既录不到也传不到目标应用——等于录屏时手机失灵。
+                    // 加了之后：窗口内由 AutoBall 接管并补发，窗口外直接穿透。
+                    WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
                     WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
                 PixelFormat.TRANSLUCENT
             ).apply {
                 gravity = Gravity.TOP or Gravity.START
-                x = (p.x * 0.07f).toInt()
-                y = (p.y * 0.20f).toInt()
+                x = 0
+                y = 0
             }
         }
     }
@@ -113,5 +235,30 @@ object RecordOverlay {
         wm = null
     }
 
-    fun setActive(active: Boolean) { view?.active = active }
+    /**
+     * 暂停 / 继续。
+     *
+     * 暂停必须**真正移除窗口**，而不是留着窗口把触摸吞掉：
+     * 窗口还在的话，用户在暂停期间对目标应用的任何操作都不会生效，
+     * 看起来像手机失灵。
+     */
+    /** 在触摸点旁显示坐标提示（录制反馈） */
+    fun hintAt(rawX: Float, rawY: Float, text: String) {
+        val v = view ?: return
+        if (!v.active) return
+        v.post { runCatching { v.showHint(rawX, rawY, text) } }
+    }
+
+    fun setActive(active: Boolean) {
+        val v = view ?: return
+        v.active = active
+        if (active) {
+            if (v.parent == null) {
+                val p = v.windowParams
+                if (p != null) runCatching { wm?.addView(v, p) }
+            }
+        } else {
+            if (v.parent != null) runCatching { wm?.removeView(v) }
+        }
+    }
 }

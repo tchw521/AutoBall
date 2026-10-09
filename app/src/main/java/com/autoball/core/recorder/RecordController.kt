@@ -115,11 +115,53 @@ class RecordController(private val context: Context) {
         val r = AB.router.execute(action, ctx)
         if (!r.ok) suppressor.clearDispatch()
 
+        // 坐标提示：告知用户这一点被记下来了、记在哪个百分比位置。
+        // 用**像素**点定位（提示要贴在手指位置），文案用百分比（与脚本存储一致）。
+        RecordOverlay.hintAt(last.x, last.y, pctText(action))
+
         // 采集层采到的是**像素**坐标，而 Action.x/y 的约定是**百分比**。
         // 不转换的话，列表里会显示成 "点击(612.0%, 1344.0%)" 这种荒谬的值。
         // 必须在补发之后转——补发要用真实像素。
         append(toPercent(action))
         return true
+    }
+
+    /**
+     * 采集层回调：一次**多指**手势（所有手指抬起）到达。
+     *
+     * 与 [onStroke] 的区别只在于编译方式（[GestureCompiler.compileMulti]），
+     * 回声抑制与补发逻辑一致。此前采集层没有多指分支，多指手势会被
+     * 当成单指处理、只记录第一根手指，录出来的动作与用户实际操作不符。
+     */
+    fun onStrokeMulti(strokes: List<GestureCompiler.Stroke>): Boolean {
+        if (state != State.RECORDING) return false
+        val now = System.currentTimeMillis()
+        val ref = strokes.first().samples.last()
+        if (suppressor.isEcho(ref.x, ref.y, now)) {
+            if (suppressor.shouldFuse()) interrupt("疑似自触发：连续收到补发回声")
+            return false
+        }
+        suppressor.accept(now)
+
+        val density = context.resources.displayMetrics.density
+        val action = GestureCompiler.compileMulti(strokes, density)
+        action.id = com.autoball.core.model.Action.newId()
+
+        suppressor.markDispatch(ref.x, ref.y, now,
+            strokes.maxOf { it.durationMs })
+        val r = AB.router.execute(action, ctx)
+        if (!r.ok) suppressor.clearDispatch()
+
+        RecordOverlay.hintAt(ref.x, ref.y, pctText(action))
+
+        append(toPercent(action))
+        return true
+    }
+
+    /** 提示文案：百分比坐标，保留一位小数 */
+    private fun pctText(a: Action): String {
+        if (!a.type.hasCoord) return "手势 ${a.type.label}"
+        return "%.1f%%, %.1f%%".format(a.x, a.y)
     }
 
     /** 像素 → 百分比。带坐标的动作才转，其余字段原样保留 */
@@ -150,6 +192,20 @@ class RecordController(private val context: Context) {
         AB.log.warn("record", "录制中断：$reason")
         callback?.onInterrupted(reason, flow.actions.size, estimatedMs())
         callback?.onStateChanged(state)
+    }
+
+    /**
+     * 用户主动停止：结束录制并返回动作流，**不触发 onInterrupted**。
+     *
+     * 与 [interrupt] 的区别：那是异常中断，需要弹窗告知原因；
+     * 而用户点「停止」的预期是**回到工作台继续编辑**，弹个对话框反而打断。
+     */
+    fun finish(): Flow {
+        val f = flow
+        state = State.IDLE
+        AB.log.info("record", "录制结束，共 ${f.actions.size} 个动作")
+        callback?.onStateChanged(state)
+        return f
     }
 
     /** 保存：返回动作流并复位 */

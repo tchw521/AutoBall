@@ -52,9 +52,15 @@ class CreatePage(context: Context, @Suppress("unused") private val host: PageHos
             controller = c
             c.callback = object : RecordController.Callback {
                 override fun onStateChanged(state: RecordController.State) {
+                    // 非录制态一律撤掉采集窗：暂停时留着窗口会吞掉触摸，
+                    // 用户在这期间对目标应用的操作全部无效，像手机失灵
+                    if (state != RecordController.State.RECORDING) {
+                        RecordOverlay.setActive(false)
+                    }
                     if (state == RecordController.State.RECORDING) {
                         FloatManager.setRecording(true)
                         RecordOverlay.show(activity, c)
+                        RecordOverlay.setActive(true)
                         // 录的是别的应用上的操作：开始录制后让出屏幕回到桌面，
                         // 用户再打开目标应用，否则采集层只能采到本应用自己的界面
                         Handler(Looper.getMainLooper()).postDelayed({
