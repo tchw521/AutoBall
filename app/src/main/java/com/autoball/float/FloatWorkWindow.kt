@@ -257,7 +257,7 @@ object FloatWorkWindow {
         }
         root.layoutParams = LinearLayout.LayoutParams(
             Display.dpInt(ctx, FloatWindows.windowSizeDp(ctx).first),
-            Display.dpInt(ctx, FloatWindows.windowHeightDp(ctx)))
+            FloatWindows.frameHeightPx(ctx))
 
         // ---- 标题栏：状态点 + 脚本名 + ✕ ----
         val head = FrameLayout(ctx).apply {
@@ -337,6 +337,9 @@ object FloatWorkWindow {
         // 早前这里传的是 WRAP_CONTENT，直接把限高冲掉了，
         // 于是动作一多窗口就一路变长（17 步时顶满屏幕）。
         val listWrap = android.widget.FrameLayout(ctx).apply {
+            // 最小高度：菜单展开时列表被 weight 压得很小，
+            // 没有下限的话会塌成一条，看不出当前有几步
+            minimumHeight = Display.dpInt(ctx, FloatWindows.MIN_CONTENT_DP) / 2
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f)
             addView(scroll, android.widget.FrameLayout.LayoutParams(
@@ -437,19 +440,30 @@ object FloatWorkWindow {
         holder = Holder(list, more, moreWrap, dot, title, mainBar, recBar)
         fillList(script)
         refreshState()
+
+        // **必须是 MATCH_PARENT，不能是 WRAP_CONTENT**——这是"底部按钮不见了"的根因。
+        //
+        // 窗口容器高度是固定的（params.height = frameHeightPx）。
+        // root 若用 WRAP_CONTENT，它的高度会按内容自然高度算；
+        // 内容一旦超过容器高度，root 就比容器高，
+        // LinearLayout 从顶部往下排 → **底条被排到容器外面**，
+        // 既看不见也点不到（取消/添加动作/运行全都失效）。
+        //
+        // 用 MATCH_PARENT 后 root 高度 = 容器高度（精确测量），
+        // 中间的内容区 weight=1 自动吃掉剩余，头部与底条永远在框架内。
         root.layoutParams = FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT,
-            FrameLayout.LayoutParams.WRAP_CONTENT)
+            FrameLayout.LayoutParams.MATCH_PARENT)
 
-        // 整体最大高度：列表已固定 4 行，但展开「更多」菜单会把窗口撑高，
-        // 菜单项一多就顶满甚至超出屏幕。这里夹住上限，超出部分内部滚动。
+        // 兜底：万一内容所需的最小高度超过当前窗口高度（极小屏 / 超大字号），
+        // 把窗口**调高**而不是裁掉底条。只增不减，避免抖动。
         root.addOnLayoutChangeListener(object : View.OnLayoutChangeListener {
             override fun onLayoutChange(v: View, l: Int, t: Int, r: Int, b: Int,
                                         ol: Int, ot: Int, or_: Int, ob: Int) {
-                val maxH = FloatWindows.maxHeightPx(ctx)
                 val p = params ?: return
-                if (b - t > maxH && p.height != maxH) {
-                    p.height = maxH
+                val minH = FloatWindows.frameHeightPx(ctx)
+                if (p.height < minH) {
+                    p.height = minH
                     runCatching { wm?.updateViewLayout(view, p) }
                 }
             }
@@ -464,6 +478,18 @@ object FloatWorkWindow {
         h.title.text = script.name
         h.list.removeAllViews()
         val acts = script.flow?.actions ?: emptyList()
+        // 空态的列表要**占满宽度**：空态里放的是「开始录制 / 添加动作」两个入口按钮，
+        // 它们被塞进 1/3 宽的列表容器里会被挤没（截图里按钮消失就是这个原因）。
+        // 有动作时列表才缩到 1/3 宽——那时它只是进度提示。
+        (h.list.parent as? android.view.View)?.let { sc ->
+            val flp = sc.layoutParams as? android.widget.FrameLayout.LayoutParams
+            flp?.width = if (acts.isEmpty())
+                android.view.ViewGroup.LayoutParams.MATCH_PARENT
+            else (Display.dpInt(h.list.context,
+                FloatWindows.windowSizeDp(h.list.context).first)
+                    * FloatWindows.LIST_WIDTH_SCALE).toInt()
+            if (flp != null) sc.layoutParams = flp
+        }
         if (acts.isEmpty()) {
             // 空态窗口：与有动作的窗口**分成两个形态**。
             // 空态不能运行、也没有列表可看，给「运行」按钮只会让人点了报错；

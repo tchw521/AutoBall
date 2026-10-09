@@ -124,7 +124,10 @@ class FloatDialog private constructor(private val ctx: Context, private val titl
         // 与悬浮窗口同一套尺寸规则（宽高比同手机、横竖屏一致），
         // 不再用"屏高 70%"这种随屏幕变化的比例——
         // 那会让同一个弹窗在横竖屏下大小不一，内容一多还得靠压紧高度。
-        val maxH = Display.dpInt(ctx, com.autoball.float.FloatWindows.windowHeightDp(ctx))
+        // 用 frameHeightPx（带"头部+底条+最小内容"下限）：
+        // 直接用 windowHeightDp 时，窗口减半后这个高度可能装不下
+        // 标题栏 + 底部按钮，按钮会被挤出卡片——与悬浮窗口同一个毛病
+        val maxH = com.autoball.float.FloatWindows.frameHeightPx(ctx)
         card.addView(scroll, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f).apply {
             // 内容自然高度，由外层测量后夹紧

@@ -265,6 +265,96 @@
       菜单展开时宿主容器要取**两层父**（list → ScrollView → listWrap），
       只取一层改的是 ScrollView 自己的 LayoutParams，窗口不会收缩。
 
+- [x] ~~R-148 选择动作类型列表缩小~~ ✅ v1.48.1（未编译验证，未推送）
+      宽取窗口 1/2、高取**内容区** 2/3（长度减少三分之一），居中，内部滚动。
+      之前把列表直接交给外层 host（ScrollView）滚，于是列表撑满整个弹窗——
+      用户要的是"列表本身缩小"，不是"弹窗缩小"。
+      高度按内容区（窗口高 − 标题栏 − 底部按钮）算而非整窗口高，
+      否则会把底部按钮挤出屏幕。
+      嵌套滚动用手感修复：`requestDisallowInterceptTouchEvent(true)`
+      通知外层别抢事件，否则内层滑到边界后会被外层截走。
+
+- [x] ~~R-149 底部按钮被挤出窗口~~ ✅ v1.49.0（未编译验证）
+      根因：`root.layoutParams` 被覆盖成 `WRAP_CONTENT`，root 高度按内容自然高度算；
+      内容超过容器高度时 LinearLayout 从顶部往下排 → **底条排到容器外**，
+      看不见也点不到（运行/添加动作/取消全失效）。
+      窗口高度减半后这个临界被触发，所以 v1.48 才暴露。
+      改：root 用 MATCH_PARENT（高度=容器精确值，weight 才生效）；
+      新增 `FloatWindows.frameHeightPx()` = max(windowHeightDp, 头部+底条+最小内容)，
+      **任何取窗口高度的地方都必须走它**，不能直接用 windowHeightDp。
+      FloatDialog / Ui.dialog 同步换用 frameHeightPx。
+      listWrap 加 minimumHeight，菜单展开时列表不会塌成一条。
+      空态列表**必须满宽**：空态里放的是「开始录制/添加动作」两个入口按钮，
+      塞进 1/3 宽容器会被挤没（同截图的按钮消失）。有动作时才缩到 1/3 宽。
+
+- [x] ~~R-150 点击图片动作 100% 失败~~ ✅ v1.50.0（未编译验证，未推送）
+      **失效（第 5 类：界面完整、运行时分支没写）**：
+      `AccessibilityBackend.resolveByScreen` 只写了 CLICK_COLOR 分支，
+      CLICK_IMAGE 直接落到 `return null` → 永远"未匹配到目标"。
+      且 `imageRef` 在 UI 上**没有任何编辑入口**（字段组与 CLICK 相同），
+      于是 imageRef 恒为空，即使补了分支也找不到图。两处都修。
+      新增 `FieldGroup.TEMPLATE`（模板图 + 相似度）与 `FieldGroup.COLOR`
+      （取色 + 容差），补 pickTemplate / pickColor。
+      **坑**：`ConditionEval.Match` 的 x/y **已经是命中区域中心**
+      （scan 里构造为 bx + tw/2），不能再加半个模板宽——加了会偏移半张图。
+
+- [x] ~~R-151 运行时支持但 UI 不能配的字段~~ ✅ v1.50.0（未编译验证，未推送）
+      新增 `FieldGroup.TIMING`（执行前等待 preDelayMs + 手势超时 timeoutMs）
+      与 `FieldGroup.NODE_SPEC`（节点选择器编辑弹窗：文字/ID/描述/类名/仅可点击）。
+      **「节点匹配」此前完全没有选择器入口**：字段组与 CLICK 相同，
+      nodeSpec 只能由录制或 JS 产生 → 手工建的动作运行时拿到空选择器。
+      执行前等待缺失是"界面动效没结束就点"类失败的常见原因，
+      此前只能靠加大运行等待硬扛（而运行等待是动作**完成后**等，语义不同）。
+
+- [x] ~~R-152 点击文字用系统精确匹配导致找不到~~ ✅ v1.50.0
+      `findNode` 对 CLICK_TEXT 走系统 `findAccessibilityNodeInfosByText`，
+      那是**全串等值**匹配：填「设置」找不到文本为「设置与隐私」的节点。
+      改为统一走 `findByPredicate`（包含匹配）。
+      另修：`root.recycle()` 无条件执行，当 picked 就是 root 时
+      （文本匹配到根视图）会把要用的对象回收掉，取 bounds 拿到垃圾值。
+
+- [x] ~~R-154 悬浮球透明度滑块无效~~ ✅ v1.50.0
+      读取用 `ball_idle_alpha`、写入用 `ball_alpha`——读的从没人写
+      （恒为默认 0.72），写的从没人读，滑块拖了完全没效果。
+      **这是第 1 类失效在"修完共用 key 之后"产生的新不对称**：
+      当时把共用 key 拆成两个，却只改了读取端没同步写入端。
+      另：滑块是 0–100，存的是 0–1 透明度，必须 /100f（此前也没除）。
+
+- [x] ~~R-158 倍速填 0 → 脚本永久卡住~~ ✅ v1.50.0
+      `FlowRunner.doWait` 里 `a.preDelayMs / speed`：speed 来自**用户手输**的倍速框，
+      填 0 时 Float 除零得 Infinity → `toLong()` 得 Long.MAX_VALUE → 睡到天荒地老。
+      表现为"脚本卡住不动"，且**日志里没有任何相关输出**，无从判断原因。
+      改为 speed <= 0.01 时按 1 处理。
+
+- [x] ~~R-159 按键码留空 → keyevent 0~~ ✅ v1.50.0
+      与 R-156 同类：留空填 0，而 0 不是有效键码，`input keyevent 0` 必失败，
+      报错信息里不含键码，用户看不出是自己留了空。改为取 KeyCode.BACK。
+
+- [x] ~~R-157 copy() 漏字段 / 可变对象浅拷贝~~ ✅ v1.50.0
+      `Action.copy` 漏 `backendHint` / `unknown`：复制一个指定了后端的动作
+      会丢掉后端偏好，转回自动择优——界面看不出差别，但执行路径悄悄变了。
+      `Flow.copy` 的 `display` 直接赋值：`DisplaySignature` 是**可变** data class，
+      副本与缓存原件共享引用（第 2 类失效），改一边影响另一边。改为 `?.copy()`。
+
+- [x] ~~R-156 手势超时留空 → 动作全部判失败~~ ✅ v1.50.0（**本轮自己引入**）
+      新增「手势超时」输入框时写了 `?: 0L`（留空=0）。
+      而运行时是 `latch.await(timeoutMs)`，0 会**立即返回**，
+      此时回调还没执行 → `done=false` → 动作被判为失败。
+      即：留空 = 每个动作都失败，且看不出原因（只显示"手势被取消"）。
+      改：留空取 `Action.DEFAULT_TIMEOUT_MS`（10 秒），并把输入框显示为真实生效值，
+      不再显示"选填"却按默认跑。教训：**新增数值字段时，留空的默认值
+      必须等于运行时默认值，不能想当然写 0**。
+
+- [x] ~~R-155 两个有读取无入口的设置~~ ✅ v1.50.0
+      `ball_remember_pos`（记住悬浮球位置，默认 true，想关关不掉）、
+      `panel_button_dp`（悬浮面板按键大小，默认 40，不可调）。
+      均已补 UI 入口。
+
+- [x] ~~R-153 Shizuku 通道缺找图分支~~ ✅ v1.50.0
+      `ShizukuBackend.tapResolved` 此前只有 CLICK_COLOR 分支，
+      CLICK_IMAGE 必失败。screencap 能拿到像素，应与无障碍同能力。
+      Match 的 x/y 已是命中中心，不能再加半个模板宽。
+
 - [ ] **R-128 内置 OCR 模块**（P2）：`ocr()` 当前直接报错，需引三方或自训练模型
 - [ ] **R-129 设备开关类 API**（P3）：wakeupScreen / setScreenBrightness /
       setWifiEnable / setBluetoothEnable / setCameraFlashEnable 多需系统签名权限，

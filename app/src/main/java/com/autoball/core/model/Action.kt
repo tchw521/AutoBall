@@ -132,6 +132,11 @@ class Action {
         c.subActions = ArrayList(subActions.map { it.copy(newId) })
         c.listeners = LinkedHashMap(listeners.mapValues { it.value.copy(newId) })
         c.timeoutMs = timeoutMs
+        // backendHint / unknown 此前漏拷：复制或粘贴一个指定了后端的动作
+        // 会丢掉后端偏好，转回自动择优——界面上看不出任何差别，
+        // 但执行路径悄悄变了（第 2 类失效）
+        c.backendHint = backendHint
+        c.unknown = unknown
         return c
     }
 
@@ -156,7 +161,7 @@ class Action {
      * 这里只作用于本步，用于"关键步骤必须精确、次要步骤可以抖"的混搭。
      */
     var jitterDp: Int = 0
-    var timeoutMs: Long = 10_000
+    var timeoutMs: Long = DEFAULT_TIMEOUT_MS
 
     // ---- 坐标类 ----
     var x: Float = 0f
@@ -270,6 +275,8 @@ class Action {
     }
 
     companion object {
+        /** 手势派发超时默认值（毫秒）。UI 留空时必须用它，**不能是 0** */
+        const val DEFAULT_TIMEOUT_MS: Long = 10_000
         fun newId(): String = "a" + System.nanoTime().toString(36)
 
         private fun listenersFromJson(o: JSONObject?): MutableMap<String, Action> {
@@ -302,7 +309,7 @@ class Action {
             a.failOp = FailOp.byName(o.optString("failOp"))
             a.failJumpTo = o.optStringOrNull("failJumpTo")
             a.jitterDp = o.optInt("jitterDp", 0)
-            a.timeoutMs = o.optLong("timeoutMs", 10_000)
+            a.timeoutMs = o.optLong("timeoutMs", DEFAULT_TIMEOUT_MS)
             a.listeners = listenersFromJson(o.optJSONObject("listeners"))
 
             a.x = o.optDouble("x").toFloat()

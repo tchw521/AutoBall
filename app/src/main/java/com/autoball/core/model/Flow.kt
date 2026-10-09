@@ -104,7 +104,9 @@ class Flow {
         c.name = name
         c.actions = ArrayList(actions.map { it.copy(newId = false) })
         c.vars = ArrayList(vars.map { it.copy() })
-        c.display = display
+        // DisplaySignature 是**可变** data class，直接赋值会与原对象共享引用：
+        // 改副本的显示签名会连带改到缓存里的原件（第 2 类失效）。
+        c.display = display?.copy()
         c.loop = loop
         c.loopCount = loopCount
         c.speed = speed

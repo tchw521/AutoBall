@@ -144,7 +144,7 @@ object UiDialogs {
             // 于是同一个弹窗在横竖屏下高度不同、换了设备也不同，
             // 而且与悬浮窗口的高度对不上，视觉上像两套东西。
             val sz = Display.screenSize(ctx)
-            val winH = Display.dpInt(ctx, com.autoball.float.FloatWindows.windowHeightDp(ctx))
+            val winH = com.autoball.float.FloatWindows.frameHeightPx(ctx)
             body?.let {
                 it.setPadding(Display.dpInt(ctx, 6f), Display.dpInt(ctx, 4f),
                     Display.dpInt(ctx, 6f), Display.dpInt(ctx, 6f))

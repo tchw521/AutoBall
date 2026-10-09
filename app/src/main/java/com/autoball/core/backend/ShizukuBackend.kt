@@ -83,17 +83,40 @@ class ShizukuBackend : InputBackend {
     private fun tapResolved(a: Action, ctx: ExecContext): ActionResult {
         // 需要节点/图像的动作：Shizuku 无节点能力；有截图时可按取色定位，否则要求已给定坐标
         if (a.x > 0f || a.y > 0f) return tap(a)
-        if (a.type == ActionType.CLICK_COLOR) {
-            val sr = screenshot(ctx)
-            if (sr is ScreenResult.Ok) {
-                val pt = matchColor(sr, a)
-                if (pt != null) {
-                    val r = client.exec(arrayOf("input", "tap", pt.x.toInt().toString(), pt.y.toInt().toString()))
-                    return if (r.ok) ActionResult.ok(id, 0, "取色点击") else ActionResult.fail(id, 0, r.err)
+        val sr = screenshot(ctx)
+        if (sr is ScreenResult.Ok) {
+            var pt: Pt? = null
+            var what = ""
+            if (a.type == ActionType.CLICK_COLOR) {
+                pt = matchColor(sr, a)
+                what = "取色点击"
+            } else if (a.type == ActionType.CLICK_IMAGE) {
+                // 此前 Shizuku 通道**没有找图分支**（只有取色），
+                // 于是「点击图片」在 Shizuku 下必失败。screencap 能拿到像素，
+                // 与无障碍走同一套匹配，不该因通道不同而能力不同。
+                val ref = a.imageRef
+                if (!ref.isNullOrBlank()) {
+                    val tpl = com.autoball.core.store.TemplateStore.load(ref)
+                    if (tpl != null) {
+                        val m = com.autoball.core.util.ConditionEval.matchTemplatePos(
+                            sr, tpl, a.matchThreshold, null,
+                            com.autoball.core.store.TemplateStore.metaOf(ref),
+                            com.autoball.core.model.ActionCondition.MultiRes.BOTH,
+                            false, 1, 3000L)
+                        // Match 的 x/y 已经是命中区域中心，不能再加半个模板宽
+                        if (m != null) pt = Pt(m.x, m.y)
+                        what = "找图点击"
+                    }
                 }
             }
+            if (pt != null) {
+                val r = client.exec(arrayOf("input", "tap",
+                    pt.x.toInt().toString(), pt.y.toInt().toString()))
+                return if (r.ok) ActionResult.ok(id, 0, what)
+                       else ActionResult.fail(id, 0, r.err)
+            }
         }
-        return ActionResult.fail(id, 0, "该动作需要控件节点或图像能力，请切换无障碍后端")
+        return ActionResult.fail(id, 0, "该动作需要控件节点能力或找不到目标，请切换无障碍后端")
     }
 
     private fun swipe(a: Action): ActionResult {

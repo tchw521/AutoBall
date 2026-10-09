@@ -76,6 +76,82 @@ object ActionEditor {
      *
      * 走后台线程：识别涉及截图与遍历节点树，放主线程会卡住界面。
      */
+    /** 节点选择器摘要：为空提示"未设置" */
+    private fun nodeSpecText(sp: com.autoball.core.model.NodeSpec?): String {
+        if (sp == null) return "未设置"
+        val p = mutableListOf<String>()
+        sp.text?.takeIf { it.isNotBlank() }?.let { p.add("文字=$it") }
+        sp.id?.takeIf { it.isNotBlank() }?.let { p.add("ID=$it") }
+        sp.desc?.takeIf { it.isNotBlank() }?.let { p.add("描述=$it") }
+        sp.className?.takeIf { it.isNotBlank() }?.let { p.add("类名=$it") }
+        if (sp.clickableOnly) p.add("仅可点击")
+        return p.joinToString("  ").ifEmpty { "未设置" }
+    }
+
+    /** 编辑节点选择器：与运行条件里的「节点」条件用同一套字段 */
+    private fun editNodeSpec(ctx: android.content.Context, a: Action, onChange: () -> Unit) {
+        val sp = a.nodeSpec ?: com.autoball.core.model.NodeSpec()
+        val box = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
+        fun tf(v: String?, hint: String): android.widget.EditText = textField(ctx, v ?: "", hint)
+        val etText = tf(sp.text, "选填")
+        val etId = tf(sp.id, "选填，如 com.xx:id/btn")
+        val etDesc = tf(sp.desc, "选填")
+        val etCls = tf(sp.className, "选填，如 android.widget.Button")
+        var only = sp.clickableOnly
+        box.addView(zsRow(ctx, "控件文字", etText, null, null,
+            help = "包含匹配，不区分大小写之外的完全相等"))
+        box.addView(zsRow(ctx, "资源 ID", etId, null, null,
+            help = "完整资源名。比文字更稳定，优先用它。"))
+        box.addView(zsRow(ctx, "内容描述", etDesc, null, null, help = "无障碍描述"))
+        box.addView(zsRow(ctx, "类名", etCls, null, null, help = "控件类名，包含匹配"))
+        box.addView(Ui.adCheck(ctx, "仅匹配可点击的控件", only,
+            "关掉可以匹配到不可点击的容器/文本，但可能定位不准") { only = !only })
+        Ui.dialog(ctx, "节点选择器")
+            .body(box)
+            .negative("取消", null)
+            .positive("确定") {
+                sp.text = etText.text.toString().trim().ifEmpty { null }
+                sp.id = etId.text.toString().trim().ifEmpty { null }
+                sp.desc = etDesc.text.toString().trim().ifEmpty { null }
+                sp.className = etCls.text.toString().trim().ifEmpty { null }
+                sp.clickableOnly = only
+                val empty = sp.text == null && sp.id == null &&
+                        sp.desc == null && sp.className == null
+                a.nodeSpec = if (empty) null else sp
+                onChange()
+                true
+            }.show()
+    }
+
+    /**
+     * 选模板图（点击图片动作）。
+     *
+     * 走 [ScreenPicker] 的 IMAGE 模式：截图 → 框选 → 裁剪存为模板，
+     * 与运行条件里的取图器是同一条路径，保证"选的图"和"匹配用的图"规格一致。
+     */
+    private fun pickTemplate(ctx: android.content.Context, a: Action, onChange: () -> Unit) {
+        val act = ctx as? android.app.Activity
+        if (act == null) { Ui.toast(ctx, "需要在应用页面内才能取图"); return }
+        ScreenPicker.pick(ctx, act, ScreenPicker.Mode.IMAGE,
+            onImage = { ref ->
+                a.imageRef = ref
+                Ui.toast(ctx, "模板已保存")
+                onChange()
+            })
+    }
+
+    /** 取色（点击颜色动作）：在截图上点一下取该点颜色 */
+    private fun pickColor(ctx: android.content.Context, a: Action, onChange: () -> Unit) {
+        val act = ctx as? android.app.Activity
+        if (act == null) { Ui.toast(ctx, "需要在应用页面内才能取色"); return }
+        ScreenPicker.pick(ctx, act, ScreenPicker.Mode.COLOR,
+            onColor = { hex ->
+                a.colorHex = hex
+                Ui.toast(ctx, "已取色 $hex")
+                onChange()
+            })
+    }
+
     private fun previewRecognize(ctx: android.content.Context, a: Action) {
         Ui.toast(ctx, "正在识别当前屏幕…")
         Thread {
@@ -453,6 +529,85 @@ object ActionEditor {
                     help = "按当前配置立刻识别一次并显示结果（不保存到脚本）。\n" +
                         "会隐藏本应用界面并回到桌面，所以请在目标界面上先摆好再点。"))
             }
+            // ---- 模板图（点击图片）----
+            // 此前这个入口**根本不存在**：CLICK_IMAGE 的字段组和 CLICK 一样，
+            // 用户选不了模板图 → imageRef 永远为空 → 运行时必然找不到目标。
+            // 动作在界面上"能建、能存、能跑"，但 100% 失败。
+            if (g.contains(com.autoball.core.model.FieldGroup.TEMPLATE)) {
+                box.addView(zsRow(ctx, "模板图片",
+                    valueView(ctx, a.imageRef?.let { "已选择" } ?: "点击选择图片",
+                        a.imageRef != null), null,
+                    pick = { pickTemplate(ctx, a) { onChange() } },
+                    help = "框选屏幕上的一块区域存为模板图，运行时在屏幕里找它并点中心。\n" +
+                        "模板图不随分享码/文件走，导入他人脚本后该动作用于无法检测而跳过。"))
+                val thEt = intField(ctx,
+                    (a.matchThreshold * 100).toInt().toString(), "85")
+                readers["threshold"] = {
+                    val v = thEt.text.toString().trim().toIntOrNull() ?: 85
+                    a.matchThreshold = (v.coerceIn(50, 100)) / 100f
+                }
+                box.addView(zsRow(ctx, "相似度", thEt, "%", null,
+                    help = "匹配阈值。调低更容易匹配到（可能误匹配），\n" +
+                        "调高更严格。一般 85～95。"))
+            }
+            // ---- 目标颜色（点击颜色）----
+            if (g.contains(com.autoball.core.model.FieldGroup.COLOR)) {
+                box.addView(zsRow(ctx, "目标颜色",
+                    valueView(ctx, a.colorHex ?: "点击选择颜色", a.colorHex != null), null,
+                    pick = { pickColor(ctx, a) { onChange() } },
+                    help = "在截图上点一下取色。找到该颜色后点它的位置。"))
+                // hint 必须等于 Action 的实际默认值（24），写 10 会让人以为
+                // 默认值就是 10，与运行时行为对不上
+                val tolEt = intField(ctx, a.colorTolerance.toString(), "24")
+                readers["tol"] = {
+                    a.colorTolerance = tolEt.text.toString().trim().toIntOrNull()
+                        ?.coerceIn(0, 255) ?: 10
+                }
+                box.addView(zsRow(ctx, "颜色容差", tolEt, null, null,
+                    help = "RGB 各通道允许的最大偏差，0 = 完全一致。\n" +
+                        "取到的颜色有渐变时调大到 20～40。"))
+            }
+            // ---- 节点选择器（节点匹配）----
+            // 此前完全没有入口：nodeSpec 只能由录制/JS 产生，手工建的动作
+            // 运行时拿到的永远是空选择器 → 找不到任何控件。
+            if (g.contains(com.autoball.core.model.FieldGroup.NODE_SPEC)) {
+                box.addView(zsRow(ctx, "节点选择器",
+                    valueView(ctx, nodeSpecText(a.nodeSpec), a.nodeSpec != null), null,
+                    pick = { editNodeSpec(ctx, a) { onChange() } },
+                    help = "按 文字 / 资源ID / 描述 / 类名 定位控件。\n" +
+                        "文字用**包含**匹配：填「设置」可匹配到「设置与隐私」。"))
+            }
+            // ---- 时延（执行前等待 + 手势超时）----
+            // 两个字段运行时一直在用，但编辑页没有入口，只能吃默认值。
+            // "界面跳转动效没结束就点"是脚本失败最常见的原因，
+            // 没有执行前等待就只能靠加大运行等待硬扛。
+            if (g.contains(com.autoball.core.model.FieldGroup.TIMING)) {
+                val pdEt = intField(ctx,
+                    a.preDelayMs.takeIf { it > 0 }?.toString() ?: "", "选填")
+                readers["preDelay"] = {
+                    a.preDelayMs = pdEt.text.toString().trim().toLongOrNull()
+                        ?.coerceIn(0, 60000) ?: 0L
+                }
+                box.addView(zsRow(ctx, "执行前等待", pdEt, "毫秒", null,
+                    help = "派发手势**之前**先等一会儿，用于等界面动画结束。\n" +
+                        "与「运行等待」的区别：运行等待是动作**完成后**等，这个是开始前等。"))
+                // 显示时就用真实生效值，别显示"选填"却按默认跑——
+                // 用户看到空会以为没设置，实际是 10 秒
+                val toEt = intField(ctx, a.timeoutMs.toString(), "选填")
+                readers["timeout"] = {
+                    // **留空必须用 Action 的默认值（10 秒），不能填 0**：
+                    // 运行时是 latch.await(timeoutMs)，0 会立即返回，
+                    // 此时回调还没执行 → done=false → 动作被判为**失败**。
+                    // 我第一版写的就是 ?: 0L，等于把所有留空的动作全部判死。
+                    val v = toEt.text.toString().trim().toLongOrNull()
+                    a.timeoutMs = if (v == null) com.autoball.core.model.Action.DEFAULT_TIMEOUT_MS
+                                  else v.coerceIn(1_000, 30_000)
+                }
+                box.addView(zsRow(ctx, "手势超时", toEt, "毫秒", null,
+                    help = "等待手势被系统接受的最长时间（默认 10000）。\n" +
+                        "**不要填 0**——0 表示不等回调，动作会立刻被判失败。\n" +
+                        "频繁因超时失败可适当调大。"))
+            }
             if (g.contains(com.autoball.core.model.FieldGroup.PACKAGE)) {
                 val et = textField(ctx, a.pkg ?: "", "选填")
                 readers["pkg"] = { a.pkg = et.text.toString() }
@@ -501,7 +656,14 @@ object ActionEditor {
             }
             if (g.contains(com.autoball.core.model.FieldGroup.KEYCODE)) {
                 val et = numField(ctx, a.keyCode.takeIf { it != 0 }?.toString() ?: "", "选填")
-                readers["key"] = { a.keyCode = et.text.toString().trim().toIntOrNull() ?: 0 }
+                readers["key"] = {
+                    // 与「手势超时」同类：留空不能填 0。
+                    // 0 不是有效键码，`input keyevent 0` 必失败，
+                    // 且报错信息不含键码，用户看不出是自己留了空。
+                    val v = et.text.toString().trim().toIntOrNull()
+                    a.keyCode = if (v == null || v == 0)
+                        com.autoball.core.model.KeyCode.BACK else v
+                }
                 box.addView(zsRow(ctx, "按键码", et, null, null,
                     help = ActionHelp.key(a)))
             }
@@ -652,17 +814,37 @@ object ActionEditor {
             }
         }
 
-        // 列表**直接交给外层 host 滚动**（host 本身就是 ScrollView）。
+        // 列表**自带固定尺寸 + 内部滚动**：宽取窗口 1/2、高取内容区 2/3，居中。
         //
-        // 早前在这里又套了一层定高 ScrollView，形成嵌套滚动：
-        // 内层滑到边界后外层不动，项多时手感很差，而且内层定高是"屏高百分比"，
-        // 与窗口固定高度对不上。既然 host 已经能滚，就别再套一层。
-        listBox.layoutParams = LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT).apply {
-            topMargin = Display.dpInt(ctx, 8f)
+        // 之前把列表直接交给外层 host 滚，于是列表撑满整个弹窗——
+        // 用户要求的是"列表本身缩小"，不是"弹窗缩小"。
+        //
+        // 嵌套滚动的手感问题用 requestDisallowInterceptTouchEvent 解决：
+        // 手指落在内层时通知外层别抢事件，否则内层滑到边界后会被外层截走。
+        val innerScroll = android.widget.ScrollView(ctx).apply {
+            isFillViewport = false
+            overScrollMode = android.view.View.OVER_SCROLL_NEVER
+            addView(listBox, ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT))
         }
-        box.addView(listBox)
+        innerScroll.setOnTouchListener { v, _ ->
+            v.parent?.requestDisallowInterceptTouchEvent(true)
+            false   // 返回 false：事件仍交给 ScrollView 自己处理
+        }
+        val typeListWrap = android.widget.FrameLayout(ctx).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                (com.autoball.float.FloatWindows.contentHeightPx(ctx)
+                        * com.autoball.float.FloatWindows.TYPE_LIST_HEIGHT_SCALE).toInt())
+            addView(innerScroll, android.widget.FrameLayout.LayoutParams(
+                (Display.dpInt(ctx,
+                    com.autoball.float.FloatWindows.windowSizeDp(ctx).first)
+                        * com.autoball.float.FloatWindows.TYPE_LIST_WIDTH_SCALE).toInt(),
+                android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+                Gravity.CENTER_HORIZONTAL or Gravity.CENTER_VERTICAL))
+        }
+        box.addView(typeListWrap)
         fill()
         box.addView(TextView(ctx).apply {
             text = "坐标均为百分比，换机型与转屏都不会点偏；带预设的动作已填好常用参数。"

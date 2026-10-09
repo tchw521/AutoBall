@@ -335,17 +335,22 @@ class AccessibilityBackend : InputBackend {
         val list = if (spec != null) {
             when {
                 !spec.id.isNullOrEmpty() -> root.findAccessibilityNodeInfosByViewId(spec.id!!)
-                !spec.text.isNullOrEmpty() -> root.findAccessibilityNodeInfosByText(spec.text!!)
                 else -> findByPredicate(root, spec)
             }
         } else if (!action.text.isNullOrEmpty()) {
-            root.findAccessibilityNodeInfosByText(action.text!!)
+            // **必须走包含匹配**：系统 findAccessibilityNodeInfosByText 是
+            // 全串等值匹配——填「设置」找不到文本为「设置与隐私」的节点，
+            // 而用户填关键词时的预期就是包含。此前用系统 API 导致
+            // 「点击文字」在多数界面上都找不到目标。
+            findByPredicate(root, NodeSpec(text = action.text, clickableOnly = false))
         } else emptyList()
 
         if (list.isEmpty()) { root.recycle(); return null }
         val picked = list[0]
         list.forEach { if (it !== picked) it.recycle() }
-        root.recycle()
+        // picked 可能就是 root 本身（文本匹配到根视图时），
+        // 无条件 recycle 会把要用的对象回收掉，取 bounds 时拿到垃圾值
+        if (picked !== root) root.recycle()
         return picked
     }
 
@@ -558,6 +563,24 @@ class AccessibilityBackend : InputBackend {
                         y += step
                     }
                     return if (n == 0) null else Pt((sumX / n).toFloat(), (sumY / n).toFloat())
+                }
+                // 找图（CLICK_IMAGE）：此前**根本没有这个分支**——
+                // 界面上能选模板图、能存 imageRef，运行时却直接落到 return null，
+                // 于是「点击图片」永远报"未匹配到目标"，动作 100% 失败。
+                // 这是第 5 类失效：界面完整、参数齐全，运行时分支没写。
+                if (action.type == ActionType.CLICK_IMAGE) {
+                    val ref = action.imageRef
+                    if (ref.isNullOrBlank()) return null     // 没选过模板图
+                    val tpl = com.autoball.core.store.TemplateStore.load(ref) ?: return null
+                    val meta = com.autoball.core.store.TemplateStore.metaOf(ref)
+                    val m = com.autoball.core.util.ConditionEval.matchTemplatePos(
+                        sr, tpl, action.matchThreshold, null,
+                        meta, com.autoball.core.model.ActionCondition.MultiRes.BOTH,
+                        false, 1, 3000L) ?: return null
+                    // Match 返回的**已经是命中区域中心**（scan 里构造为
+                    // "bx + tw/2"），不能再加半个模板宽——加了会偏移半张图，
+                    // 点下去正好偏出目标。
+                    return Pt(m.x, m.y)
                 }
                 return null
             }

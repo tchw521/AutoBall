@@ -45,10 +45,26 @@ enum class ActionType(
     /** 该类型表单需要展示哪些字段组（驱动 UI 动态表单） */
     val fieldGroups: Set<FieldGroup>
         get() = when (this) {
-            CLICK, CLICK_IMAGE, CLICK_TEXT, CLICK_COLOR, CLICK_NODE, AI_CLICK ->
-                setOf(FieldGroup.POINT, FieldGroup.PRESS_DURATION)
+            CLICK, CLICK_TEXT, AI_CLICK ->
+                setOf(FieldGroup.POINT, FieldGroup.PRESS_DURATION, FieldGroup.TIMING)
+            // 节点匹配**必须**有选择器入口：此前 CLICK_NODE 的字段组与 CLICK
+            // 完全相同，nodeSpec 在 UI 上无从配置，运行时只能用空选择器
+            CLICK_NODE ->
+                setOf(FieldGroup.NODE_SPEC, FieldGroup.POINT, FieldGroup.PRESS_DURATION,
+                    FieldGroup.TIMING)
+            // 点击图片**必须**有模板图入口：没有它用户选不了图，
+            // imageRef 永远为空，运行时必然找不到目标（R-150）
+            CLICK_IMAGE ->
+                setOf(FieldGroup.TEMPLATE, FieldGroup.POINT, FieldGroup.PRESS_DURATION,
+                    FieldGroup.TIMING)
+            // 点击颜色：颜色 + 容差，此前 UI 完全配不了容差，
+            // 只能吃预设里的默认值（10），偏色一点就匹配不上
+            CLICK_COLOR ->
+                setOf(FieldGroup.COLOR, FieldGroup.POINT, FieldGroup.PRESS_DURATION,
+                    FieldGroup.TIMING)
             SWIPE, GESTURE_SINGLE, GESTURE_MULTI ->
-                setOf(FieldGroup.POINT, FieldGroup.POINT_END, FieldGroup.DURATION)
+                setOf(FieldGroup.POINT, FieldGroup.POINT_END, FieldGroup.DURATION,
+                    FieldGroup.TIMING)
             INPUT_TEXT -> setOf(FieldGroup.TEXT)
             OPEN_APP -> setOf(FieldGroup.PACKAGE)
             OPEN_URL -> setOf(FieldGroup.URL)
@@ -74,7 +90,15 @@ enum class FieldGroup {
     POINT, POINT_END, PRESS_DURATION, DURATION, TEXT, PACKAGE, URL,
     KEYCODE, SCRIPT_REF, CODE, SUB_ACTIONS, CONTROL, VAR_NAME,
     /** 区域（左上 x,y + 右下 x2,y2，百分比）——区域随机点击用 */
-    AREA
+    AREA,
+    /** 模板图：选一张截图模板（写 imageRef）+ 相似度 */
+    TEMPLATE,
+    /** 目标颜色（写 colorHex）+ 容差（写 colorTolerance） */
+    COLOR,
+    /** 节点选择器（写 nodeSpec）：文字 / ID / 描述 / 类名 / 仅可点击 */
+    NODE_SPEC,
+    /** 时延：执行前等待（preDelayMs）与手势派发超时（timeoutMs） */
+    TIMING
 }
 
 /** 控制运行动作的子类型 */

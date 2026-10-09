@@ -140,7 +140,11 @@ class FlowRunner(
                 fun doWait(): Boolean {
                     if (waited) return true
                     waited = true
-                    return control.sleep((a.preDelayMs / speed).toLong())
+                    // speed 来自用户输入的倍速框：填 0 会除零 →
+                    // Float 得 Infinity → toLong() 得 Long.MAX_VALUE → **睡到天荒地老**，
+                    // 表现为"脚本卡住不动"，且看不出原因（日志里没有这一句）。
+                    val sp = if (speed > 0.01f) speed else 1f
+                    return control.sleep((a.preDelayMs / sp).toLong())
                 }
 
                 if (a.condition != null) {

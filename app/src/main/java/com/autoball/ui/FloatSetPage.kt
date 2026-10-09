@@ -111,13 +111,24 @@ class FloatSetPage(context: Context, private val host: PageHost) : FrameLayout(c
             AB.store.putBool("ball_fade_idle", it)
         })
 
+        // 「记住位置」此前只有读取端（默认 true）、**没有开关**，
+        // 想让悬浮球每次回到初始位的用户配不了
+        ballPane.addView(Kit.switchRow(context, "记住位置", "关闭后每次回到初始位置",
+            "⌖", Theme.pri(), AB.store.getBool("ball_remember_pos", true)) {
+            AB.store.putBool("ball_remember_pos", it)
+        })
         ballPane.addView(Kit.sliderRow(context, "大小",
             AB.store.getFloat("ball_size_dp", 48f), 36f, 72f, "dp") {
             AB.store.putFloat("ball_size_dp", it)
         })
+        // **key 必须两边一致**：此前读取用 ball_idle_alpha、写入用 ball_alpha——
+        // 读的那个从没人写（恒为默认 0.72），写的那个从没人读，
+        // 于是这个滑块拖了完全没有效果（第 1 类失效的又一次复现，
+        // 而且是"修完共用 key 之后"产生的新不对称）。
+        // 滑块值是 0–100，存的是 0–1 的透明度，必须 /100f。
         ballPane.addView(Kit.sliderRow(context, "闲置透明度",
             AB.store.getFloat("ball_idle_alpha", 0.72f) * 100f, 20f, 100f, "%") {
-            AB.store.putFloat("ball_alpha", it)
+            AB.store.putFloat("ball_idle_alpha", it / 100f)
         })
     }
 
@@ -330,6 +341,13 @@ class FloatSetPage(context: Context, private val host: PageHost) : FrameLayout(c
         winPane.addView(Kit.switchRow(context, "显示步骤名", "在悬浮窗上显示当前动作", "≡", Theme.pri2(),
             AB.store.getBool("panel_step", false)) {
             AB.store.putBool("panel_step", it)
+        })
+        // 按键大小：运行时一直在读 panel_button_dp（默认 40），
+        // 但此前**没有入口**，用户只能吃默认值
+        winPane.addView(Kit.sliderRow(context, "按键大小",
+            AB.store.getFloat("panel_button_dp", 40f), 28f, 64f, "dp") {
+            AB.store.putFloat("panel_button_dp", it)
+            com.autoball.float.FloatManager.refresh()
         })
     }
 
