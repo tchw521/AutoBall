@@ -155,7 +155,9 @@ object UiBits {
                onClick: () -> Unit): TextView = TextView(ctx).apply {
         this.text = text
         textSize = com.autoball.float.TextSz.MENU
-        setTypeface(null, if (selected) Typeface.BOLD else null)
+        // 不能用 null 作字重：`if (selected) BOLD else null` 推断成 Int?，
+        // 而 setTypeface 要的是非空 Int，编译不过。未选中就用 NORMAL。
+        setTypeface(null, if (selected) Typeface.BOLD else Typeface.NORMAL)
         setTextColor(if (selected) Theme.pri() else Theme.textSec())
         // 固定高度：同一网格里每个按钮必须一样高，否则参差不齐
         layoutParams = LinearLayout.LayoutParams(
