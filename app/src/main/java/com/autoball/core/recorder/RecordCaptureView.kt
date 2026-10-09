@@ -51,7 +51,9 @@ class RecordCaptureView(
         // 范围标记框：录制期间必须让用户**看得见**采集范围。
         // 此前采集层完全透明，用户无从判断哪片区域的触摸会被记录，
         // 点在框外就会静默丢动作——表现为"录制不灵"。
-        willNotDraw = false
+        // 必须显式打开绘制：View 默认 willNotDraw=true（ViewGroup 尤其如此），
+        // 不开的话 onDraw 不会被调用，边框等于没画
+        setWillNotDraw(false)
     }
 
     /**
