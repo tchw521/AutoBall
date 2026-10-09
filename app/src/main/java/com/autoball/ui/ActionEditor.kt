@@ -537,7 +537,7 @@ object ActionEditor {
                 box.addView(zsRow(ctx, "模板图片",
                     valueView(ctx, a.imageRef?.let { "已选择" } ?: "点击选择图片",
                         a.imageRef != null), null,
-                    pick = { pickTemplate(ctx, a) { onChange() } },
+                    pick = { pickTemplate(ctx, a) { rebuild() } },
                     help = "框选屏幕上的一块区域存为模板图，运行时在屏幕里找它并点中心。\n" +
                         "模板图不随分享码/文件走，导入他人脚本后该动作用于无法检测而跳过。"))
                 val thEt = intField(ctx,
@@ -554,14 +554,14 @@ object ActionEditor {
             if (g.contains(com.autoball.core.model.FieldGroup.COLOR)) {
                 box.addView(zsRow(ctx, "目标颜色",
                     valueView(ctx, a.colorHex ?: "点击选择颜色", a.colorHex != null), null,
-                    pick = { pickColor(ctx, a) { onChange() } },
+                    pick = { pickColor(ctx, a) { rebuild() } },
                     help = "在截图上点一下取色。找到该颜色后点它的位置。"))
                 // hint 必须等于 Action 的实际默认值（24），写 10 会让人以为
                 // 默认值就是 10，与运行时行为对不上
                 val tolEt = intField(ctx, a.colorTolerance.toString(), "24")
                 readers["tol"] = {
                     a.colorTolerance = tolEt.text.toString().trim().toIntOrNull()
-                        ?.coerceIn(0, 255) ?: 10
+                        ?.coerceIn(0, 255) ?: 24
                 }
                 box.addView(zsRow(ctx, "颜色容差", tolEt, null, null,
                     help = "RGB 各通道允许的最大偏差，0 = 完全一致。\n" +
@@ -573,7 +573,7 @@ object ActionEditor {
             if (g.contains(com.autoball.core.model.FieldGroup.NODE_SPEC)) {
                 box.addView(zsRow(ctx, "节点选择器",
                     valueView(ctx, nodeSpecText(a.nodeSpec), a.nodeSpec != null), null,
-                    pick = { editNodeSpec(ctx, a) { onChange() } },
+                    pick = { editNodeSpec(ctx, a) { rebuild() } },
                     help = "按 文字 / 资源ID / 描述 / 类名 定位控件。\n" +
                         "文字用**包含**匹配：填「设置」可匹配到「设置与隐私」。"))
             }
@@ -861,7 +861,7 @@ object ActionEditor {
             background = Theme.rect(Theme.surface2(), 10f, ctx, Theme.line())
             setPadding(Display.dpInt(ctx, 10f), Display.dpInt(ctx, 9f),
                 Display.dpInt(ctx, 10f), Display.dpInt(ctx, 9f))
-            setOnClickListener { onChange() }
+            setOnClickListener { rebuild() }
         })
 
         // 就地换页：把外层「编辑动作」的内容容器换成类型列表。
