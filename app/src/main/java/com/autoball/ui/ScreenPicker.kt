@@ -109,17 +109,7 @@ object ScreenPicker {
         val gridOn = com.autoball.AB.store.getBool("showGrid", false)
         val snapOn = com.autoball.AB.store.getBool("snapAlign", true)
         val layer = PickView(ctx, bmp, mode,
-            onColor = { hex ->
-                onColor?.invoke(hex)
-                // 自动识别控件（autoFind）：取色后顺带告诉用户这里是什么控件。
-                // 有价值的原因是：很多脚本用坐标点击，但该位置其实有稳定控件——
-                // 换成节点匹配后，界面缩放/换机型都不会失效。
-                if (com.autoball.AB.store.getBool("autoFind", false)) {
-                    val info = nodeAt(lastPct.first, lastPct.second)
-                    if (!info.isNullOrBlank()) Ui.toast(ctx, "该位置控件：$info\n可改用「节点匹配」更稳")
-                }
-                onDone()
-            },
+            onColor = { hex -> onColor?.invoke(hex); onDone() },
             onRegion = { l, t, r, b ->
                 if (mode == Mode.REGION) {
                     // 区域模式：换算成屏幕百分比（截图即整屏，比例一致）
@@ -130,7 +120,8 @@ object ScreenPicker {
                 }
                 onDone()
             },
-            onCancel = onDone, showGrid = gridOn, snapAlign = snapOn)
+            onCancel = onDone, showGrid = gridOn, snapAlign = snapOn,
+            autoFind = com.autoball.AB.store.getBool("autoFind", false))
 
         val p = WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT,
@@ -184,7 +175,9 @@ object ScreenPicker {
         /** 显示坐标网格（设置项 showGrid） */
         private val showGrid: Boolean,
         /** 吸附到网格线（设置项 snapAlign） */
-        private val snapAlign: Boolean
+        private val snapAlign: Boolean,
+        /** 取色后自动识别该位置控件（设置项 autoFind） */
+        private val autoFind: Boolean
     ) : FrameLayout(ctx) {
 
         companion object {
@@ -295,17 +288,9 @@ object ScreenPicker {
          *
          * 用百分比坐标而非像素——后端按当前屏幕换算，换机型也一致。
          */
-        private fun nodeAt(pctX: Float, pctY: Float): String? {
-            val svc = com.autoball.service.AutoBallAccessibilityService.instance ?: return null
-            return runCatching {
-                com.autoball.service.AutoBallAccessibilityService.nodeAtPct(pctX, pctY)?.let { n ->
-                    buildString {
-                        n.text?.takeIf { it.isNotBlank() }?.let { append("「$it」") }
-                        n.className?.let { append(" ${it.substringAfterLast('.')}") }
-                    }.trim().takeIf { it.isNotBlank() }
-                }
-            }.getOrNull()
-        }
+        private fun nodeAt(pctX: Float, pctY: Float): String? = runCatching {
+            com.autoball.service.AutoBallAccessibilityService.nodeAtPct(pctX, pctY)
+        }.getOrNull()
 
         /** 把像素坐标吸附到最近的网格线；不够近就原样返回 */
         private fun snap(v: Float, size: Float): Float {
@@ -345,7 +330,16 @@ object ScreenPicker {
                         py / height.coerceAtLeast(1) * 100f
                     if (mode == Mode.COLOR) {
                         val hex = colorAt(px, py)
-                        if (hex != null) onColor(hex) else onCancel()
+                        if (hex == null) { onCancel(); return true }
+                        // 自动识别控件：很多脚本用坐标点击，但该位置其实有稳定控件——
+                        // 换成节点匹配后，界面缩放/换机型都不会失效。提示而非代劳。
+                        if (autoFind) {
+                            val info = nodeAt(lastPct.first, lastPct.second)
+                            if (!info.isNullOrBlank()) {
+                                Ui.toast(context, "该位置控件：$info\n可改用「节点匹配」更稳")
+                            }
+                        }
+                        onColor(hex)
                     } else {
                         val l = minOf(sx, ex); val t = minOf(sy, ey)
                         val r = maxOf(sx, ex); val b = maxOf(sy, ey)
