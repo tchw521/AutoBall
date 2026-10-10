@@ -128,6 +128,7 @@ object FloatWindows {
      * 用内容区而不是整窗口高，是因为弹窗里还有标题栏和底部按钮，
      * 按整窗口算会把按钮挤出屏幕。
      */
+    @Deprecated("类型列表宽度改为按最长名字实测（ActionEditor.typeListWidthDp），不再用比例")
     const val TYPE_LIST_WIDTH_SCALE = 0.5f
     const val TYPE_LIST_HEIGHT_SCALE = 0.6667f
 
@@ -275,6 +276,27 @@ object FloatWindows {
         // 于是拖动窗口后 hideAll→restore 会把窗口弹回旧位置。
         stack.firstOrNull { it.view === v }?.params = p
         runCatching { wm?.updateViewLayout(v, p) }
+    }
+
+    /**
+     * 把本应用全部悬浮窗口**重新置顶**。
+     *
+     * 同为 TYPE_APPLICATION_OVERLAY 时没有 z-order 参数可用，层叠只由
+     * 添加顺序决定：**后添加的在上面**。所以要在某个全屏窗口（如录制采集层）
+     * 挂上之后把本应用的窗口拉回上层，只能 remove + add。
+     *
+     * 不做这件事的后果很直接：全屏采集层盖在录制胶囊之上，
+     * 胶囊上的红色停止按钮**完全点不到**——录制期间唯一的中断入口失效。
+     */
+    fun raiseAll(ctx: Context) {
+        handler.post {
+            val m = wm ?: return@post
+            stack.toList().forEach { e ->
+                if (e.view.parent == null) return@forEach
+                runCatching { m.removeView(e.view) }
+                runCatching { m.addView(e.view, e.params) }
+            }
+        }
     }
 
     /**

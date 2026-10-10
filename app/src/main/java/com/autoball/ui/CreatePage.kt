@@ -58,9 +58,14 @@ class CreatePage(context: Context, @Suppress("unused") private val host: PageHos
                         RecordOverlay.setActive(false)
                     }
                     if (state == RecordController.State.RECORDING) {
-                        FloatManager.setRecording(true)
+                        // **顺序不能反**：采集层必须先加、浮标（胶囊）后加。
+                        // 同为 TYPE_APPLICATION_OVERLAY 时，后添加的窗口盖在上面。
+                        // 早前是先 setRecording（显示胶囊）再 show 采集层，
+                        // 于是全屏采集层压在胶囊之上——胶囊上的红色停止按钮
+                        // **完全点不到**，录制只能靠别的途径中断（"停止运行也按不了"）。
                         RecordOverlay.show(activity, c)
                         RecordOverlay.setActive(true)
+                        FloatManager.setRecording(true)
                         // 录的是别的应用上的操作：开始录制后让出屏幕回到桌面，
                         // 用户再打开目标应用，否则采集层只能采到本应用自己的界面
                         Handler(Looper.getMainLooper()).postDelayed({
