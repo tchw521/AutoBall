@@ -6,6 +6,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import com.autoball.core.model.Action
 import com.autoball.core.model.Flow
+import com.autoball.float.FloatDialog
 import com.autoball.core.util.Display
 
 /**
@@ -22,7 +23,15 @@ import com.autoball.core.util.Display
  */
 object ListenerDialog {
 
-    /** 触发时机：声明顺序即展示顺序，name 即存储 key */
+    /**
+     * 触发时机：声明顺序即展示顺序。
+     *
+     * **存储 key 必须用 [key]（小写），不能用 [name]（大写）**：
+     * 运行时 FlowRunner / ScriptRunner 是按小写字符串（`lt` / `br` / `sb` …）
+     * 取钩子的，而 `name` 是枚举名（大写）。早前这里用了 `st.name`，
+     * 于是配好的全局监听动作**一次都不会执行**，且界面照常显示"已设置 N 项"
+     * —— 典型的"界面能存、运行时读不到"的静默失效。
+     */
     enum class Stage(val label: String, val desc: String, val hint: String) {
         SB("脚本开始前监听", "开跑前的准备动作",
             "脚本真正开始执行之前触发一次，常用于清场、截图留证或初始化状态"),
@@ -44,44 +53,54 @@ object ListenerDialog {
             "脚本全部结束后触发一次（无论成败），用于释放资源或恢复手机状态"),
         ;
 
+        /** 存储 / 触发用的 key：小写，与运行时一致 */
+        val key: String get() = name.lowercase()
+
         companion object {
-            fun byName(n: String): Stage? = values().firstOrNull { it.name == n }
+            fun byName(n: String): Stage? =
+                values().firstOrNull { it.name.equals(n, true) }
         }
     }
 
     /**
-     * 动作级监听：`Action.listeners`（key 用 Stage 的 name）。
+     * 打开动作编辑器：按上下文自动选形态。
      *
-     * 与脚本级 9 时机的区别：那作用于整段脚本，这里只作用于当前动作。
-     * 两者存储互不干扰（Flow.hooks vs Action.listeners）。
+     * 悬浮窗形态下 ctx 是 applicationContext，**不是** Activity，
+     * 此时必须用 [ActionEditor.showFloat]，否则会直接抛转型异常。
+     * 而「全局监听动作」的主入口恰恰在悬浮窗里（工作台 ⚙），
+     * 所以这一步不能省——早前这里要求 Activity，导致主路径点开只弹一句 toast。
      */
-    fun show(activity: Activity, a: Action, onChanged: () -> Unit) {
-        val ctx = activity
-        val box = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
-        box.addView(Ui.note(ctx,
-            "这些钩子只作用于当前动作；整段脚本的钩子在「脚本全局设置 → 全局监听动作」。"))
+    private fun openEditor(ctx: android.content.Context, flow: Flow?,
+                           existing: Action?, onSave: (Action) -> Unit) {
+        val act = ctx as? Activity
+        if (act != null) ActionEditor.show(act, existing, flow, onSave)
+        else ActionEditor.showFloat(ctx, existing, flow, onSave)
+    }
 
-        fun fill() {
+    /**
+     * 悬浮窗形态的全局监听动作。
+     *
+     * 与 [show] 共用同一份行构建与提交逻辑，两处各写一遍必然出现参数口径不一致。
+     */
+    fun showFloat(ctx: android.content.Context, flow: Flow, onChanged: () -> Unit) {
+        val box = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
+        fun rebuild() {
             box.removeAllViews()
             box.addView(Ui.note(ctx,
-                "这些钩子只作用于当前动作；整段脚本的钩子在「脚本全局设置 → 全局监听动作」。"))
-            Stage.values().forEach { st ->
-                val hook = a.listeners[st.name]
-                box.addView(Ui.adRow(ctx, st.label,
-                    if (hook == null) "未设置" else "已设置", hook != null, st.hint) {
-                    ActionEditor.show(activity, hook) { na ->
-                        a.listeners[st.name] = na
-                        fill()
-                    }
+                "在指定时机自动执行附加动作。每个时机可挂多个，按顺序执行。"))
+            for (st in Stage.values()) {
+                val list = flow.hooks[st.key] ?: emptyList<Action>()
+                box.addView(stageRow(ctx, st, list) {
+                    stageDetail(ctx, flow, st, onChanged)
                 })
             }
         }
-        fill()
-
-        Ui.dialog(activity, "监听动作").body(box)
-            .width(Theme.DIALOG_W + 10f).maxHeight(0.8f)
-            .negative("清除全部") { a.listeners.clear(); onChanged() }
-            .positive("确定") { onChanged(); true }.show()
+        rebuild()
+        FloatDialog.show(ctx, "全局监听动作")
+            .body(box)
+            .width(Theme.DIALOG_W + 30f)
+            .negative("关闭")
+            .show()
     }
 
     fun show(activity: Activity, flow: Flow, onChanged: () -> Unit) {
@@ -94,7 +113,7 @@ object ListenerDialog {
                 "在指定时机自动执行附加动作。每个时机可挂多个，按顺序执行。"))
 
             for (st in Stage.values()) {
-                val list = flow.hooks[st.name] ?: emptyList<Action>()
+                val list = flow.hooks[st.key] ?: emptyList<Action>()
                 box.addView(stageRow(ctx, st, list) {
                     // 打开该时机的动作列表编辑
                     stageDetail(activity, flow, st, onChanged)
@@ -111,7 +130,7 @@ object ListenerDialog {
             .show()
     }
 
-    private fun stageRow(ctx: Activity, st: Stage, list: List<Action>,
+    private fun stageRow(ctx: android.content.Context, st: Stage, list: List<Action>,
                          onClick: () -> Unit): LinearLayout {
         val row = Ui.adRow(ctx, st.label,
             if (list.isEmpty()) "未设置" else "${list.size} 个动作",
@@ -136,10 +155,9 @@ object ListenerDialog {
     }
 
     /** 单个时机的动作列表：添加 / 替换 / 删除 */
-    private fun stageDetail(activity: Activity, flow: Flow, st: Stage,
+    private fun stageDetail(ctx: android.content.Context, flow: Flow, st: Stage,
                             onChanged: () -> Unit) {
-        val ctx = activity
-        val list = flow.hooks.getOrPut(st.name) { ArrayList() }
+        val list = flow.hooks.getOrPut(st.key) { ArrayList() }
         val box = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
 
         fun rebuild() {
@@ -199,7 +217,7 @@ object ListenerDialog {
                 lp.setMargins(0, Display.dpInt(ctx, 8f), 0, 0)
                 layoutParams = lp
                 setOnClickListener {
-                    ActionEditor.show(ctx, null) { a ->
+                    openEditor(ctx, flow, null) { a ->
                         list.add(a)
                         onChanged()
                         rebuild()
@@ -209,7 +227,13 @@ object ListenerDialog {
         }
 
         rebuild()
-        Ui.dialog(ctx, st.label).body(box).width(Theme.DIALOG_W + 20f)
-            .maxHeight(0.7f).negative("关闭").show()
+        val act = ctx as? Activity
+        if (act != null) {
+            Ui.dialog(act, st.label).body(box).width(Theme.DIALOG_W + 20f)
+                .maxHeight(0.7f).negative("关闭").show()
+        } else {
+            FloatDialog.show(ctx, st.label).body(box)
+                .width(Theme.DIALOG_W + 20f).negative("关闭").show()
+        }
     }
 }

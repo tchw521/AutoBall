@@ -39,6 +39,7 @@ object PanelKeyDialog {
                 Ui.popMenu(ctx, box, listOf("1 列", "2 列", "3 列", "4 列"), cols - 1) { i ->
                     cols = i + 1
                     AB.store.putInt("panel_cols", cols)
+                    com.autoball.float.FloatManager.refresh()
                     rebuild()
                 }
             })

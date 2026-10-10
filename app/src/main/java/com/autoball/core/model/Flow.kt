@@ -119,6 +119,19 @@ class Flow {
         return c
     }
 
+    /**
+     * 取某个时机的监听动作。
+     *
+     * 大小写容错是必要的：早期版本按枚举名（大写 `LT`）存过一批数据，
+     * 而运行时按小写取。不做容错的话，老脚本里已经配好的钩子会"看起来在、
+     * 实际永远不触发"，用户根本无从判断是配置丢了还是功能坏了。
+     */
+    fun hookList(stage: String): List<Action> {
+        hooks[stage]?.let { return it }
+        hooks[stage.uppercase()]?.let { return it }
+        return emptyList()
+    }
+
     /** 已挂载监听动作的时机数与动作总数，用于编辑页摘要 */
     fun hookSummary(): Pair<Int, Int> {
         var stages = 0

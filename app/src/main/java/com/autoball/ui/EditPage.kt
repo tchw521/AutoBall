@@ -148,8 +148,9 @@ class EditPage(context: Context, private val host: PageHost) : FrameLayout(conte
         val f = script?.flow
         globalTv?.text = if (f == null) "" else buildString {
             append("等待 ${f.defaultWaitMs}ms")
-            if (f.loopCount > 0) append(" · 重复 ${f.loopCount} 次")
-            else if (f.loop) append(" · 无限循环")
+            // 1 次是默认值，不值得占一行摘要；0 且 loop 开 = 无限
+            if (f.loopCount > 1) append(" · 重复 ${f.loopCount} 次")
+            else if (f.loop && f.loopCount == 0) append(" · 无限循环")
             if (f.failStop) append(" · 失败暂停")
             if (f.retryOnce) append(" · 失败重试")
             if (f.morph.isNotBlank()) append(" · 已变形")

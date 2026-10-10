@@ -55,7 +55,10 @@ object FloatManager {
             val view = FloatBallView(ctx, ballListener)
             val size = AB.store.getFloat("ball_size_dp", 48f)
             view.setSizeDp(size)
-            view.idleAlpha = AB.store.getFloat("ball_idle_alpha", 0.72f)
+            // 「空闲时淡出」是个开关：关掉时不应再套用淡出透明度。
+            // 此前只有"淡出到多少"被读取，开关本身没人看——关了也照样淡出。
+            val fade = AB.store.getBool("ball_fade_idle", true)
+            view.idleAlpha = if (fade) AB.store.getFloat("ball_idle_alpha", 0.72f) else 1f
 
             val p = WindowManager.LayoutParams(
                 Display.dpInt(ctx, size), Display.dpInt(ctx, size),
@@ -103,9 +106,13 @@ object FloatManager {
             val manager = ctx.getSystemService(Context.WINDOW_SERVICE) as WindowManager
             wm = manager
             val view = FloatPanelView(ctx, panelListener)
-            val skinName = AB.store.getString("panel_skin", FloatPanelView.Skin.DEFAULT.name)
-            val skin = try { FloatPanelView.Skin.valueOf(skinName) }
-                       catch (e: Exception) { FloatPanelView.Skin.DEFAULT }
+            // **此前这里读的是字符串，而设置页存的是整数下标**。
+            // getString 遇到整数会抛 ClassCastException，兜底逻辑是 drop(key)
+            // ——于是每读一次就把用户选的皮肤清掉，悬浮窗永远用默认皮肤：
+            // 选了没效果，且下次进设置页又回到默认，看不出发生过什么。
+            // 现改为按下标取，顺序与设置页 SKINS、迁移表 SKIN_NAMES 一致。
+            val skinIdx = AB.store.getInt("panel_skin", FloatPanelView.Skin.DEFAULT.ordinal)
+            val skin = FloatPanelView.Skin.values().getOrElse(skinIdx) { FloatPanelView.Skin.DEFAULT }
             // 自定义布局启用时按用户配置的列数排布（R-118）
             val cols = AB.store.getInt("panel_cols", 1).coerceIn(1, 4)
             view.apply(skin, AB.store.getFloat("panel_button_dp", 40f), cols)
@@ -173,6 +180,21 @@ object FloatManager {
             AB.store.putInt("ball_x", nx)
             AB.store.putInt("ball_y", ny)
             if (isBallShown()) { hideBall(); showBall(ctx.applicationContext) }
+        }
+    }
+
+    /**
+     * 重建悬浮球（改了大小 / 透明度 / 淡出开关后立刻看到效果）。
+     *
+     * 此前这些设置只写进存储，界面上悬浮球纹丝不动——用户拖完滑块以为没生效，
+     * 其实要等下次进程重启才应用。与 [refresh]（面板）同类的"改了不刷新"。
+     */
+    fun refreshBall() {
+        handler.post {
+            if (ball == null) return@post
+            hideBall()
+            val c = lastCtx ?: return@post
+            showBall(c.applicationContext)
         }
     }
 

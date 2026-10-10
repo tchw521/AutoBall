@@ -95,6 +95,17 @@ object DurationField {
                     onChange(valueMs)
                 }
             }
+            // 只在失焦时取值是不够的：弹窗里点「确定」时输入框往往**仍有焦点**，
+            // 失焦回调根本不会触发，刚填的等待时间就这么没了，而且毫无提示。
+            // 改为每次文本变动都同步。
+            addTextChangedListener(object : android.text.TextWatcher {
+                override fun beforeTextChanged(s: CharSequence?, st: Int, c: Int, a: Int) {}
+                override fun onTextChanged(s: CharSequence?, st: Int, b: Int, c: Int) {}
+                override fun afterTextChanged(e: android.text.Editable?) {
+                    val v = e?.toString()?.trim()?.toDoubleOrNull()
+                    valueMs = if (v == null || v <= 0) 0L else (v * unit.factor).toLong()
+                }
+            })
         }
 
         val unitTv = TextView(ctx).apply {
@@ -124,6 +135,9 @@ object DurationField {
         row.addView(et, LinearLayout.LayoutParams(
             0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.1f))
         row.addView(unitTv)
+
+        // 暴露当前值：调用方在提交时统一读取（见 GlobalSettingsDialog 的"取消要能还原"）
+        row.tag = { valueMs }
 
         if (help != null) {
             row.addView(TextView(ctx).apply {

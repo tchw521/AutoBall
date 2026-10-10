@@ -161,7 +161,7 @@ object ScriptRunner {
         router: com.autoball.core.backend.BackendRouter,
         stage: String
     ) {
-        val list = flow.hooks[stage] ?: return
+        val list = flow.hookList(stage)
         if (list.isEmpty()) return
         val runner = FlowRunner(router, control, ctx, AB.log)
         for (a in list) {

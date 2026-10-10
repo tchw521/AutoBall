@@ -96,24 +96,35 @@ object GlobalSettingsDialog {
      */
     private fun buildBody(ctx: Context, flow: Flow, box: LinearLayout): () -> Boolean {
 
-        // 默认值：重复次数 0 显示为 1 次（0 = 无限），这里按设计稿「选填」留空
-        val repeat = if (flow.loopCount > 0) flow.loopCount.toString() else ""
+        // 重复次数显示为「选填」= 单次。
+        // 注意不能只看 loopCount：flow.loop 为 false 时即使 loopCount 是 0
+        // 也只是"历史默认值"，含义是单次，不是无限。
+        val singleRound = !flow.loop && flow.loopCount <= 1
+        val repeat = if (singleRound) "" else flow.loopCount.toString()
 
         // ---- 默认等待 ----
         // 统一时长组件：数值 + 单位下拉（毫秒/秒/分钟），内部按毫秒存。
         // 此前固定按秒——想默认等 2 分钟得填 120，还得自己换算。
-        box.addView(com.autoball.ui.DurationField.row(ctx, "默认等待",
-            flow.defaultWaitMs, H_WAIT) { ms -> flow.defaultWaitMs = ms })
+        //
+        // **不再直接回写 flow**：此前 onChange 一触发就写进 flow，加上
+        // 「失败暂停」是点一下立刻改 flow.failStop，于是点「取消」什么也还原不了
+        // ——取消键形同虚设，用户以为放弃了修改，实际已经生效。
+        // 现一律先落到局部变量，只在「确定」时统一提交。
+        var waitMs = flow.defaultWaitMs
+        val waitRow = com.autoball.ui.DurationField.row(ctx, "默认等待",
+            flow.defaultWaitMs, H_WAIT) { ms -> waitMs = ms }
+        box.addView(waitRow)
 
         // ---- 重复次数 ----
         val repeatEt = numInput(ctx, repeat, "选填")
         box.addView(fieldRow(ctx, "重复次数", repeatEt, null, H_REPEAT))
 
         // ---- 有动作失败立即暂停 ----
+        var failStop = flow.failStop
         val failTv = TextView(ctx).apply {
-            text = if (flow.failStop) "☑" else "☐"
+            text = if (failStop) "☑" else "☐"
             textSize = 15f
-            setTextColor(if (flow.failStop) Theme.ok() else Theme.textTer())
+            setTextColor(if (failStop) Theme.ok() else Theme.textTer())
             gravity = Gravity.CENTER
             setPadding(Display.dpInt(ctx, 6f), 0, Display.dpInt(ctx, 6f), 0)
         }
@@ -123,9 +134,9 @@ object GlobalSettingsDialog {
             setPadding(Display.dpInt(ctx, 8f), Display.dpInt(ctx, 5f),
                 Display.dpInt(ctx, 8f), Display.dpInt(ctx, 5f))
             setOnClickListener {
-                flow.failStop = !flow.failStop
-                failTv.text = if (flow.failStop) "☑" else "☐"
-                failTv.setTextColor(if (flow.failStop) Theme.ok() else Theme.textTer())
+                failStop = !failStop
+                failTv.text = if (failStop) "☑" else "☐"
+                failTv.setTextColor(if (failStop) Theme.ok() else Theme.textTer())
             }
             addView(failTv)
             addView(TextView(ctx).apply {
@@ -154,18 +165,17 @@ object GlobalSettingsDialog {
             setPadding(Display.dpInt(ctx, 8f), Display.dpInt(ctx, 5f),
                 Display.dpInt(ctx, 8f), Display.dpInt(ctx, 5f))
             setOnClickListener {
-                // 悬浮窗形态下 ctx 是 applicationContext，此处原本直接 return：
-                // 点了「全局监听动作」什么都不会发生（无弹窗、无提示）。
+                // 悬浮窗形态下 ctx 是 applicationContext，此前这里直接 return，
+                // 只弹一句「暂不支持」——而全局设置的主入口正是工作台悬浮窗的 ⚙，
+                // 等于这项功能在最常用的路径上完全不可用。现按形态分派。
                 val act = ctx as? Activity
-                if (act == null) {
-                    Ui.toast(ctx, "全局监听动作暂不支持悬浮窗形态，请在应用页面内打开")
-                    return@setOnClickListener
-                }
-                ListenerDialog.show(act, flow) {
+                val refresh = {
                     val (stages, n) = flow.hookSummary()
                     listenTv.text = if (stages == 0) "未设置" else "已设置 $stages 项 · $n 个动作"
                     listenTv.setTextColor(if (stages == 0) Theme.textTer() else Theme.pri2())
                 }
+                if (act != null) ListenerDialog.show(act, flow) { refresh() }
+                else ListenerDialog.showFloat(ctx, flow) { refresh() }
             }
             addView(TextView(ctx).apply {
                 text = "全局监听动作"
@@ -200,9 +210,18 @@ object GlobalSettingsDialog {
                 false
             } else {
                 flow.morph = v
+                flow.defaultWaitMs = (waitRow.tag as? () -> Long)?.invoke() ?: waitMs
+                flow.failStop = failStop
                 // 默认等待由 DurationField 直接回写 flow.defaultWaitMs，这里不再二次读取
+                //
+                // **重复次数此前完全不生效**（第 5 类失效：界面能存、运行时不看）：
+                // FlowRunner 的循环条件是 `if (!flow.loop) break` —— 必须 flow.loop
+                // 为 true 才会进入下一轮，而这里只写了 loopCount、从来没置 loop。
+                // 填了 5 次，脚本照样只跑一轮，且没有任何提示。
+                // 现在按"是否多于一轮"反推 loop：0（无限）与 >1 都需要开启循环。
                 val r = repeatEt.text.toString().trim().toIntOrNull()
-                flow.loopCount = r ?: 0
+                flow.loopCount = r ?: 1      // 留空按帮助文案取 1 次，不能取 0（那是无限）
+                flow.loop = flow.loopCount != 1
                 true
             }
         }

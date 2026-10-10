@@ -109,6 +109,7 @@ class FloatSetPage(context: Context, private val host: PageHost) : FrameLayout(c
         ballPane.addView(Kit.switchRow(context, "闲置半透明", "不用时自动变淡", "◑",
             Theme.warn(), AB.store.getBool("ball_fade_idle", true)) {
             AB.store.putBool("ball_fade_idle", it)
+            com.autoball.float.FloatManager.refreshBall()
         })
 
         // 「记住位置」此前只有读取端（默认 true）、**没有开关**，
@@ -120,6 +121,7 @@ class FloatSetPage(context: Context, private val host: PageHost) : FrameLayout(c
         ballPane.addView(Kit.sliderRow(context, "大小",
             AB.store.getFloat("ball_size_dp", 48f), 36f, 72f, "dp") {
             AB.store.putFloat("ball_size_dp", it)
+            com.autoball.float.FloatManager.refreshBall()
         })
         // **key 必须两边一致**：此前读取用 ball_idle_alpha、写入用 ball_alpha——
         // 读的那个从没人写（恒为默认 0.72），写的那个从没人读，
@@ -129,6 +131,7 @@ class FloatSetPage(context: Context, private val host: PageHost) : FrameLayout(c
         ballPane.addView(Kit.sliderRow(context, "闲置透明度",
             AB.store.getFloat("ball_idle_alpha", 0.72f) * 100f, 20f, 100f, "%") {
             AB.store.putFloat("ball_idle_alpha", it / 100f)
+            com.autoball.float.FloatManager.refreshBall()
         })
     }
 
@@ -361,6 +364,9 @@ class FloatSetPage(context: Context, private val host: PageHost) : FrameLayout(c
             setOnClickListener {
                 AB.store.putInt("panel_skin", idx)
                 renderWin()
+                // 皮肤改了要重建悬浮窗：否则只有下次创建面板时才生效，
+                // 用户点了皮肤卡片却看不到任何变化
+                com.autoball.float.FloatManager.refresh()
             }
             val bar = LinearLayout(context).apply {
                 orientation = LinearLayout.HORIZONTAL

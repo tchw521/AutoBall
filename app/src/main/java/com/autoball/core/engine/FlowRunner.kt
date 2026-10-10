@@ -48,7 +48,6 @@ class FlowRunner(
         var executed = 0
         var failed = 0
         val speed = if (flow.speed > 0f) flow.speed else 1f
-        val hooks = flow.hooks
 
         /**
          * 执行**动作级**监听钩子（R-139）。
@@ -68,7 +67,8 @@ class FlowRunner(
 
         /** 执行某个时机的全部监听动作（v3 9 钩子） */
         fun fire(stage: String) {
-            val list = hooks[stage] ?: return
+            val list = flow.hookList(stage)
+            if (list.isEmpty()) return
             for (ha in list) {
                 if (control.canceled) return
                 if (!ha.enabled) continue
@@ -333,16 +333,53 @@ class FlowRunner(
     private fun screenW(): Float =
         Display.screenSize(App.get()).x.toFloat().coerceAtLeast(1f)
 
+    /**
+     * 全局手势变形。
+     *
+     * 两处此前是错的，合起来让这项设置基本无效：
+     *
+     * 1. **单位错位**。Action.x/y 的约定是**百分比**，而 center 是**像素**、且
+     *    配置里的 e/f 平移按 px 计（`±6` 表示抖动 6 像素）。原实现拿百分比坐标
+     *    去减像素中心，缩放类矩阵会把点整体推离屏幕——填 `0.98,…` 后
+     *    屏幕中央的点击会跑到 60% 的位置，脚本全部点错，且没有任何报错。
+     *    现在先把百分比换算成像素、变换后再换回百分比，语义与帮助文案一致。
+     *
+     * 2. **路径类没被变换**。帮助文案写的是"点击、滑动、单指/多指手势"，
+     *    但单指/多指的坐标在 `path` / `strokes` 里，原实现只改 x/y/x2/y2，
+     *    对这两类手势等于什么都没做。
+     *    path / strokes 存的是**像素**（录制时未做百分比化），直接按像素变换即可。
+     */
     private fun morphAction(a: Action): Action {
         val p = morph ?: return a
         if (!a.type.hasCoord) return a
         val (cx, cy) = center
-        val (nx, ny) = Morph.point(p, a.x, a.y, cx, cy)
+        val sw = (cx * 2f).coerceAtLeast(1f)
+        val sh = (cy * 2f).coerceAtLeast(1f)
+        /** 百分比坐标 → 像素变换 → 百分比 */
+        fun pct(x: Float, y: Float): Pair<Float, Float> {
+            val (mx, my) = Morph.point(p, x / 100f * sw, y / 100f * sh, cx, cy)
+            return (mx / sw * 100f) to (my / sh * 100f)
+        }
         val out = a.copy()
+        val (nx, ny) = pct(a.x, a.y)
         out.x = nx; out.y = ny
         if (a.x2 != 0f || a.y2 != 0f) {
-            val (nx2, ny2) = Morph.point(p, a.x2, a.y2, cx, cy)
-            out.x2 = nx2; out.y2 = ny2
+            val (n2x, n2y) = pct(a.x2, a.y2)
+            out.x2 = n2x; out.y2 = n2y
+        }
+        if (out.path.isNotEmpty()) {
+            out.path = ArrayList(out.path.map {
+                val (mx, my) = Morph.point(p, it.x, it.y, cx, cy)
+                Pt(mx, my)
+            })
+        }
+        if (out.strokes.isNotEmpty()) {
+            out.strokes = ArrayList(out.strokes.map { st ->
+                ArrayList(st.map {
+                    val (mx, my) = Morph.point(p, it.x, it.y, cx, cy)
+                    Pt(mx, my)
+                })
+            })
         }
         if (a.durationMs > 0) out.durationMs = Morph.duration(p, a.durationMs)
         return out
