@@ -47,6 +47,9 @@ object ListenerDialog {
             "脚本完整跑通且所有步骤都成功时触发，可用于发送完成通知或保存结果"),
         ER("运行失败后", "留住失败现场",
             "任意步骤失败时触发，建议放截图，方便事后排查当时界面是什么样"),
+        EF("每次动作运行失败后", "逐个动作兜底",
+            "每个动作重复失败时都触发（区别于上面「运行失败后」的脚本级一次）。\n"
+            + "适合给关键步骤单独挂兜底，比如失败就重试、跳过或记录当时界面"),
         LE("列表结尾监听", "一轮结束的汇总点",
             "一轮动作列表遍历到末尾时触发，可用于汇总本轮数据或为下一轮做准备"),
         SE("脚本结束后监听", "成功失败都会执行",
@@ -63,18 +66,48 @@ object ListenerDialog {
     }
 
     /**
-     * 打开动作编辑器：按上下文自动选形态。
+     * 打开动作编辑器。
      *
-     * 悬浮窗形态下 ctx 是 applicationContext，**不是** Activity，
-     * 此时必须用 [ActionEditor.showFloat]，否则会直接抛转型异常。
-     * 而「全局监听动作」的主入口恰恰在悬浮窗里（工作台 ⚙），
-     * 所以这一步不能省——早前这里要求 Activity，导致主路径点开只弹一句 toast。
+     * **形态必须由外层弹窗的形态决定，不能看 ctx 是不是 Activity**：
+     * 全局设置是悬浮窗（FloatDialog）弹出的，但调用方传进来的 ctx 常常
+     * **就是 Activity**（工作台弹窗持有 activity 引用）。早前这里写
+     * `ctx as? Activity != null → ActionEditor.show(act, ...)`，于是走成了
+     * Activity 内的 AlertDialog——而此时用户正在桌面或别的应用上，Activity 在后台，
+     * 对话框根本不显示。表现为「点「未设置」一点用都没有」，且不报错。
+     *
+     * 现在由 [asFloat] 显式指定，与外层弹窗保持一致。
      */
     private fun openEditor(ctx: android.content.Context, flow: Flow?,
-                           existing: Action?, onSave: (Action) -> Unit) {
+                           existing: Action?, asFloat: Boolean,
+                           onSave: (Action) -> Unit) {
         val act = ctx as? Activity
-        if (act != null) ActionEditor.show(act, existing, flow, onSave)
-        else ActionEditor.showFloat(ctx, existing, flow, onSave)
+        if (!asFloat && act != null && !act.isFinishing && !act.isDestroyed)
+            ActionEditor.show(act, existing, flow, onSave)
+        else
+            ActionEditor.showFloat(ctx, existing, flow, onSave)
+    }
+
+    /**
+     * 点某一时机。
+     *
+     * **「未设置」必须直接打开添加动作页面**，不再先进一层空列表再点「＋ 添加动作」：
+     * 用户点「未设置」表达的意图就是"我要加一个"，中间那层只有一个空列表和一行按钮，
+     * 纯属多余一次点击。
+     *
+     * 已挂动作时才打开列表做增删改。
+     */
+    private fun onStageClick(ctx: android.content.Context, flow: Flow, st: Stage,
+                             onChanged: () -> Unit, asFloat: Boolean,
+                             rebuild: () -> Unit) {
+        if (flow.hooks[st.key].isNullOrEmpty()) {
+            openEditor(ctx, flow, null, asFloat) { a ->
+                flow.hooks.getOrPut(st.key) { ArrayList() }.add(a)
+                onChanged()
+                rebuild()
+            }
+        } else {
+            stageDetail(ctx, flow, st, onChanged, asFloat)
+        }
     }
 
     /**
@@ -91,7 +124,7 @@ object ListenerDialog {
             for (st in Stage.values()) {
                 val list = flow.hooks[st.key] ?: emptyList<Action>()
                 box.addView(stageRow(ctx, st, list) {
-                    stageDetail(ctx, flow, st, onChanged)
+                    onStageClick(ctx, flow, st, onChanged, true) { rebuild() }
                 })
             }
         }
@@ -116,13 +149,15 @@ object ListenerDialog {
                 val list = flow.hooks[st.key] ?: emptyList<Action>()
                 box.addView(stageRow(ctx, st, list) {
                     // 打开该时机的动作列表编辑
-                    stageDetail(activity, flow, st, onChanged)
+                    // Activity 形态；若 Activity 已不可用于弹窗（如被切到后台），
+                    // stageDetail 内部会回退到悬浮窗形态。
+                    onStageClick(activity, flow, st, onChanged, false) { rebuild() }
                 })
             }
         }
 
         rebuild()
-        Ui.dialog(ctx, "监听动作")
+        Ui.dialog(ctx, "全局监听动作")
             .body(box)
             .width(Theme.DIALOG_W + 30f)
             .maxHeight(0.76f)
@@ -156,7 +191,7 @@ object ListenerDialog {
 
     /** 单个时机的动作列表：添加 / 替换 / 删除 */
     private fun stageDetail(ctx: android.content.Context, flow: Flow, st: Stage,
-                            onChanged: () -> Unit) {
+                            onChanged: () -> Unit, asFloat: Boolean) {
         val list = flow.hooks.getOrPut(st.key) { ArrayList() }
         val box = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
 
@@ -196,7 +231,11 @@ object ListenerDialog {
                     })
                     row.addView(Kit.miniBtn(ctx, "✕") {
                         list.removeAt(i)
-                        if (list.isEmpty()) flow.hooks.remove(st.name)
+                        // 必须用 st.key（小写）而不是 st.name（大写枚举名）：
+                        // map 是以小写 key 存的，用大写 remove 删不掉，
+                        // 于是留下一个空 list 条目——界面显示「未设置」，
+                        // 但 hookSummary() 仍把它算作已配置的一项。
+                        if (list.isEmpty()) flow.hooks.remove(st.key)
                         onChanged()
                         rebuild()
                     })
@@ -217,7 +256,7 @@ object ListenerDialog {
                 lp.setMargins(0, Display.dpInt(ctx, 8f), 0, 0)
                 layoutParams = lp
                 setOnClickListener {
-                    openEditor(ctx, flow, null) { a ->
+                    openEditor(ctx, flow, null, asFloat) { a ->
                         list.add(a)
                         onChanged()
                         rebuild()
@@ -228,12 +267,17 @@ object ListenerDialog {
 
         rebuild()
         val act = ctx as? Activity
-        if (act != null) {
+        // 形态跟随外层弹窗；Activity 不可用时回退悬浮窗，避免后台弹窗不显示
+        val useFloat = asFloat || act == null || act.isFinishing || act.isDestroyed
+        if (!useFloat) {
+            Ui.dialog(act!!, st.label).body(box).width(Theme.DIALOG_W + 20f)
+                .maxHeight(0.7f).negative("关闭").show()
+        } else if (!FloatDialog.show(ctx, st.label).body(box)
+                .width(Theme.DIALOG_W + 20f).negative("关闭").show()
+            && act != null && !act.isFinishing && !act.isDestroyed) {
+            // 悬浮窗权限缺失时的兜底
             Ui.dialog(act, st.label).body(box).width(Theme.DIALOG_W + 20f)
                 .maxHeight(0.7f).negative("关闭").show()
-        } else {
-            FloatDialog.show(ctx, st.label).body(box)
-                .width(Theme.DIALOG_W + 20f).negative("关闭").show()
         }
     }
 }

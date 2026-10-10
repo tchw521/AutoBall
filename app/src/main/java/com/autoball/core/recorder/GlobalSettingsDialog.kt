@@ -63,7 +63,7 @@ object GlobalSettingsDialog {
      */
     fun showFloat(ctx: Context, flow: Flow, onSaved: (() -> Unit)? = null) {
         val box = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
-        val hook = buildBody(ctx, flow, box)
+        val hook = buildBody(ctx, flow, box, true)
         val d = FloatDialog.show(ctx, "脚本全局设置")
             .body(box)
             .width(Theme.DIALOG_W + 24f)
@@ -78,7 +78,7 @@ object GlobalSettingsDialog {
     /** Activity 形态：无悬浮窗权限或需要复杂输入时的回退 */
     fun show(ctx: Activity, flow: Flow, onSaved: (() -> Unit)? = null) {
         val box = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
-        val hook = buildBody(ctx, flow, box)
+        val hook = buildBody(ctx, flow, box, false)
         Ui.dialog(ctx, "脚本全局设置")
             .body(box)
             .width(Theme.DIALOG_W + 24f)
@@ -94,7 +94,8 @@ object GlobalSettingsDialog {
      * 抽出来是为了让悬浮窗形态与 Activity 形态共用同一份表单与取值逻辑——
      * 两处各写一遍必然出现参数口径不一致。
      */
-    private fun buildBody(ctx: Context, flow: Flow, box: LinearLayout): () -> Boolean {
+    private fun buildBody(ctx: Context, flow: Flow, box: LinearLayout,
+                          asFloat: Boolean): () -> Boolean {
 
         // 重复次数显示为「选填」= 单次。
         // 注意不能只看 loopCount：flow.loop 为 false 时即使 loopCount 是 0
@@ -165,16 +166,23 @@ object GlobalSettingsDialog {
             setPadding(Display.dpInt(ctx, 8f), Display.dpInt(ctx, 5f),
                 Display.dpInt(ctx, 8f), Display.dpInt(ctx, 5f))
             setOnClickListener {
-                // 悬浮窗形态下 ctx 是 applicationContext，此前这里直接 return，
-                // 只弹一句「暂不支持」——而全局设置的主入口正是工作台悬浮窗的 ⚙，
-                // 等于这项功能在最常用的路径上完全不可用。现按形态分派。
+                // **形态必须跟随本弹窗，不能看 ctx 是不是 Activity**。
+                //
+                // 本弹窗（全局设置）在悬浮窗层弹出，但调用方传进来的 ctx 常常
+                // **就是 Activity**（工作台弹窗持有 activity 引用）。早前这里写
+                // `act != null → ListenerDialog.show(act, ...)`，走成了 Activity 内的
+                // AlertDialog —— 而此时用户正在桌面或别的应用上，Activity 在后台，
+                // 对话框根本不显示，也不报错。表现为「点「未设置」一点用都没有」。
+                //
+                // 这正是「全局监听动作」主路径（工作台 ⚙）失效的根因。
                 val act = ctx as? Activity
                 val refresh = {
                     val (stages, n) = flow.hookSummary()
                     listenTv.text = if (stages == 0) "未设置" else "已设置 $stages 项 · $n 个动作"
                     listenTv.setTextColor(if (stages == 0) Theme.textTer() else Theme.pri2())
                 }
-                if (act != null) ListenerDialog.show(act, flow) { refresh() }
+                val actUsable = act != null && !act!!.isFinishing && !act!!.isDestroyed
+                if (!asFloat && actUsable) ListenerDialog.show(act!!, flow) { refresh() }
                 else ListenerDialog.showFloat(ctx, flow) { refresh() }
             }
             addView(TextView(ctx).apply {

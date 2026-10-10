@@ -199,7 +199,7 @@ class FlowRunner(
                     // 每次重复都触发：成功后每次成功触发、失败后每次失败触发
                     fireAction(a, if (ok) com.autoball.core.model.ActionHookStage.AFTER_OK
                     else com.autoball.core.model.ActionHookStage.AFTER_FAIL)
-                    if (!ok) { failed++; okAll = false }
+                    if (!ok) { failed++; okAll = false; fire("ef") }
                     if (r < reps - 1) {
                         if (!control.sleep((a.repeatIntervalMs / speed).toLong())) {
                             return Outcome(false, executed, failed, "已停止")

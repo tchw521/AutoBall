@@ -1,6 +1,8 @@
 package com.autoball.ui
 
 import android.app.Activity
+import android.content.Context
+import android.content.Intent
 import android.widget.LinearLayout
 import android.widget.TextView
 import com.autoball.core.model.Action
@@ -8,6 +10,9 @@ import com.autoball.core.model.ActionCondition
 import com.autoball.core.model.ConditionSet
 import com.autoball.core.model.NodeSpec
 import com.autoball.core.util.Display
+import com.autoball.float.FloatDialog
+import com.autoball.float.FloatManager
+import com.autoball.float.FloatWindows
 import org.json.JSONObject
 
 /**
@@ -29,11 +34,126 @@ import org.json.JSONObject
  * 修复（v1.4）：原先把选择状态挂在 object 的字段上，弹窗关闭后不清理，
  * 下次打开另一个动作会带着上次残留的相似度与区域。改为全部用局部变量，
  * 弹窗之间互不干扰。
+ *
+ * # 两种形态（R-004）
+ *
+ * [show] 为 Activity 形态，[showFloat] 为悬浮窗形态。
+ *
+ * **形态必须由外层显式指定，不能看 ctx 是不是 Activity**：
+ * 「编辑动作」在悬浮窗形态下打开时，传进来的 ctx 常常**就是 Activity**
+ * （工作台弹窗持有 activity 引用），于是早前写成
+ * `(ctx as? Activity)?.let { ... } ?: toast("暂不支持悬浮窗形态")` 时，
+ * 看似走了 Activity 分支，实际弹出的是 Activity 内的 AlertDialog——
+ * 而此时用户正在桌面或别的应用上，Activity 在后台，对话框**根本不显示**。
+ * 表现为「点「未设置」一点用都没有」，且不报错。
+ *
+ * 底层原因是 [Ui.dialog] 只有 AlertDialog 实现，离不开 Activity；
+ * 现在按 asFloat 走 [FloatDialog]，与外层弹窗保持同一层。
  */
 object ConditionDialog {
 
-    fun show(activity: Activity, a: Action, onChanged: () -> Unit) {
-        val ctx = activity
+    // =====================================================================
+    // 对外入口
+    // =====================================================================
+
+    /** Activity 形态（应用页面内打开） */
+    fun show(activity: Activity, a: Action, onChanged: () -> Unit,
+             directAdd: Boolean = false) {
+        showInternal(activity, a, onChanged, directAdd, asFloat = false)
+    }
+
+    /**
+     * 悬浮窗形态：不把用户拽回应用界面。
+     *
+     * 这是主路径——添加/编辑动作多在"正操作着别的应用"时进行，
+     * 跳回应用会把目标应用切走，等于白操作一遍。
+     * 无悬浮窗权限时回退到 Activity 弹窗。
+     */
+    fun showFloat(ctx: Context, a: Action, onChanged: () -> Unit,
+                  directAdd: Boolean = false) {
+        showInternal(ctx, a, onChanged, directAdd, asFloat = true)
+    }
+
+    // =====================================================================
+    // 弹窗出口：按形态二选一
+    // =====================================================================
+
+    /**
+     * 弹窗句柄：测试找图前要把界面让出去（否则会拍到本应用自己的浮窗），
+     * 测完再恢复。两种形态的"让出"方式不同，故抽象成一对闭包。
+     */
+    private class DlgHandle {
+        var hide: () -> Unit = {}
+        var show: () -> Unit = {}
+    }
+
+    /**
+     * 统一弹窗出口。
+     *
+     * @param asFloat 由外层弹窗形态决定，不靠 ctx 类型推断
+     */
+    private fun open(ctx: Context, title: String, body: android.view.View,
+                     asFloat: Boolean, widthDp: Float, maxH: Float,
+                     neg: Pair<String, (() -> Unit)?>? = null,
+                     pos: Pair<String, (() -> Boolean)?>? = null,
+                     /** 标题栏右侧小动作；仅 Activity 形态支持（悬浮窗标题栏没有该槽位） */
+                     trailing: Pair<String, () -> Unit>? = null,
+                     handleOut: DlgHandle? = null) {
+        val act = ctx as? Activity
+        val actUsable = act != null && !act.isFinishing && !act.isDestroyed
+        val useFloat = asFloat || !actUsable
+
+        // 让出屏幕（测试找图前）：必须先 markShown 再 hideAll，
+        // 否则 FloatManager.restore() 不知道之前显示过什么、恢复时什么都不做。
+        fun stashFloats() {
+            FloatManager.markShown()
+            FloatManager.hideAll()
+            FloatWindows.hideAll()
+        }
+        fun unstashFloats() {
+            FloatWindows.restore()
+            FloatManager.restore()
+        }
+
+        if (useFloat) {
+            val d = FloatDialog.show(ctx, title).body(body).width(widthDp)
+            neg?.let { d.negative(it.first, it.second) }
+            pos?.let { d.positive(it.first, it.second) }
+            if (d.show()) {
+                // [FloatDialog] 没有单实例 hide/show：测试找图时整体隐藏再恢复。
+                // 浮窗与弹窗一起让出屏幕，避免截图拍到自己。
+                if (handleOut != null) {
+                    handleOut.hide = { stashFloats() }
+                    handleOut.show = { unstashFloats() }
+                }
+                return
+            }
+            if (!actUsable) {
+                Ui.toast(ctx, "需要悬浮窗权限才能在当前界面编辑运行条件")
+                return
+            }
+        }
+
+        val b = Ui.dialog(act!!, title).body(body).width(widthDp).maxHeight(maxH)
+        neg?.let { b.negative(it.first, it.second) }
+        pos?.let { b.positive(it.first, it.second) }
+        trailing?.let { b.trailing(it.first, it.second) }
+        var dlg: android.app.AlertDialog? = null
+        b.onReady { d, _, _ -> dlg = d }
+        val shown = b.show()
+        if (handleOut != null) {
+            val d = dlg ?: shown
+            handleOut.hide = { runCatching { d.hide() }; stashFloats() }
+            handleOut.show = { unstashFloats(); runCatching { d.show() } }
+        }
+    }
+
+    // =====================================================================
+    // 主体
+    // =====================================================================
+
+    private fun showInternal(ctx: Context, a: Action, onChanged: () -> Unit,
+                             directAdd: Boolean, asFloat: Boolean) {
         val set = ConditionSet.parse(a.condition)
 
         val box = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
@@ -93,6 +213,7 @@ object ConditionDialog {
             // 每类条件的输入项数量不同（变量有 3 项、节点有 4 项），
             // 用 readers 列表统一回读，避免"只回读第一个输入框"的漏字段问题
             val readers = ArrayList<() -> Unit>()
+            val handle = DlgHandle()
 
             fun textRow(hint: String, cur: String, set: (String) -> Unit) {
                 val et = Ui.adText(ctx, cur, hint)
@@ -103,6 +224,20 @@ object ConditionDialog {
             fun fill() {
                 readers.clear()
                 inner.removeAllViews()
+
+                // 「从屏幕测试找图」必须同屏可见——藏在菜单里用户根本发现不了。
+                // Activity 形态放在标题栏右上角（自动精灵就是这么放的）；
+                // 悬浮窗形态的标题栏没有尾部槽位，故作为一行放进表单里，
+                // 两处都保证"第一眼就能看见"。
+                if (c.kind == ActionCondition.Kind.IMAGE && asFloat) {
+                    inner.addView(Ui.adRow(ctx, "从屏幕测试找图", "点此测试", false,
+                        "隐藏界面 → 回桌面 → 截图 → 按当前条件求值，"
+                        + "走的是与运行时完全相同的判定路径") {
+                        testFromScreen(ctx, c, handle)
+                    })
+                    inner.addView(Ui.adSec(ctx))
+                }
+
                 inner.addView(Ui.adRow(ctx, "条件类型", c.kind.label,
                     c.kind != ActionCondition.Kind.NONE, c.kind.desc) {
                     Ui.popMenu(ctx, inner,
@@ -165,10 +300,13 @@ object ConditionDialog {
 
                 // 取色 / 取图入口：这两个条件此前只能手填色值和路径，
                 // 用户无从得知目标色的准确值、也生成不了模板图，等于用不起来。
+                // ScreenPicker 的 activity 参数可为空（仅用于回桌面/恢复），
+                // 悬浮窗形态传 null 即可。
+                val act = ctx as? Activity
                 if (c.kind == ActionCondition.Kind.COLOR) {
                     inner.addView(Ui.adRow(ctx, "取色器", "点屏幕取当前颜色", false,
                         "自动隐藏本应用界面并截图，点一下屏幕即可取到准确色值") {
-                        ScreenPicker.pick(ctx, activity, ScreenPicker.Mode.COLOR,
+                        ScreenPicker.pick(ctx, act, ScreenPicker.Mode.COLOR,
                             onColor = { hex ->
                                 c.value = hex
                                 et?.setText(hex)
@@ -180,7 +318,7 @@ object ConditionDialog {
                     inner.addView(Ui.adRow(ctx, "取图器", "框选区域存为模板", false,
                         "框选要匹配的区域，自动裁剪存为模板图。\n" +
                         "模板图会压缩后随分享码一起走（长边 160px）。") {
-                        ScreenPicker.pick(ctx, activity, ScreenPicker.Mode.IMAGE,
+                        ScreenPicker.pick(ctx, act, ScreenPicker.Mode.IMAGE,
                             onImage = { ref ->
                                 c.value = ref
                                 et?.setText(ref)
@@ -193,7 +331,7 @@ object ConditionDialog {
                 inner.addView(Ui.adRow(ctx, "检测区域", regionText(c.region),
                     c.region != null,
                     "缩小检测范围可提速；在截图上拖框即可，不用手填数值") {
-                    ScreenPicker.pick(ctx, activity, ScreenPicker.Mode.REGION,
+                    ScreenPicker.pick(ctx, act, ScreenPicker.Mode.REGION,
                         onRegionPct = { r ->
                             c.region = r
                             Ui.toast(ctx, "已选区域 ${regionText(r)}")
@@ -209,7 +347,7 @@ object ConditionDialog {
                         c.probes.isNotEmpty(),
                         "单点找色在界面里同色干扰多时容易误命中；"
                         + "加上周围几个点的相对颜色约束就能精确定位。") {
-                        editProbes(ctx, activity, c) { fill() }
+                        editProbes(ctx, c, asFloat) { fill() }
                     })
                 }
 
@@ -288,37 +426,47 @@ object ConditionDialog {
                     inner.addView(Ui.adRow(ctx, "重复设置",
                         if (c.retryMax > 0) "${c.retryMax} 次 / ${c.retryIntervalMs}ms"
                         else "不限 / ${c.retryIntervalMs}ms", true,
-                        "点开可设置重复上限与间隔") { editRetry(ctx, c) { fill() } })
+                        "点开可设置重复上限与间隔") {
+                        editRetry(ctx, c, asFloat) { fill() }
+                    })
                 }
                 textRow("条件描述（选填）", c.desc) { c.desc = it }
             }
             fill()
 
-            var dlg: android.app.AlertDialog? = null
-            val b = Ui.dialog(ctx, "编辑条件").body(inner)
-                .width(Theme.DIALOG_W + 10f).maxHeight(0.8f)
-            if (c.kind == ActionCondition.Kind.IMAGE) {
-                // 「从屏幕测试找图」必须同屏可见——藏在菜单里用户根本发现不了。
-                // 这是自动精灵特意放在标题栏右上角的原因。
-                b.trailing("从屏幕测试找图…") { testFromScreen(ctx, activity, c, dlg) }
-            }
-            b.negative("删除本条") {
-                set.items.remove(c)
-                commit(); rebuild()
-            }.positive("确定") {
-                readers.forEach { runCatching { it() } }
-                commit(); rebuild(); true
-            }.onReady { d, _, _ -> dlg = d }
-            dlg = b.show()
+            open(ctx, "编辑条件", inner, asFloat,
+                widthDp = Theme.DIALOG_W + 10f, maxH = 0.8f,
+                neg = "删除本条" to {
+                    set.items.remove(c)
+                    commit(); rebuild()
+                },
+                pos = "确定" to {
+                    readers.forEach { runCatching { it() } }
+                    commit(); rebuild(); true
+                },
+                // Activity 形态保留标题栏右上角的测试入口（与自动精灵一致）；
+                // 悬浮窗形态没有该槽位，已在表单里加了一行（见 fill）
+                trailing = if (!asFloat && c.kind == ActionCondition.Kind.IMAGE)
+                    ("从屏幕测试找图…" to { testFromScreen(ctx, c, handle) }) else null,
+                handleOut = handle)
+        }
+
+        // 「未设置」点开直接进添加条件页：先显示空列表再点「＋ 添加条件」纯属多一次点击。
+        // 直接新建一条并打开编辑；kind 为 NONE 的空项在 serialize 时会被过滤，
+        // 所以用户中途返回不会留下脏数据。
+        if (directAdd && set.items.none { it.kind != ActionCondition.Kind.NONE }) {
+            val nc = ActionCondition()
+            set.items.add(nc)
+            editCond(nc)
+            return
         }
 
         rebuild()
 
-        Ui.dialog(ctx, "运行条件").body(box)
-            .width(Theme.DIALOG_W + 10f).maxHeight(0.82f)
-            .negative("清除") { a.condition = null; onChanged() }
-            .positive("确定") { commit(); true }
-            .show()
+        open(ctx, "运行条件", box, asFloat,
+            widthDp = Theme.DIALOG_W + 10f, maxH = 0.82f,
+            neg = "清除" to { a.condition = null; onChanged() },
+            pos = "确定" to { commit(); true })
     }
 
     private fun one(c: ActionCondition): String {
@@ -348,21 +496,23 @@ object ConditionDialog {
      *
      * 走的是**与运行时完全相同的求值路径**（同一个 [ConditionEval.eval]），
      * 否则"测试通过"不代表脚本里也能过——那测试就白做了。
+     *
+     * 此前只在结尾 `dlg?.show()` 恢复弹窗，**从未恢复 FloatManager / FloatWindows**——
+     * 于是测一次之后悬浮球与悬浮窗就永久消失，要重启应用才回来。
+     * 现在两种形态都统一走 [DlgHandle] 的 hide/show 成对恢复。
      */
-    private fun testFromScreen(ctx: android.app.Activity, act: android.app.Activity,
-                               c: ActionCondition, dlg: android.app.AlertDialog?) {
+    private fun testFromScreen(ctx: Context, c: ActionCondition, handle: DlgHandle) {
         if (c.value.isBlank()) {
             Ui.toast(ctx, "请先选择模板图"); return
         }
         val handler = android.os.Handler(android.os.Looper.getMainLooper())
-        dlg?.hide()
-        com.autoball.float.FloatManager.hideAll()
-        com.autoball.float.FloatWindows.hideAll()
+        handle.hide()
         handler.postDelayed({
             runCatching {
-                act.startActivity(android.content.Intent(android.content.Intent.ACTION_MAIN).apply {
-                    addCategory(android.content.Intent.CATEGORY_HOME)
-                    addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                // 回桌面：非 Activity 上下文必须带 NEW_TASK，否则抛异常
+                ctx.startActivity(Intent(Intent.ACTION_MAIN).apply {
+                    addCategory(Intent.CATEGORY_HOME)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 })
             }
             handler.postDelayed({
@@ -371,7 +521,7 @@ object ConditionDialog {
                         com.autoball.core.backend.ExecContext("condtest"))
                 }.getOrNull()
                 val ok = sr as? com.autoball.core.backend.ScreenResult.Ok
-                dlg?.show()
+                handle.show()
                 if (ok == null) {
                     val why = (sr as? com.autoball.core.backend.ScreenResult.Unavailable)?.reason
                         ?: "截图失败"
@@ -413,7 +563,7 @@ object ConditionDialog {
     @Volatile private var lastSim: Float? = null
 
     /** 重复检查设置：上限 + 间隔 */
-    private fun editRetry(ctx: android.app.Activity, c: ActionCondition,
+    private fun editRetry(ctx: Context, c: ActionCondition, asFloat: Boolean,
                           onChanged: () -> Unit) {
         val box = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
         val maxRow = Ui.adNumber(ctx,
@@ -425,48 +575,49 @@ object ConditionDialog {
         box.addView(Kit.note(ctx,
             "上限填 0 表示一直重试到条件成立或脚本被停止——请谨慎，"
             + "条件永远不成立时脚本不会自动结束。"))
-        Ui.dialog(ctx, "重复检查直到成功").body(box)
-            .width(Theme.DIALOG_W + 10f)
-            .negative("取消")
-            .positive("确定") {
+        open(ctx, "重复检查直到成功", box, asFloat,
+            widthDp = Theme.DIALOG_W + 10f, maxH = 0.7f,
+            neg = "取消" to null,
+            pos = "确定" to {
                 c.retryMax = Ui.adNumberValue(maxRow).trim().toIntOrNull()
                     ?.coerceAtLeast(0) ?: 0
                 c.retryIntervalMs = Ui.adNumberValue(gapRow).trim().toLongOrNull()
                     ?.coerceIn(100L, 60_000L) ?: 1000L
                 onChanged(); true
-            }.show()
+            })
     }
 
     /** 位置周围条件编辑器：增删探针，每个探针含偏移与颜色 */
-    private fun editProbes(ctx: Activity, act: Activity, c: ActionCondition,
+    private fun editProbes(ctx: Context, c: ActionCondition, asFloat: Boolean,
                            onChanged: () -> Unit) {
-        val box = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
+        val box = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
+        val act = ctx as? Activity
 
         fun fill() {
             box.removeAllViews()
-            box.addView(Kit.note(act,
+            box.addView(Kit.note(ctx,
                 "主坐标匹配成功后，再校验这些偏移点。偏移单位 dp，换机型保持一致。"))
             c.probes.forEachIndexed { i, p ->
-                box.addView(Kit.rowCard(act).apply {
-                    addView(Kit.twoLine(act, "偏移 (${p.dx.toInt()}, ${p.dy.toInt()})",
+                box.addView(Kit.rowCard(ctx).apply {
+                    addView(Kit.twoLine(ctx, "偏移 (${p.dx.toInt()}, ${p.dy.toInt()})",
                         "${p.color.ifEmpty { "未取色" }} · 容差 ${p.tol}"))
-                    addView(Kit.miniBtn(act, "取色") {
-                        ScreenPicker.pick(act, act, ScreenPicker.Mode.COLOR,
+                    addView(Kit.miniBtn(ctx, "取色") {
+                        ScreenPicker.pick(ctx, act, ScreenPicker.Mode.COLOR,
                             onColor = { hex -> p.color = hex; onChanged(); fill() })
                     })
-                    addView(Kit.miniBtn(act, "✕") { c.probes.removeAt(i); onChanged(); fill() })
+                    addView(Kit.miniBtn(ctx, "✕") { c.probes.removeAt(i); onChanged(); fill() })
                 })
             }
-            box.addView(Kit.button(act, "＋ 添加周围点", false) {
+            box.addView(Kit.button(ctx, "＋ 添加周围点", false) {
                 c.probes.add(ActionCondition.Probe())
                 onChanged(); fill()
             })
         }
         fill()
 
-        Ui.dialog(act, "位置周围条件").body(box)
-            .width(Theme.DIALOG_W + 10f).maxHeight(0.8f)
-            .negative("清空") { c.probes.clear(); onChanged(); fill() }
-            .positive("确定") { onChanged(); true }.show()
+        open(ctx, "位置周围条件", box, asFloat,
+            widthDp = Theme.DIALOG_W + 10f, maxH = 0.8f,
+            neg = "清空" to { c.probes.clear(); onChanged(); fill() },
+            pos = "确定" to { onChanged(); true })
     }
 }

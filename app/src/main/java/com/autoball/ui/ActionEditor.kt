@@ -293,7 +293,7 @@ object ActionEditor {
             page = 1
             showTypeDialog(ctx, a, floatMode = true) { showFormPage() }
         }
-        val (box, sb, rb) = buildForm(ctx, a) { showTypePage() }
+        val (box, sb, rb) = buildForm(ctx, a, { showTypePage() }, floatMode = true)
         formView = box
         submit = sb
         rebuild = rb
@@ -398,8 +398,17 @@ object ActionEditor {
      *   切换类型后表单字段要按新类型重排，只把旧 box 加回宿主
      *   显示的仍是旧类型的字段。
      */
+    /**
+     * @param floatMode 外层弹窗是否为悬浮窗形态。
+     *
+     * **必须由外层显式传入**：此前这里靠 `(ctx as? Activity) != null` 推断，
+     * 而悬浮窗形态下 ctx 常常就是 Activity（工作台弹窗持有 activity 引用），
+     * 于是次级弹窗走成 Activity 内的 AlertDialog——用户此刻正在别的应用上，
+     * Activity 在后台，对话框根本不显示。表现为「点了没反应」且不报错。
+     */
     private fun buildForm(ctx: android.content.Context, a: Action,
-                          onPickType: (() -> Unit)? = null)
+                          onPickType: (() -> Unit)? = null,
+                          floatMode: Boolean = false)
             : Triple<View, () -> Unit, () -> Unit> {
         val box = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
         var dialog: Dialog? = null
@@ -701,14 +710,19 @@ object ActionEditor {
                     a.condition != null),
                 null,
                 pick = {
-                    // 此前写成 `(ctx as? Activity)?.let { ... }`：悬浮窗形态下 ctx
-                    // 是 applicationContext，as? 恒为 null → **点了什么都不会发生**，
-                    // 没有弹窗、没有提示、没有日志。而悬浮窗恰恰是主要使用场景。
+                    // 此前写成 `(ctx as? Activity)?.let { ... }`：悬浮窗形态下
+                    // ctx 是 applicationContext（或虽是 Activity 但已在后台），
+                    // 于是**点了什么都不会发生**——没有弹窗、没有提示、没有日志。
                     // 底层原因是 Ui.dialog 只有 AlertDialog 实现，离不开 Activity。
-                    // 在补齐 FloatDialog 版本之前，至少要把原因说出来（R-003）。
+                    // 现已补齐 FloatDialog 版本（ConditionDialog.showFloat），
+                    // 形态由外层 floatMode 决定，不再靠 ctx 类型猜。
                     val act = ctx as? Activity
-                    if (act != null) ConditionDialog.show(act, a) { rebuild() }
-                    else Ui.toast(ctx, "运行条件编辑暂不支持悬浮窗形态，请在应用页面内打开")
+                    if (floatMode || act == null || act.isFinishing || act.isDestroyed)
+                        ConditionDialog.showFloat(ctx, a, { rebuild() },
+                            directAdd = a.condition == null)
+                    else
+                        ConditionDialog.show(act, a, { rebuild() },
+                            directAdd = a.condition == null)
                 },
                 help = "不检测 / 图片存在 / 文字存在 / 颜色存在 / 节点 / 变量 / JS 表达式。\n" +
                     "条件不成立时可跳过、等待重试或停止脚本。\n" +
@@ -722,10 +736,13 @@ object ActionEditor {
                 valueView(ctx, ActionHookStage.summaryOf(a), lc > 0),
                 null,
                 pick = {
-                    // 同「运行条件」：非 Activity 上下文此前是静默无反应
+                    // 同「运行条件」：形态由外层 floatMode 决定，不靠 ctx 类型猜。
+                    // 此前非 Activity 上下文（或 Activity 在后台）时静默无反应。
                     val act = ctx as? Activity
-                    if (act != null) ActionHookDialog.show(act, a) { rebuild() }
-                    else Ui.toast(ctx, "监听动作编辑暂不支持悬浮窗形态，请在应用页面内打开")
+                    if (floatMode || act == null || act.isFinishing || act.isDestroyed)
+                        ActionHookDialog.showFloat(ctx, a) { rebuild() }
+                    else
+                        ActionHookDialog.show(act, a) { rebuild() }
                 },
                 help = "本动作执行前后挂载的动作（截图、日志、兜底），共 7 个时机。\n" +
                     "与「脚本全局设置 → 全局监听动作」的区别：那作用于整段脚本，" +
