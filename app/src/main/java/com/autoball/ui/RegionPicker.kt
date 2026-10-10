@@ -83,6 +83,7 @@ object RegionPicker {
         runCatching { manager.addView(layer, p) }
         view = layer
         wm = manager
+        PickerWindow.bind(manager, layer, p)
     }
 
     fun close() {
@@ -113,6 +114,7 @@ object RegionPicker {
         if (v != null) runCatching { wm?.removeView(v) }
         view = null
         wm = null
+        PickerWindow.release()
     }
 
     private fun overlayType(): Int =
@@ -195,14 +197,7 @@ object RegionPicker {
                 (background as android.graphics.drawable.GradientDrawable).cornerRadius =
                     Display.dp(context, 16f)
             }
-            val tipTv = TextView(context).apply {
-                text = "滑动屏幕来调节位置"
-                textSize = 11.5f
-                setTextColor(Theme.textSec())
-                gravity = Gravity.CENTER
-                setPadding(0, 0, 0, Display.dpInt(context, 6f))
-            }
-            bar.addView(tipTv, 0)
+            bar.addView(PickerWindow.tipRow(context, "滑动屏幕来调节区域"), 0)
 
             // 不重复显示尺寸：onDraw 已在取景框上方画了 "W × H" 小牌。
             // 底部条多一行就多挡一片——而底部是最常框选的区域。

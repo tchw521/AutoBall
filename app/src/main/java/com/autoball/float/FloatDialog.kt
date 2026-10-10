@@ -41,7 +41,9 @@ import com.autoball.ui.Theme
  * ```
  *
  * 关于输入法：悬浮窗里的 EditText 需要窗口可获取焦点，
- * 因此**不加** FLAG_NOT_FOCUSABLE，改用 FLAG_DIM_BEHIND 做遮罩。
+ * 因此**不加** FLAG_NOT_FOCUSABLE。
+ * 背后区域**不做压暗**（原为 0xB3 黑遮罩 + FLAG_DIM_BEHIND）：悬浮窗形态下
+ * 弹窗盖在目标应用之上，压黑会让用户看不到自己正在操作的界面。
  * 关闭时主动收起键盘，避免键盘残留挡住目标应用。
  */
 class FloatDialog private constructor(private val ctx: Context, private val title: String) {
@@ -92,11 +94,20 @@ class FloatDialog private constructor(private val ctx: Context, private val titl
         val wDp = if (widthDp > 0f) widthDp
                   else FloatWindows.windowSizeDp(ctx).first
 
-        // ---- 遮罩：捕获点击，点空白处关闭 ----
+        // ---- 背后区域：**视觉上完全透明** ----
+        //
+        // 原先是一层 0xB3 黑色遮罩，且点击空白即关闭。两个问题：
+        // 其一、悬浮窗形态下弹窗是**盖在目标应用之上**打开的——用户正在别的应用里
+        //    操作（录制/添加动作），弹窗背后的正是他要看的界面。压黑之后
+        //    什么都看不见，填坐标只能靠猜。这是用户明确要求取消的。
+        // 其二、遮罩透明之后"点空白关闭"就成了隐形陷阱：用户以为点的是后面的应用，
+        //    实际把弹窗关了，刚填的内容全丢。所以不再挂点击关闭，
+        //    关闭一律走「取消 / 确定 / 返回」按钮——看得见、不会误触。
+        //
+        // 触摸仍由本窗口捕获（不加 FLAG_NOT_TOUCH_MODAL），避免编辑到一半
+        // 手指误点到目标应用上触发别的操作。
         val shade = FrameLayout(ctx).apply {
-            setBackgroundColor(
-                if (Theme.isDark()) 0xB3000000.toInt() else 0x99000000.toInt())
-            setOnClickListener { dismiss() }
+            setBackgroundColor(Color.TRANSPARENT)
         }
 
         val card = LinearLayout(ctx).apply {
@@ -222,11 +233,12 @@ class FloatDialog private constructor(private val ctx: Context, private val titl
             WindowManager.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.MATCH_PARENT,
             overlayType(),
-            WindowManager.LayoutParams.FLAG_DIM_BEHIND or
-                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+            WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
             PixelFormat.TRANSLUCENT
         )
-        p.dimAmount = 0.32f
+        // 不再压暗窗口之外的区域：本窗口已是全屏，dimAmount 只会把
+        // 状态栏/手势条那一圈压黑，而那里正是要看的位置。
+        p.dimAmount = 0f
         p.gravity = Gravity.CENTER
         p.softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
         ownParams = p

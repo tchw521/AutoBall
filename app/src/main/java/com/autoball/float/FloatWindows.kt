@@ -122,15 +122,12 @@ object FloatWindows {
     const val LIST_HEIGHT_SCALE = 0.5f
 
     /**
-     * **选择动作类型**列表的缩放（与窗口内动作列表是两套）：
-     * 宽取窗口的 1/2、高取内容区的 2/3（即"长度减少三分之一"）。
+     * **选择动作类型**列表已不再使用比例缩放。
      *
-     * 用内容区而不是整窗口高，是因为弹窗里还有标题栏和底部按钮，
-     * 按整窗口算会把按钮挤出屏幕。
+     * 它改由独立组件 [com.autoball.ui.ActionTypePicker] 承载，尺寸完全由内容决定：
+     * 宽按最长类型名实测、高按屏幕比例并内部滚动。这里保留说明是为了避免
+     * 以后又按"窗口比例"去改它——那是当初长类型名被截成省略号的成因。
      */
-    @Deprecated("类型列表宽度改为按最长名字实测（ActionEditor.typeListWidthDp），不再用比例")
-    const val TYPE_LIST_WIDTH_SCALE = 0.5f
-    const val TYPE_LIST_HEIGHT_SCALE = 0.6667f
 
     /** 窗口统一高度（dp），见 [windowSizeDp] */
     fun windowHeightDp(ctx: Context): Float = windowSizeDp(ctx).second

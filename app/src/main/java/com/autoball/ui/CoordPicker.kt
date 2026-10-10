@@ -107,6 +107,9 @@ object CoordPicker {
         runCatching { manager.addView(layer, p) }
         view = layer
         wm = manager
+        // 登记窗口三件套：底栏的「穿透」开关要靠它临时放开触摸，
+        // 让用户能先去目标应用翻到要取的那一页
+        PickerWindow.bind(manager, layer, p)
     }
 
     /**
@@ -166,6 +169,7 @@ object CoordPicker {
         view = null          // 类型不同，单独记录
         swipeView = layer
         wm = manager
+        PickerWindow.bind(manager, layer, p)
     }
 
     /** 完成：移除选点层，恢复弹窗与悬浮球，并把本应用带回前台 */
@@ -200,6 +204,8 @@ object CoordPicker {
         if (sv != null) runCatching { wm?.removeView(sv) }
         swipeView = null
         wm = null
+        // 层已摘除：清掉穿透登记，否则下次切换会拿着失效引用去 updateViewLayout
+        PickerWindow.release()
 
         // 选点结束，恢复此前让出屏幕的本应用窗口
         FloatWindows.restore()
@@ -273,14 +279,10 @@ object CoordPicker {
             // （Dock 栏、导航栏、底部按钮）。取点时根本看不到自己点在哪。
             // 现在只留「一行提示 + 一行按钮」≈ 70dp。
             // 坐标读数不必再单独显示：onDraw 已在准星旁画了百分比小牌。
-            val tipTv = TextView(context).apply {
-                text = "滑动屏幕来调节位置"
-                textSize = 11.5f
-                setTextColor(Theme.textSec())
-                gravity = Gravity.CENTER
-                setPadding(0, 0, 0, Display.dpInt(context, 6f))
-            }
-            bar.addView(tipTv)
+            // 提示行右侧带「穿透」开关：开启后拾取层不再吃触摸，
+            // 用户可以直接操作后面的应用（翻页、点进二级页面），
+            // 回到这一屏再锁定取点。拾取层本身仍然画在上面，只是不挡手。
+            bar.addView(PickerWindow.tipRow(context, "滑动屏幕来调节位置"))
 
             val btns = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
             val cancel = Ui.button(context, "取消", false)
@@ -447,8 +449,23 @@ object CoordPicker {
                 setTextColor(Theme.textSec())
                 gravity = Gravity.CENTER
                 setPadding(0, 0, 0, Display.dpInt(context, 6f))
+                layoutParams = LinearLayout.LayoutParams(0,
+                    LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             }
-            bar.addView(tipTv)
+            // 提示行右侧放「穿透」开关（同单点层）：本层文案由 syncBtns 统一管，
+            // 所以这里只放 chip，穿透时改由 syncBtns 输出穿透文案，避免两处抢着写
+            val tipRow = LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(Display.dpInt(context, 10f), 0,
+                    Display.dpInt(context, 10f), Display.dpInt(context, 6f))
+            }
+            tipRow.addView(tipTv)
+            tipRow.addView(PickerWindow.chip(context) { on ->
+                passthrough = on
+                syncBtns()
+            })
+            bar.addView(tipRow)
 
             val btns = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
             leftBtn = Ui.button(context, "取消", false)
@@ -472,8 +489,15 @@ object CoordPicker {
             syncBtns()
         }
 
+        /** 当前是否处于穿透状态（提示行右侧开关） */
+        private var passthrough = false
+
         /** 按钮文案与行为随当前调的是哪个点而变 */
         private fun syncBtns() {
+            if (passthrough) {
+                tipTv.text = "穿透中：可直接操作其他应用"
+                return
+            }
             if (cur == 0) {
                 tipTv.text = "滑动屏幕调节「滑动开始点」"
                 leftBtn.text = "取消"

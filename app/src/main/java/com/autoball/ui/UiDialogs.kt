@@ -57,6 +57,16 @@ object UiDialogs {
         // 容器用 ScrollView（弹窗体本身可滚动），换页时对它 removeAllViews 再 addView
         private var onReady: ((AlertDialog, android.widget.ScrollView, TextView) -> Unit)? = null
 
+        /**
+         * 背后是否压暗（默认 true）。
+         *
+         * 关掉它用于**需要看着背后界面填内容**的弹窗：典型的如「编辑动作」——
+         * 用户刚在目标应用里点了一个按钮，要照着那个位置填坐标，
+         * 压暗之后背后的界面全黑，只能凭记忆填。
+         */
+        private var dimBehind = true
+        fun dim(enabled: Boolean) = apply { dimBehind = enabled }
+
         fun onReady(cb: (AlertDialog, android.widget.ScrollView, TextView) -> Unit) =
             apply { onReady = cb }
 
@@ -195,6 +205,12 @@ object UiDialogs {
             d = AlertDialog.Builder(ctx).setView(box).setCancelable(true).create()
             d?.show()
             d?.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+            if (!dimBehind) {
+                // 清掉默认压暗：AlertDialog 默认带 FLAG_DIM_BEHIND，
+                // 只 setDimAmount(0f) 不够，flag 还在时部分 ROM 仍会压一层
+                d?.window?.clearFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+                d?.window?.setDimAmount(0f)
+            }
             val sw = ctx.resources.displayMetrics.widthPixels
             val w = kotlin.math.min(Display.dpInt(ctx, widthDp), (sw * 0.86f).toInt())
             d?.window?.setLayout(w, ViewGroup.LayoutParams.WRAP_CONTENT)
