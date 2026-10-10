@@ -4,11 +4,11 @@
   "files": [
     {
       "path": "v1.53.0/quickjs/app-debug.apk",
-      "size": 2273765
+      "size": 2279061
     },
     {
       "path": "v1.53.0/quickjs/app-release.apk",
-      "size": 1038746
+      "size": 1040402
     }
   ]
 }
