@@ -85,14 +85,30 @@ object UiOverlays {
     /**
      * @param target 点选变量后回填的输入框（可为空，仅展示）
      */
+    /**
+     * 变量插入提示气泡。
+     *
+     * 「本次运行不再提示」此前**只写不读**：点了 `var_tip_off=true` 之后没有任何
+     * 地方判断它，于是这个开关等于没有——每次输入变量还是照样弹。
+     * 属于"界面完全正常、功能静默为零"的第 2 类失效。
+     *
+     * 语义是**本次运行**，不是永久：该开关在每次脚本启动（ScriptLauncher）时清除，
+     * 下一次运行会重新提示。若做成永久关闭，用户在下一次脚本里就再也找不回
+     * 这个入口，而设置页里并没有对应的重新打开项。
+     *
+     * @return 弹出的 PopupWindow；因开关被关闭而未弹时返回 null
+     */
     fun varTip(ctx: Context, anchorView: View, target: EditText?,
-               vars: List<Pair<String, String>>): PopupWindow {
+               vars: List<Pair<String, String>>): PopupWindow? {
+        if (AB.store.getBool("var_tip_off", false)) return null
         val box = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
+            // 与 menu() 同一个毛病：原先恒为暖灰深色（#3F3939→#2B2727）配浅字，
+            // 浅色主题下会突然出现一块深色气泡。改为按主题取色。
             background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
-                intArrayOf(Color.parseColor("#3F3939"), Color.parseColor("#2B2727"))).apply {
+                Theme.bubbleBgStops()).apply {
                 cornerRadius = Display.dp(ctx, 15f)
-                setStroke(1, Color.parseColor("#21FFFFFF"))
+                setStroke(1, Theme.bubbleStroke())
             }
             elevation = Display.dp(ctx, 12f)
         }
@@ -100,12 +116,12 @@ object UiOverlays {
             text = "插入变量"
             textSize = 12.5f
             setTypeface(null, Typeface.BOLD)
-            setTextColor(Color.parseColor("#EDE8E4"))
+            setTextColor(Theme.textPri())
             setPadding(Display.dpInt(ctx, 14f), Display.dpInt(ctx, 12f),
                 Display.dpInt(ctx, 14f), Display.dpInt(ctx, 8f))
         })
         box.addView(View(ctx).apply {
-            setBackgroundColor(Color.parseColor("#1AFFFFFF"))
+            setBackgroundColor(Theme.line())
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, 1)
         })
@@ -133,12 +149,12 @@ object UiOverlays {
                     text = "{$name}"
                     textSize = 12f
                     setTypeface(null, Typeface.BOLD)
-                    setTextColor(Color.parseColor("#7EA6FF"))
+                    setTextColor(Theme.pri2Soft())
                 })
                 addView(TextView(ctx).apply {
                     text = desc
                     textSize = 10.5f
-                    setTextColor(Color.parseColor("#A8A29A"))
+                    setTextColor(Theme.textTer())
                     setPadding(0, Display.dpInt(ctx, 2f), 0, 0)
                 })
             })
@@ -147,7 +163,7 @@ object UiOverlays {
             box.addView(TextView(ctx).apply {
                 text = "还没有变量。用「设置变量」动作先存一个。"
                 textSize = 11f
-                setTextColor(Color.parseColor("#A8A29A"))
+                setTextColor(Theme.textTer())
                 setPadding(Display.dpInt(ctx, 14f), Display.dpInt(ctx, 12f),
                     Display.dpInt(ctx, 14f), Display.dpInt(ctx, 12f))
             })
@@ -157,7 +173,7 @@ object UiOverlays {
             text = "本次运行不再提示"
             textSize = 11f
             setTypeface(null, Typeface.BOLD)
-            setTextColor(Color.parseColor("#A8A29A"))
+            setTextColor(Theme.textTer())
             setPadding(Display.dpInt(ctx, 14f), Display.dpInt(ctx, 10f),
                 Display.dpInt(ctx, 14f), Display.dpInt(ctx, 12f))
             setOnClickListener {
@@ -179,10 +195,13 @@ object UiOverlays {
              onPick: (Int) -> Unit): PopupWindow {
         val box = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
+            // 原先**恒为米白**（#FFFFFF→#F7F5F2）配深色字，从不判断主题：
+            // 深色界面上会弹出一块刺眼的白卡片，文字却是深色——
+            // 这是全工程换肤失效最明显的一处。改为按主题取色。
             background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
-                intArrayOf(Color.parseColor("#FFFFFF"), Color.parseColor("#F7F5F2"))).apply {
+                Theme.menuBgStops()).apply {
                 cornerRadius = Display.dp(ctx, 15f)
-                setStroke(1, Color.parseColor("#17000000"))
+                setStroke(1, Theme.menuStroke())
             }
             elevation = Display.dp(ctx, 12f)
             setPadding(Display.dpInt(ctx, 5f), Display.dpInt(ctx, 5f),
@@ -199,8 +218,7 @@ object UiOverlays {
                 text = t
                 textSize = 12.5f
                 setTypeface(null, Typeface.BOLD)
-                setTextColor(if (danger) Color.parseColor("#E5484D")
-                else Color.parseColor("#2E2A2A"))
+                setTextColor(if (danger) Theme.danger() else Theme.menuText())
                 setPadding(Display.dpInt(ctx, 10f), Display.dpInt(ctx, 9f),
                     Display.dpInt(ctx, 10f), Display.dpInt(ctx, 9f))
                 background = Theme.rect(Color.TRANSPARENT, 10f, ctx)
@@ -286,21 +304,23 @@ object UiOverlays {
         LinearLayout(ctx).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
-            setBackgroundColor(Color.parseColor("#6B140A0A"))
             setPadding(Display.dpInt(ctx, 10f), 0, Display.dpInt(ctx, 10f), 0)
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, Display.dpInt(ctx, 26f))
+            // 原为极淡暖红 #6B140A0A（写死、不跟主题）。版本条是一块区域而非分隔线，
+            // 用 surface2() 比 line() 更贴切；配 textSec/textTer，两种主题下都可读。
+            setBackgroundColor(Theme.surface2())
             setOnClickListener { onClick() }
             addView(TextView(ctx).apply {
                 text = version
                 textSize = 10f
                 setTypeface(null, Typeface.BOLD)
-                setTextColor(Color.parseColor("#D6CBC4"))
+                setTextColor(Theme.textSec())
             })
             addView(TextView(ctx).apply {
                 text = desc
                 textSize = 10f
-                setTextColor(Color.parseColor("#B9AEA7"))
+                setTextColor(Theme.textTer())
                 setSingleLine(true)
                 ellipsize = android.text.TextUtils.TruncateAt.END
                 setPadding(Display.dpInt(ctx, 7f), 0, 0, 0)

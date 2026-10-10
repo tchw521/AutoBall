@@ -62,8 +62,7 @@ object Kit {
         text = if (Theme.isDark()) "☾" else "☀"
         textSize = 17f
         gravity = Gravity.CENTER
-        setTextColor(if (Theme.isDark()) Color.parseColor("#A78BFA")
-        else Color.parseColor("#F79009"))
+        setTextColor(Theme.accent2())
         background = Theme.rect(Theme.surface(), 12f, ctx, Theme.line())
         val s = Display.dpInt(ctx, 36f)
         layoutParams = LinearLayout.LayoutParams(s, s).apply {
@@ -453,11 +452,10 @@ object Kit {
             text = glyph
             textSize = 13f
             setTypeface(null, Typeface.BOLD)
-            setTextColor(if (Theme.isDark()) Color.parseColor("#B9B2D6")
-            else Color.parseColor("#5B5570"))
+            setTextColor(Theme.textSec())
             gravity = Gravity.CENTER
-            background = Theme.oval(if (Theme.isDark()) Color.parseColor("#2A2340")
-            else Color.parseColor("#FFFFFF"))
+            background = Theme.oval(if (Theme.isDark()) Theme.chipBase()
+            else Theme.surface())
             val s = Display.dpInt(ctx, 34f)
             layoutParams = LinearLayout.LayoutParams(s, s).apply {
                 marginStart = Display.dpInt(ctx, 6f)
@@ -470,11 +468,10 @@ object Kit {
         TextView(ctx).apply {
             text = glyph
             textSize = 14f
-            setTextColor(if (Theme.isDark()) Color.parseColor("#B9B2D6")
-            else Color.parseColor("#5B5570"))
+            setTextColor(Theme.textSec())
             gravity = Gravity.CENTER
-            background = Theme.oval(if (Theme.isDark()) Color.parseColor("#2A2340")
-            else Color.parseColor("#FFFFFF"))
+            background = Theme.oval(if (Theme.isDark()) Theme.chipBase()
+            else Theme.surface())
             val s = Display.dpInt(ctx, 38f)
             layoutParams = LinearLayout.LayoutParams(s, s).apply {
                 marginEnd = Display.dpInt(ctx, 14f)

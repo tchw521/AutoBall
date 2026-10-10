@@ -154,7 +154,13 @@ object GlobalSettingsDialog {
             setPadding(Display.dpInt(ctx, 8f), Display.dpInt(ctx, 5f),
                 Display.dpInt(ctx, 8f), Display.dpInt(ctx, 5f))
             setOnClickListener {
-                val act = ctx as? Activity ?: return@setOnClickListener
+                // 悬浮窗形态下 ctx 是 applicationContext，此处原本直接 return：
+                // 点了「全局监听动作」什么都不会发生（无弹窗、无提示）。
+                val act = ctx as? Activity
+                if (act == null) {
+                    Ui.toast(ctx, "全局监听动作暂不支持悬浮窗形态，请在应用页面内打开")
+                    return@setOnClickListener
+                }
                 ListenerDialog.show(act, flow) {
                     val (stages, n) = flow.hookSummary()
                     listenTv.text = if (stages == 0) "未设置" else "已设置 $stages 项 · $n 个动作"

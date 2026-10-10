@@ -61,6 +61,19 @@ class FloatDialog private constructor(private val ctx: Context, private val titl
     /** 默认宽度；实际取用时若未显式指定，则跟随窗口统一尺寸 */
     private var widthDp = 0f
 
+    /**
+     * 本弹窗自己的根视图。
+     *
+     * **此前它放在伴生对象里作为全局单例槽**，于是嵌套弹窗会互相顶掉：
+     * 编辑动作（A）打开「选择动作类型」（B）时，B 覆盖了这个槽；
+     * B 关闭后槽被清空，A 的 dismiss() 读到 null 直接返回——
+     * A 那层全屏遮罩**永远留在屏幕上关不掉**，只能杀进程。
+     *
+     * 改为每个实例持有自己的 root，伴生只维护一个栈用于 dismissAll。
+     */
+    private var ownRoot: FrameLayout? = null
+    private var ownParams: WindowManager.LayoutParams? = null
+
     fun body(v: View) = apply { body = v }
     fun positive(text: String, onClick: (() -> Boolean)? = null) =
         apply { positive = text to onClick; positiveColor = 0 }
@@ -117,6 +130,10 @@ class FloatDialog private constructor(private val ctx: Context, private val titl
         body?.let {
             it.setPadding(Display.dpInt(ctx, 6f), Display.dpInt(ctx, 4f),
                 Display.dpInt(ctx, 6f), Display.dpInt(ctx, 6f))
+            // 同一个 View 被复用（弹窗关闭后重建、或就地换页）时必须先摘下来，
+            // 否则 addView 抛 "The specified child already has a parent"。
+            // 这与 Ui.dialog.show() 里的处理是同一处防御。
+            (it.parent as? ViewGroup)?.removeView(it)
             scroll.addView(it, ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT))
@@ -188,7 +205,7 @@ class FloatDialog private constructor(private val ctx: Context, private val titl
 
         val w = Display.dpInt(ctx, wDp).coerceAtMost(
             Display.dpInt(ctx, FloatWindows.windowSizeDp(ctx).first + 60f))
-        root = FrameLayout(ctx).apply {
+        ownRoot = FrameLayout(ctx).apply {
             addView(shade, FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT))
@@ -212,33 +229,50 @@ class FloatDialog private constructor(private val ctx: Context, private val titl
         p.dimAmount = 0.32f
         p.gravity = Gravity.CENTER
         p.softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
-        rootParams = p
-        val rv = root
-        if (rv != null) FloatWindows.add(ctx, rv, p)
+        ownParams = p
+        val rv = ownRoot
+        var added = false
+        if (rv != null && FloatWindows.add(ctx, rv, p)) {
+            // 入栈：后开的弹窗压在上面，关闭时只摘自己那一层
+            synchronized(lock) { stack.add(this) }
+            added = true
+        }
 
         // 入场
         card.scaleX = 0.94f; card.scaleY = 0.94f; card.alpha = 0f
         card.animate().scaleX(1f).scaleY(1f).alpha(1f).setDuration(180).start()
         onReady?.invoke(this, scroll, titleTv)
-        return true
+        return added
     }
 
     /** 供外部（如脚本弹窗超时）主动收起；按钮点击时内部也会调用 */
     fun dismiss() {
         runCatching {
             (ctx.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager)
-                ?.hideSoftInputFromWindow(root?.windowToken, 0)
+                ?.hideSoftInputFromWindow(ownRoot?.windowToken, 0)
         }
-        val r = root ?: return
+        val r = ownRoot ?: return
         FloatWindows.remove(r)
-        root = null
+        ownRoot = null
+        ownParams = null
+        synchronized(lock) { stack.remove(this) }
     }
 
     // ---------- 静态入口 ----------
 
     companion object {
-        private var root: FrameLayout? = null
-        private var rootParams: WindowManager.LayoutParams? = null
+        /** 已打开的弹窗栈（后进先出）；只用于 dismissAll 与查询，不再当存储槽 */
+        private val stack = ArrayList<FloatDialog>()
+        private val lock = Any()
+
+        /** 当前是否已有弹窗打开（供调用方判断是否可再开一层） */
+        fun anyShown(): Boolean = synchronized(lock) { stack.isNotEmpty() }
+
+        /** 关闭全部弹窗：切换脚本或停止运行时清场，避免残留遮罩挡住屏幕 */
+        fun dismissAll() {
+            val snapshot = synchronized(lock) { ArrayList(stack) }
+            for (d in snapshot) runCatching { d.dismiss() }
+        }
 
         fun show(ctx: Context, title: String): FloatDialog = FloatDialog(ctx, title)
 
@@ -321,7 +355,7 @@ class FloatDialog private constructor(private val ctx: Context, private val titl
     fun drag(handle: View) {
         var sx = 0f; var sy = 0f; var px = 0; var py = 0; var moved = false
         handle.setOnTouchListener { _, e ->
-            val p = rootParams ?: return@setOnTouchListener false
+            val p = ownParams ?: return@setOnTouchListener false
             when (e.action) {
                 MotionEvent.ACTION_DOWN -> {
                     sx = e.rawX; sy = e.rawY; px = p.x; py = p.y; moved = false
@@ -334,7 +368,7 @@ class FloatDialog private constructor(private val ctx: Context, private val titl
                         p.x = px + dx; p.y = py + dy
                         runCatching {
                             (ctx.getSystemService(Context.WINDOW_SERVICE) as WindowManager)
-                                .updateViewLayout(root, p)
+                                .updateViewLayout(ownRoot, p)
                         }
                     }
                 }

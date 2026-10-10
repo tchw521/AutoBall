@@ -190,7 +190,7 @@ object ScreenPicker {
         /** 网格线覆盖层：只画不响应触摸 */
         private val grid = object : View(ctx) {
             private val paint = android.graphics.Paint().apply {
-                color = Color.parseColor("#55FFFFFF")
+                color = Theme.inkAlpha(0.33f)
                 strokeWidth = Display.dpInt(ctx, 1f).toFloat()
             }
             override fun onDraw(c: android.graphics.Canvas) {
@@ -255,13 +255,13 @@ object ScreenPicker {
 
         private val box = View(ctx).apply {
             background = Theme.rect(Color.TRANSPARENT, 0f, ctx).apply {
-                setStroke(Display.dpInt(ctx, 2f), Color.parseColor("#0EA5E9"))
+                setStroke(Display.dpInt(ctx, 2f), Theme.info())
             }
             visibility = View.GONE
         }
 
         init {
-            setBackgroundColor(Color.parseColor("#66000000"))
+            setBackgroundColor(Theme.scrim(0.40f))
             addView(preview, LayoutParams(LayoutParams.MATCH_PARENT,
                 LayoutParams.MATCH_PARENT))
             addView(grid, LayoutParams(LayoutParams.MATCH_PARENT,

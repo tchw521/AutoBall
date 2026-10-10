@@ -134,7 +134,7 @@ class FloatSetPage(context: Context, private val host: PageHost) : FrameLayout(c
 
     private fun ballPreview(): FrameLayout = FrameLayout(context).apply {
         background = Theme.rect(
-            Color.parseColor(if (Theme.isDark()) "#1E1A33" else "#F0F1F8"),
+            Theme.surface2(),
             16f, context, Theme.line())
         val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,
             Display.dpInt(context, 132f))
@@ -153,7 +153,7 @@ class FloatSetPage(context: Context, private val host: PageHost) : FrameLayout(c
             text = "拖到此处关闭"
             textSize = 9.5f
             setTypeface(null, Typeface.BOLD)
-            setTextColor(Color.parseColor("#F87171"))
+            setTextColor(Theme.danger())
             gravity = Gravity.CENTER
             background = Theme.closeZone(context)
             layoutParams = FrameLayout.LayoutParams(Display.dpInt(context, 86f),

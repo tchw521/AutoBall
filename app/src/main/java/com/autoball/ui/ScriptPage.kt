@@ -109,8 +109,8 @@ class ScriptPage(
 
         groupBar = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(if (Theme.isDark()) Color.parseColor("#0D7C3AED")
-            else Color.parseColor("#0A2F6BFF"))
+            setBackgroundColor(if (Theme.isDark()) Theme.tint(Theme.pri(), 0.05f)
+            else Theme.tint(Theme.pri2(), 0.04f))
             setPadding(0, Display.dpInt(context, 8f), 0, Display.dpInt(context, 12f))
         }
         val gScroll = ScrollView(context).apply {

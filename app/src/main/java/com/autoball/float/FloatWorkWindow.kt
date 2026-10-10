@@ -100,6 +100,12 @@ object FloatWorkWindow {
     /** 当前回调，供空态窗口的两个入口按钮使用 */
     private var cbRef: Callback? = null
 
+    /** 空态底栏图标边长（dp）。26dp 时按钮过大，收到 18dp */
+    private const val ICON_DP = 18f
+
+    /** 空态底栏宽度 = 窗口宽 × 该比例（用户要求"底部栏宽度降低一半"） */
+    private const val EMPTY_BAR_W_SCALE = 0.5f
+
     fun isShown(): Boolean = view != null
 
     fun show(context: Context, script: Script, cb: Callback, goHome: Boolean = true) {
@@ -227,14 +233,14 @@ object FloatWorkWindow {
             val script = curScript
             val cb = curCb
             if (script == null || cb == null) {
-                // 没有可重建的数据时，退化为只改宽度
-                p.width = Display.dpInt(ctx, FloatWindows.widthDp(ctx))
+                // 没有可重建的数据时，退化为只改尺寸（同样必须走统一规则）
+                applyWindowSize(ctx, p)
                 FloatWindows.update(old, p)
                 return@post
             }
             FloatWindows.remove(old)
             val v = buildView(ctx.applicationContext, script, cb)
-            p.width = Display.dpInt(ctx, FloatWindows.widthDp(ctx))
+            applyWindowSize(ctx, p)
             view = v
             FloatWindows.add(ctx, v, p)
             capParams?.let { capView?.let { FloatWindows.update(it, it.layoutParams as WindowManager.LayoutParams) } }
@@ -244,6 +250,29 @@ object FloatWorkWindow {
     /** 当前宿主脚本与回调，供转屏后重建内容 */
     private var curScript: Script? = null
     private var curCb: Callback? = null
+
+    /**
+     * 把窗口参数对齐到统一尺寸规则（宽高比同手机、横竖屏一致）。
+     *
+     * 此前这里写的是 `widthDp(ctx)`——那是**旧的**宽度规则（竖屏屏宽 1/2、
+     * 横屏 1/4），而窗口内部布局用的是 `windowSizeDp`（带 0.8/0.5 收缩）。
+     * 两套规则并存的结果是：转屏后窗口宽度突然跳到另一个标准，
+     * 内容区按另一套宽度排版，右侧空一块或内容被裁掉。
+     *
+     * 而且**高度此前完全没有更新**：横屏可用高度变小时，窗口高度仍停留在
+     * 竖屏算出来的值，底条会被排到屏幕外——与之前"底部按钮不见了"同源。
+     *
+     * y 也要重新夹取：竖屏的 y 在横屏下可能已超出屏幕。
+     */
+    private fun applyWindowSize(ctx: Context, p: WindowManager.LayoutParams) {
+        val sz = Display.screenSize(ctx)
+        p.width = Display.dpInt(ctx, FloatWindows.windowSizeDp(ctx).first)
+        p.height = FloatWindows.frameHeightPx(ctx)
+        val maxY = (sz.y - p.height).coerceAtLeast(0)
+        p.y = p.y.coerceIn(0, maxY)
+        val maxX = (sz.x - p.width).coerceAtLeast(0)
+        p.x = p.x.coerceIn(0, maxX)
+    }
 
     // ================= 构建 =================
 
@@ -444,9 +473,14 @@ object FloatWorkWindow {
             LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
             marginStart = Display.dpInt(ctx, 5f)
         })
+        // 宽度减半并居中：整条铺满时两个图标按钮被拉得太宽，
+        // 与"按钮太大"的反馈直接相关；居中比靠左更像是主动收窄的设计。
         barSlot.addView(emptyBar, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT))
+            (Display.dpInt(ctx, FloatWindows.windowSizeDp(ctx).first)
+                * EMPTY_BAR_W_SCALE).toInt(),
+            LinearLayout.LayoutParams.WRAP_CONTENT, 0f).apply {
+            gravity = Gravity.CENTER_HORIZONTAL
+        })
 
         // ---- 底部条 + 常驻「⋮」----
         //
@@ -881,9 +915,9 @@ object FloatWorkWindow {
     /**
      * 底栏图标入口（开始录制 / 添加动作）。
      *
-     * 图标为主、文字为辅：文字用**描述性最小字号**（[TextSz.NOTE]）放在图标下方，
-     * 既不喧宾夺主，又保证"这两个图标各是什么意思"看得懂——
-     * 纯图标没有标签，用户第一次进来只能靠试。
+     * **只显示图标，不显示文字**（用户要求）。
+     * 代价：两个圆环图标的区别只剩"圆点与十字"，初次使用不易分辨，
+     * 因此保留 contentDescription，长按无障碍提示仍能区分。
      */
     private fun iconEntry(ctx: Context, kind: RecIconView.Kind, label: String,
                           color: Int, onClick: () -> Unit): LinearLayout =
@@ -891,24 +925,20 @@ object FloatWorkWindow {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
             background = Theme.rect(Theme.surface2(), 12f, ctx, Theme.line())
-            setPadding(Display.dpInt(ctx, 6f), Display.dpInt(ctx, 9f),
-                Display.dpInt(ctx, 6f), Display.dpInt(ctx, 7f))
+            // 用户反馈"按钮太大"：整体收缩，padding 减半
+            setPadding(Display.dpInt(ctx, 5f), Display.dpInt(ctx, 5f),
+                Display.dpInt(ctx, 5f), Display.dpInt(ctx, 5f))
             setOnClickListener { onClick() }
             val iv = RecIconView(ctx).apply {
                 this.kind = kind
                 this.iconColor = color
             }
             addView(iv, LinearLayout.LayoutParams(
-                Display.dpInt(ctx, 26f), Display.dpInt(ctx, 26f)))
-            addView(TextView(ctx).apply {
-                text = label
-                textSize = TextSz.NOTE
-                setTextColor(Theme.textSec())
-                gravity = Gravity.CENTER
-                setPadding(0, Display.dpInt(ctx, 4f), 0, 0)
-            }, LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT))
+                Display.dpInt(ctx, ICON_DP), Display.dpInt(ctx, ICON_DP)))
+            // **不再显示文字**：用户要求只留图标。
+            // 代价是两个圆环图标的区别只剩"圆点与十字"，初次使用不易分辨，
+            // 所以保留 contentDescription，长按无障碍提示仍可区分。
+            contentDescription = label
         }
 
     private fun moreRow(ctx: Context, text: String, onClick: () -> Unit): TextView =

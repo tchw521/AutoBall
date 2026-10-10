@@ -286,10 +286,8 @@ object ActionEditor {
                 ViewGroup.LayoutParams.WRAP_CONTENT))
         }
         fun showTypePage() {
-            val h = host ?: return
-            val t = titleTv ?: return
             page = 1
-            showTypeList(ctx, a, h, t) { showFormPage() }
+            showTypeDialog(ctx, a, floatMode = true) { showFormPage() }
         }
         val (box, sb, rb) = buildForm(ctx, a) { showTypePage() }
         formView = box
@@ -344,9 +342,7 @@ object ActionEditor {
         }
         fun showTypePage() {
             page = 1
-            val h = host ?: return
-            val t = titleTv ?: return
-            showTypeList(activity, a, h, t) { showFormPage() }
+            showTypeDialog(activity, a, floatMode = false) { showFormPage() }
         }
         val (box, sb, rb) = buildForm(activity, a) { showTypePage() }
         boxRef = box
@@ -698,9 +694,14 @@ object ActionEditor {
                     a.condition != null),
                 null,
                 pick = {
-                    (ctx as? Activity)?.let { act ->
-                        ConditionDialog.show(act, a) { rebuild() }
-                    }
+                    // 此前写成 `(ctx as? Activity)?.let { ... }`：悬浮窗形态下 ctx
+                    // 是 applicationContext，as? 恒为 null → **点了什么都不会发生**，
+                    // 没有弹窗、没有提示、没有日志。而悬浮窗恰恰是主要使用场景。
+                    // 底层原因是 Ui.dialog 只有 AlertDialog 实现，离不开 Activity。
+                    // 在补齐 FloatDialog 版本之前，至少要把原因说出来（R-003）。
+                    val act = ctx as? Activity
+                    if (act != null) ConditionDialog.show(act, a) { rebuild() }
+                    else Ui.toast(ctx, "运行条件编辑暂不支持悬浮窗形态，请在应用页面内打开")
                 },
                 help = "不检测 / 图片存在 / 文字存在 / 颜色存在 / 节点 / 变量 / JS 表达式。\n" +
                     "条件不成立时可跳过、等待重试或停止脚本。\n" +
@@ -714,9 +715,10 @@ object ActionEditor {
                 valueView(ctx, ActionHookStage.summaryOf(a), lc > 0),
                 null,
                 pick = {
-                    (ctx as? Activity)?.let { act ->
-                        ActionHookDialog.show(act, a) { rebuild() }
-                    }
+                    // 同「运行条件」：非 Activity 上下文此前是静默无反应
+                    val act = ctx as? Activity
+                    if (act != null) ActionHookDialog.show(act, a) { rebuild() }
+                    else Ui.toast(ctx, "监听动作编辑暂不支持悬浮窗形态，请在应用页面内打开")
                 },
                 help = "本动作执行前后挂载的动作（截图、日志、兜底），共 7 个时机。\n" +
                     "与「脚本全局设置 → 全局监听动作」的区别：那作用于整段脚本，" +
@@ -793,9 +795,25 @@ object ActionEditor {
      * 不分组：自动精灵就是一张平铺列表。分组 tab 会让人先猜
      * "我要的在哪一类"，而类型总共就这么多，平铺一眼能扫完。
      */
-    private fun showTypeList(ctx: android.content.Context, a: Action,
-                             host: android.widget.ScrollView, titleTv: TextView,
-                             onChange: () -> Unit) {
+    /**
+     * 类型列表内容的宽度（dp）：**按最长类型名的文字实测宽度**定，不是按窗口比例。
+     *
+     * 按比例（如窗口宽的 1/2）会随机型变化：在小屏上可能不够，
+     * 把「运行JS代码」这类长名截成省略号——用户根本看不出那是哪一项。
+     * 用 Paint.measureText 实测最长名，再加内边距与余量，任何机型都刚好放得下。
+     */
+    private fun typeListWidthDp(ctx: android.content.Context): Float {
+        val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            textSize = Display.dp(ctx, 12.5f)
+        }
+        val maxText = ActionPreset.FLAT.maxOfOrNull { paint.measureText(it.label) } ?: 0f
+        // 20dp = 行内左右 padding；再给 12% 余量防不同字体度量差异
+        return (maxText / Display.density(ctx).coerceAtLeast(1f) + 20f) * 1.12f
+    }
+
+    /** 类型列表的内容视图（独立弹窗承载，见 [showTypeDialog]） */
+    private fun buildTypeListBody(ctx: android.content.Context, a: Action,
+                                  onChange: () -> Unit, dismiss: () -> Unit): View {
         val box = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
         val listBox = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
 
@@ -809,7 +827,8 @@ object ActionEditor {
                     a.type = opt.type
                     a.optionLabel = opt.label
                     opt.preset(a)
-                    onChange()
+                    onChange()   // 重排表单字段（类型变了，字段组不同）
+                    dismiss()    // 选完即关闭，回到表单
                 }
                 listBox.addView(btn, LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
@@ -838,14 +857,14 @@ object ActionEditor {
             false   // 返回 false：事件仍交给 ScrollView 自己处理
         }
         val typeListWrap = android.widget.FrameLayout(ctx).apply {
+            // 宽**按最长类型名**定（见 typeListWidthDp），不再按窗口比例；
+            // 高仍取内容区 2/3，保证不把底部按钮挤出弹窗
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 (com.autoball.float.FloatWindows.contentHeightPx(ctx)
                         * com.autoball.float.FloatWindows.TYPE_LIST_HEIGHT_SCALE).toInt())
             addView(innerScroll, android.widget.FrameLayout.LayoutParams(
-                (Display.dpInt(ctx,
-                    com.autoball.float.FloatWindows.windowSizeDp(ctx).first)
-                        * com.autoball.float.FloatWindows.TYPE_LIST_WIDTH_SCALE).toInt(),
+                Display.dpInt(ctx, typeListWidthDp(ctx)),
                 android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
                 Gravity.CENTER_HORIZONTAL or Gravity.CENTER_VERTICAL))
         }
@@ -869,16 +888,43 @@ object ActionEditor {
             // 这里是 showTypeList，回调参数就叫 onChange（不是 buildForm 的 rebuild）。
             // 我上一轮做全局替换时把这里也改了，属于"替换不看作用域"——
             // 同一份文件里两个函数的回调名不同，不能一把梭
-            setOnClickListener { onChange() }
+            setOnClickListener { dismiss() }
         })
 
-        // 就地换页：把外层「编辑动作」的内容容器换成类型列表。
-        // 另开 Dialog 会与外层争同一窗口层级而被遮住，这里从根上避开。
-        host.removeAllViews()
-        host.addView(box, ViewGroup.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT))
-        titleTv.text = "选择动作类型"
+        return box
+    }
+
+    /**
+     * 类型列表**独立弹窗**。
+     *
+     * 此前是"就地换页"——把外层编辑弹窗的内容容器换成列表，
+     * 结果列表被迫沿用外层弹窗的宽度与滚动，无法按自己的内容定宽，
+     * 也和"选择动作类型是个独立选择步骤"的语义不符。
+     *
+     * @param floatMode 悬浮窗形态用 FloatDialog，应用内用 AlertDialog；
+     *                  两者必须分开，因为悬浮窗场景下 Activity 可能在后台，
+     *                  AlertDialog 会抛「无法从后台启动」类异常。
+     */
+    private fun showTypeDialog(ctx: android.content.Context, a: Action,
+                               floatMode: Boolean, onChange: () -> Unit) {
+        // 弹窗引用要延迟绑定：body 里的按钮在构建时就要用到 dismiss，
+        // 而弹窗此刻还没创建。用 lateinit 持有，构建完再赋值。
+        var dlg: android.app.Dialog? = null
+        var fdlg: com.autoball.float.FloatDialog? = null
+        val dismiss = {
+            runCatching { dlg?.dismiss() }
+            runCatching { fdlg?.dismiss() }
+            Unit
+        }
+        val body = buildTypeListBody(ctx, a, onChange, dismiss)
+        // 注意：FloatDialog.show() 返回 **Boolean**（是否挂上窗口），
+        // 不是 FloatDialog 本身；对话框实例来自伴生的 show(ctx, title)。
+        if (floatMode) {
+            fdlg = com.autoball.float.FloatDialog.show(ctx, "选择动作类型")
+            fdlg?.body(body)?.show()
+        } else {
+            dlg = Ui.dialog(ctx, "选择动作类型").body(body).show()
+        }
     }
 
     // =====================================================================

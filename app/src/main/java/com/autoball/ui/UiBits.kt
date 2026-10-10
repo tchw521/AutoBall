@@ -89,8 +89,8 @@ object UiBits {
         setTextColor(Color.WHITE)
         gravity = Gravity.CENTER
         background = GradientDrawable(Theme.orientation(),
-            if (rec) intArrayOf(Theme.ok(), Color.parseColor("#0E9F5D"))
-            else intArrayOf(Theme.pri2(), Color.parseColor("#5B8DEF"))
+            if (rec) intArrayOf(Theme.ok(), Theme.okSoft())
+            else intArrayOf(Theme.pri2(), Theme.pri2Soft())
         ).apply { cornerRadius = Display.dp(ctx, 12f) }
         layoutParams = LinearLayout.LayoutParams(Display.dpInt(ctx, 40f),
             Display.dpInt(ctx, 40f))

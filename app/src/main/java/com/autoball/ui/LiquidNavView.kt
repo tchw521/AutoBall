@@ -35,7 +35,14 @@ class LiquidNavView(
 
     companion object {
         // ---- onDraw 热路径色值预解析 ----
-        // onDraw 每帧执行，逐帧 parseColor 会明显掉帧；这里在类加载时解析一次。
+        //
+        // **这里的字面量是全工程唯一刻意保留的一批**，理由有两条：
+        // 1) onDraw 每帧执行，逐帧 parseColor 会明显掉帧；这里在类加载时解析一次。
+        //    导航栏带呼吸动画，是常驻重绘视图，不能改成运行时取色。
+        // 2) 换肤**是生效的**：每个色都备了 D_/L_ 两份，onDraw 里按 Theme.isDark()
+        //    选取。所以不要把这里当成"没走主题"的欠账去改成 Theme.xxx()——
+        //    那样会在每帧引入 parseColor / 函数调用，反而造成掉帧。
+        //    真正的欠账是"写死单一颜色、不判断主题"的那几处，已清理完毕。
         private val GL_D_TOP = Color.parseColor("#3DFFFFFF")
         private val GL_D_MID = Color.parseColor("#14FFFFFF")
         private val GL_D_BOT = Color.parseColor("#0AFFFFFF")

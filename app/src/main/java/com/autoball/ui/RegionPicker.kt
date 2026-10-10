@@ -139,14 +139,14 @@ object RegionPicker {
             strokeWidth = Display.dp(context, 2f)
         }
         private val guide = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.parseColor("#59FFFFFF")
+            color = Theme.inkAlpha(0.35f)
             style = Paint.Style.STROKE
             strokeWidth = Display.dp(context, 1f)
         }
         private val shade = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             // 框外压暗**必须很淡**（0x33 ≈ 20%）：这是"取真实坐标"的场景，
             // 压暗过重会让人看不清框外还有什么，尤其取点位置本身可能在框外
-            color = Color.parseColor("#33000000")
+            color = Theme.scrim(0.20f)
             style = Paint.Style.FILL
         }
 
@@ -157,12 +157,12 @@ object RegionPicker {
             style = Paint.Style.FILL
         }
         private val handleRing = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.parseColor("#FF0EA5E9")
+            color = Theme.info()
             style = Paint.Style.STROKE
             strokeWidth = Display.dp(context, 2f)
         }
         private val plate = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.parseColor("#E61C1832")
+            color = Theme.plate()
             style = Paint.Style.FILL
         }
         private val text = Paint(Paint.ANTI_ALIAS_FLAG).apply {

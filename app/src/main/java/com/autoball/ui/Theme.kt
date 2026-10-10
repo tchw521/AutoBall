@@ -231,6 +231,48 @@ object Theme {
     private val C_FAB_STROKE = Color.parseColor(FAB_STROKE)
     private val C_FAB_GLOW = Color.parseColor(FAB_GLOW)
 
+    // ---- 语义功能色：原散落在 CoordPicker / RegionPicker / ScreenPicker / UiBits，
+    //      各处写成 `#0EA5E9` 这类字面量，与 G[] 重复定义。统一收口到这里。----
+    private const val INFO = "#0EA5E9"
+    private const val OK_SOFT = "#0E9F5D"
+    private const val PRI2_SOFT = "#5B8DEF"
+    private val C_INFO = Color.parseColor(INFO)
+    private val C_OK_SOFT = Color.parseColor(OK_SOFT)
+    private val C_PRI2_SOFT = Color.parseColor(PRI2_SOFT)
+
+    // ---- 浮层标牌（坐标/尺寸读数那块牌子）----
+    private val C_PLATE_D = Color.parseColor("#E61C1832")
+    private val C_PLATE_L = Color.parseColor("#E61A1A2E")
+
+    // ---- 弹出菜单卡片 ----
+    // 深色：深紫灰；浅色：白 → 极浅灰（与系统菜单观感一致）
+    private val C_MENU_D = Color.parseColor("#2B2739")
+    private val C_MENU_D2 = Color.parseColor("#221F30")
+    private val C_MENU_L = Color.parseColor("#FFFFFF")
+    private val C_MENU_L2 = Color.parseColor("#F7F5F2")
+    private val C_MENU_STROKE_D = Color.parseColor("#21FFFFFF")
+    private val C_MENU_STROKE_L = Color.parseColor("#17000000")
+    private val C_MENU_TX_D = Color.parseColor("#EDE8E4")
+    private val C_MENU_TX_L = Color.parseColor("#2E2A2A")
+
+    // ---- 变量提示气泡 ----
+    private val C_BUB_D = Color.parseColor("#3F3939")
+    private val C_BUB_D2 = Color.parseColor("#2B2727")
+    private val C_BUB_L = Color.parseColor("#FFFFFF")
+    private val C_BUB_L2 = Color.parseColor("#F4F2F0")
+    private val C_BUB_STROKE_D = Color.parseColor("#21FFFFFF")
+    private val C_BUB_STROKE_L = Color.parseColor("#17000000")
+
+    // ---- 徽章/标签底色（原写死在 Kit / EditPage）----
+    private val C_CHIP_BASE_D = Color.parseColor("#2A2340")
+    private val C_CHIP_BASE_L = Color.parseColor("#FFFFFF")
+    private val C_CHIP_ON_D = Color.parseColor("#3A2E6B")
+    private val C_CHIP_ON_L = Color.parseColor("#E8E3FF")
+
+    // ---- 次级强调色（原在 Kit / MinePage 各写一遍）----
+    private val C_ACCENT2_D = Color.parseColor("#A78BFA")
+    private val C_ACCENT2_L = Color.parseColor("#F79009")
+
     fun bg0(): Int = if (isDark()) C_D_BG0 else C_L_BG0
     fun bg1(): Int = if (isDark()) C_D_BG1 else C_L_BG1
     fun surface(): Int = if (isDark()) C_D_SURFACE else C_L_SURFACE
@@ -252,6 +294,103 @@ object Theme {
     fun card(): Int = surface()
     fun bg(): Int = bg0()
     fun purple(): Int = pri()
+
+    // ---------- 语义功能色（原散落在各处写成字面量） ----------
+
+    /**
+     * 信息蓝：拾取准星、连线、选区边框的统一用色。
+     *
+     * 此前各文件直接写 `#0EA5E9`，与 [G] 里的第 6 个色重复定义——
+     * 改主题时要改两处，漏一处就出现"同一个元素两种蓝"。
+     */
+    fun info(): Int = C_INFO
+
+    /** 成功绿（[ok] 的浅一档，用于渐变第二停止点） */
+    fun okSoft(): Int = C_OK_SOFT
+
+    /** [pri2] 的浅一档，用于渐变第二停止点 */
+    fun pri2Soft(): Int = C_PRI2_SOFT
+
+    // ---------- 叠层工具（**换肤正确性的关键**） ----------
+
+    /**
+     * **前景色 + 指定透明度**。
+     *
+     * 这是本次清理里最容易出错的一类：原代码大量写 `#59FFFFFF` / `#55FFFFFF`
+     * 这类"白色 + alpha"，画在深色界面上没问题，但**切到浅色主题就几乎看不见**
+     * ——白线画在白底上。属于"功能没报错、视觉静默失效"。
+     *
+     * 正确做法是按主题取前景色（深色主题=白、浅色主题=黑）再叠 alpha：
+     * 两种主题下都能看清，且观感一致。
+     *
+     * @param alpha 0f（全透明）~1f（不透明）
+     */
+    fun inkAlpha(alpha: Float): Int {
+        val base = if (isDark()) Color.WHITE else Color.BLACK
+        return Color.argb(
+            (alpha.coerceIn(0f, 1f) * 255f).toInt(),
+            Color.red(base), Color.green(base), Color.blue(base))
+    }
+
+    /**
+     * 遮罩黑 + 指定透明度。用于全屏压暗（取色/截图时压暗背景）。
+     *
+     * 与 [inkAlpha] 相对：遮罩在任何主题下都应该是暗的，所以固定取黑色。
+     */
+    fun scrim(alpha: Float): Int =
+        Color.argb((alpha.coerceIn(0f, 1f) * 255f).toInt(), 0, 0, 0)
+
+    /**
+     * 浮层小标牌底色（坐标读数、尺寸读数那块牌子）。
+     *
+     * 此前写死 `#E61C1832`（深紫黑）+ 白字。深浅主题下都可读，
+     * 但不跟主题：浅色主题下会突然出现一块深色牌子。改为按主题取。
+     */
+    fun plate(): Int = if (isDark()) C_PLATE_D else C_PLATE_L
+
+    /**
+     * 主色微染背景：把强调色以极低透明度铺在表面上（选中态、徽章底）。
+     *
+     * 原代码写 `#0D7C3AED`（主色 5% 透明）这类字面量，换主题时主色变了
+     * 这里不会跟着变，会出现"强调色是紫的、底色还停在旧的紫"的色差。
+     * 改为按当前主题色实时叠 alpha。
+     */
+    fun tint(color: Int, alpha: Float): Int =
+        Color.argb((alpha.coerceIn(0f, 1f) * 255f).toInt(),
+            Color.red(color), Color.green(color), Color.blue(color))
+
+    /** 徽章/标签的激活底色（原写死 `#3A2E6B`） */
+    fun chipOn(): Int = if (isDark()) C_CHIP_ON_D else C_CHIP_ON_L
+
+    /**
+     * 次级强调色：深色主题用亮紫、浅色主题用橙。
+     *
+     * 原在 Kit / MinePage 各写一遍 `#A78BFA` / `#F79009`，
+     * 两处改一处漏一处就会出现同一个元素两种颜色。
+     */
+    fun accent2(): Int = if (isDark()) C_ACCENT2_D else C_ACCENT2_L
+
+    /** 徽章底色（原写死 `#2A2340` / `#FFFFFF`） */
+    fun chipBase(): Int = if (isDark()) C_CHIP_BASE_D else C_CHIP_BASE_L
+
+    /**
+     * 弹出菜单卡片（三点菜单）背景。
+     *
+     * 原来**恒为米白** `#FFFFFF → #F7F5F2` 配深色字，不判断主题：
+     * 深色界面上弹出一块刺眼的白卡片。这是换肤失效最明显的一处。
+     */
+    /** 菜单卡片从上到下的渐变两端 */
+    fun menuBgStops(): IntArray =
+        if (isDark()) intArrayOf(C_MENU_D, C_MENU_D2) else intArrayOf(C_MENU_L, C_MENU_L2)
+    fun menuStroke(): Int = if (isDark()) C_MENU_STROKE_D else C_MENU_STROKE_L
+    fun menuText(): Int = if (isDark()) C_MENU_TX_D else C_MENU_TX_L
+
+    /**
+     * 变量提示气泡背景（与菜单同理，原来恒为暖灰深色）。
+     */
+    fun bubbleBgStops(): IntArray =
+        if (isDark()) intArrayOf(C_BUB_D, C_BUB_D2) else intArrayOf(C_BUB_L, C_BUB_L2)
+    fun bubbleStroke(): Int = if (isDark()) C_BUB_STROKE_D else C_BUB_STROKE_L
 
     private fun c(hex: String): Int = Color.parseColor(hex)
 

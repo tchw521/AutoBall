@@ -39,6 +39,10 @@ object ScriptLauncher {
             AB.log.warn("launch", "已有脚本在运行，本次触发转为停止")
             return
         }
+        // 「变量提示：本次运行不再提示」按运行重置。
+        // 不重置的话上一次运行里点过一次，之后就永久不再提示——
+        // 而设置页并没有重新打开的入口，用户会永远失去这个提示。
+        runCatching { AB.store.putBool("var_tip_off", false) }
         val (runId, control) = pair
         lastScriptId = script.id
         val seed = HashMap<String, String>(initVars)

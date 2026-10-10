@@ -146,8 +146,8 @@ class MinePage(context: Context, private val host: PageHost) : FrameLayout(conte
         b.addView(TextView(context).apply {
             text = if (Theme.isDark()) "☾" else "☀"
             textSize = 17f
-            setTextColor(if (Theme.isDark()) Color.parseColor("#A78BFA")
-            else Color.parseColor("#F79009"))
+            setTextColor(if (Theme.isDark()) Theme.accent2()
+            else Theme.accent2())
             gravity = Gravity.CENTER
             background = Theme.rect(Theme.surface(), 12f, context, Theme.line())
             val sz = Display.dpInt(context, 36f)

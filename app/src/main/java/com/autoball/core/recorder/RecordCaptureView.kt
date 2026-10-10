@@ -47,7 +47,7 @@ class RecordCaptureView(
         // 早前这里挂了一条 chip 控制条（暂停/撤销/等待1s/停止），与录制小窗
         // 叠在一起：既挡住目标应用，也互相挡住按钮。录制控制已并入
         // FloatWorkWindow 的录制控制条，采集层只负责接管触摸。
-        setBackgroundColor(Color.parseColor("#08000000"))
+        setBackgroundColor(com.autoball.ui.Theme.scrim(0.03f))
         // 范围标记框：录制期间必须让用户**看得见**采集范围。
         // 此前采集层完全透明，用户无从判断哪片区域的触摸会被记录，
         // 点在框外就会静默丢动作——表现为"录制不灵"。
@@ -100,6 +100,9 @@ class RecordCaptureView(
         strokeCap = android.graphics.Paint.Cap.ROUND
     }
 
+    /** 底部手势保护区高度（px）：这段区域内的触摸直接放行，不接管 */
+    private fun gestureGuardPx(): Float = Display.dp(context, GESTURE_GUARD_DP)
+
     private fun reset() {
         samples.clear()
         pointerMap.clear()
@@ -117,6 +120,15 @@ class RecordCaptureView(
     @SuppressLint("ClickableViewAccessibility")
     override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
         if (!active) return false
+
+        // **底部手势区必须穿透**：录制期间用户要能上滑回桌面 / 切到别的应用，
+        // 否则采集层把整个屏幕的触摸都吃了，却没有任何办法切走——
+        // 用户感受到的就是"录制期间手机失灵、别的软件按不了"。
+        // 早前的做法是把窗口高度减掉 40dp，代价是采集层**不是全屏**，
+        // 底部那条的点击录不到（"边界不是全屏"的来源）。
+        // 现在窗口全屏，只在手势区内主动放行，两者兼顾。
+        if (height > 0 && ev.y >= height - gestureGuardPx()) return false
+
         when (ev.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 reset()
@@ -219,27 +231,36 @@ class RecordCaptureView(
     }
 
     companion object {
+
+        /** 底部手势保护区（dp）：上滑返回 / 回桌面靠这段区域，不能被采集层吃掉 */
+        const val GESTURE_GUARD_DP = 44f
+
         /**
-         * 采集窗尺寸：**整屏**（底部留 40dp 给系统手势条）。
+         * 采集窗尺寸：**整屏**（底部手势区在触摸分发时放行）。
          *
          * 早前是屏幕 86% × 72%（居中偏下），代价是顶部状态栏附近与底部区域
          * 的点击录不到——而"点其他 App 的按钮"恰恰常在这两处（返回箭头在上、
          * 底部导航在下）。录不到就是静默丢动作，用户只会觉得录制不灵。
          *
-         * 底部留 40dp 是为了不抢系统手势区（上滑返回/回桌面），
-         * 否则录制期间连退出都做不到，只能靠胶囊停止。
+         *
+         * 底部手势区不再靠"窗口少画一块"来让出——那样窗口就不是全屏了——
+         * 而是在 dispatchTouchEvent 里按 y 坐标放行（见 GESTURE_GUARD_DP），
+         * 这样窗口是全屏、手势条又能用。
          */
         fun createParams(context: Context): WindowManager.LayoutParams {
-            val p = Display.screenSize(context)
             val type = if (Build.VERSION.SDK_INT >= 26)
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
             else {
                 @Suppress("DEPRECATION")
                 WindowManager.LayoutParams.TYPE_PHONE
             }
-            val bottom = Display.dpInt(context, 40f)
+            // **真正的整屏**：用 MATCH_PARENT，不再手动算像素。
+            // 手动算的版本会把窗口高度减掉底部 40dp，于是采集层不是全屏——
+            // 底部那条的点击既录不到，用户还会看到采集范围框没贴到屏幕底边
+            // （"边界不是全屏"）。底部手势区改为在 dispatchTouchEvent 里按 y 放行。
             return WindowManager.LayoutParams(
-                p.x, (p.y - bottom).coerceAtLeast(p.y / 2),
+                WindowManager.LayoutParams.MATCH_PARENT,
+                WindowManager.LayoutParams.MATCH_PARENT,
                 type,
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                     // 必须加：不加的话窗口是模态的，会吞掉**整个屏幕**的触摸，
@@ -276,6 +297,10 @@ object RecordOverlay {
         runCatching { manager.addView(v, p) }
         view = v
         wm = manager
+        // 采集层是**全屏**的，一挂上就会盖住本应用所有悬浮窗口（尤其录制胶囊）。
+        // 必须立刻把它们拉回上层，否则胶囊上的红色停止按钮点不到——
+        // 录制期间那是唯一的中断入口，失效等于录制无法停止。
+        com.autoball.float.FloatWindows.raiseAll(ctx)
     }
 
     fun hide() {

@@ -244,7 +244,7 @@ class EditPage(context: Context, private val host: PageHost) : FrameLayout(conte
             setTypeface(null, Typeface.BOLD)
             setTextColor(Color.WHITE)
             gravity = Gravity.CENTER
-            background = Theme.rect(Color.parseColor("#3A2E6B"), 13f, context)
+            background = Theme.rect(Theme.chipOn(), 13f, context)
             setPadding(Display.dpInt(context, 14f), Display.dpInt(context, 11f),
                 Display.dpInt(context, 14f), Display.dpInt(context, 11f))
             setOnClickListener {
@@ -341,7 +341,7 @@ class EditPage(context: Context, private val host: PageHost) : FrameLayout(conte
     private fun syncLoop() {
         loopBox.text = "循环：" + if (loop) "开" else "关"
         loopBox.background = Theme.rect(
-            if (loop) Theme.pri2() else Color.parseColor("#3A2E6B"), 13f, context)
+            if (loop) Theme.pri2() else Theme.chipOn(), 13f, context)
     }
 
     // ---------- 步骤列表 ----------

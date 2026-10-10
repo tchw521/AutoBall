@@ -221,21 +221,21 @@ object CoordPicker {
     ) : FrameLayout(context) {
 
         private val cross = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.parseColor("#FF0EA5E9")
+            color = Theme.info()
             style = Paint.Style.STROKE
             strokeWidth = Display.dp(context, 1.6f)
         }
         private val dot = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.parseColor("#FFE5484D")
+            color = Theme.danger()
             style = Paint.Style.FILL
         }
         private val ring = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.parseColor("#CC0EA5E9")
+            color = Theme.info()
             style = Paint.Style.STROKE
             strokeWidth = Display.dp(context, 2f)
         }
         private val plate = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.parseColor("#E61C1832")
+            color = Theme.plate()
             style = Paint.Style.FILL
         }
         private val text = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -376,36 +376,36 @@ object CoordPicker {
     ) : FrameLayout(context) {
 
         private val dash = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.parseColor("#FF0EA5E9")
+            color = Theme.info()
             style = Paint.Style.STROKE
             strokeWidth = Display.dp(context, 2f)
             pathEffect = android.graphics.DashPathEffect(
                 floatArrayOf(Display.dp(context, 7f), Display.dp(context, 5f)), 0f)
         }
         private val arrow = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.parseColor("#FF0EA5E9")
+            color = Theme.info()
             style = Paint.Style.FILL
         }
         private val ring = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.parseColor("#CC0EA5E9")
+            color = Theme.info()
             style = Paint.Style.STROKE
             strokeWidth = Display.dp(context, 2f)
         }
         private val startDot = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.parseColor("#FF22C55E")
+            color = Theme.okSoft()
             style = Paint.Style.FILL
         }
         private val endDot = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.parseColor("#FFE5484D")
+            color = Theme.danger()
             style = Paint.Style.FILL
         }
         private val cross = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.parseColor("#FFE5484D")
+            color = Theme.danger()
             style = Paint.Style.STROKE
             strokeWidth = Display.dp(context, 1.4f)
         }
         private val plate = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.parseColor("#E61C1832")
+            color = Theme.plate()
             style = Paint.Style.FILL
         }
         private val label = Paint(Paint.ANTI_ALIAS_FLAG).apply {
