@@ -198,8 +198,12 @@ object ActionEditor {
             ActionType.CLICK, ActionType.CLICK_IMAGE, ActionType.CLICK_TEXT,
             ActionType.CLICK_COLOR, ActionType.CLICK_NODE, ActionType.AI_CLICK ->
                 "${a.optionLabel ?: "点击"}(${p(a.x)}, ${p(a.y)})"
-            ActionType.SWIPE, ActionType.GESTURE_SINGLE, ActionType.GESTURE_MULTI ->
-                "滑动(${p(a.x)}, ${p(a.y)})→(${p(a.x2)}, ${p(a.y2)})"
+            ActionType.SWIPE ->
+                "${a.optionLabel ?: "滑动"}(${p(a.x)}, ${p(a.y)})→(${p(a.x2)}, ${p(a.y2)})"
+            // 手势类**不拼坐标**：坐标在 path / strokes 里，x2、y2 恒为 0，
+            // 拼出来就成了"单指手势(50.0%, 50.0%)→(0.0%, 0.0%)"，看着像坐标丢失。
+            ActionType.GESTURE_SINGLE, ActionType.GESTURE_MULTI ->
+                "${a.optionLabel ?: "手势"}·${a.path.size + a.strokes.sumOf { it.size }}点"
             ActionType.INPUT_TEXT -> "输入「${a.text ?: ""}」"
             ActionType.OPEN_APP -> "打开应用 ${a.pkg ?: ""}"
             ActionType.OPEN_URL -> "打开链接 ${a.url ?: ""}"

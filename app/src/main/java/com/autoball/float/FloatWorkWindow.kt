@@ -387,33 +387,43 @@ object FloatWorkWindow {
             setPadding(Display.dpInt(ctx, 10f), Display.dpInt(ctx, 8f),
                 Display.dpInt(ctx, 10f), Display.dpInt(ctx, 10f))
         }
-        // 运行 / 录制 收窄（0.8 权重），腾出位置给「添加动作」——它是最常用入口，
-        // 藏在菜单里每次都要多点两下
-        mainBar.addView(flatBtn(ctx, "运行", Theme.pri()) { cb.onRun(script) },
-            LinearLayout.LayoutParams(0,
-                LinearLayout.LayoutParams.WRAP_CONTENT, 0.8f).apply {
-                marginEnd = Display.dpInt(ctx, 3f)
-            })
-        mainBar.addView(flatBtn(ctx, "录制", Theme.ok()) {
-            cb.onRecord(script, !recording)
+        // **三个入口统一改为图标**（与空态底栏同一套）：
+        // 此前这里是「运行 / 录制 / 添加动作」三个文字按钮，与空态底栏的
+        // 图标形态不一致——同一个窗口两种风格，且文字按钮在窄窗口里被挤变形。
+        // 矢量自绘而不用 ▶ / ⏺ 这类字形：各 ROM 字形不一，深色底上有些还会
+        // 被渲染成彩色 emoji，跟整体配色打架。
+        mainBar.addView(iconEntry(ctx, RecIconView.Kind.RUN, "运行", Theme.pri()) {
+            cbRef?.onRun(script)
         }, LinearLayout.LayoutParams(0,
-            LinearLayout.LayoutParams.WRAP_CONTENT, 0.8f).apply {
-            marginStart = Display.dpInt(ctx, 3f)
-            marginEnd = Display.dpInt(ctx, 3f)
+            LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+            marginEnd = Display.dpInt(ctx, 4f)
         })
-        mainBar.addView(flatBtn(ctx, "添加动作", Theme.pri2()) { cb.onAddAction(script) },
-            LinearLayout.LayoutParams(0,
-                LinearLayout.LayoutParams.WRAP_CONTENT, 1.3f).apply {
-                marginStart = Display.dpInt(ctx, 3f)
-            })
+        mainBar.addView(iconEntry(ctx, RecIconView.Kind.REC, "录制", Theme.ok()) {
+            cbRef?.onRecord(script, !recording)
+        }, LinearLayout.LayoutParams(0,
+            LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+            marginStart = Display.dpInt(ctx, 4f)
+            marginEnd = Display.dpInt(ctx, 4f)
+        })
+        mainBar.addView(iconEntry(ctx, RecIconView.Kind.ADD, "添加", Theme.pri2()) {
+            cbRef?.onAddAction(script)
+        }, LinearLayout.LayoutParams(0,
+            LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+            marginStart = Display.dpInt(ctx, 4f)
+        })
         // mainBar 与 recBar 是**互斥显示**的（刷新时原地切换），
         // 直接挂到 root 会导致切换时底栏高度跳变。装进同一个 slot 更稳。
         val barSlot = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
         }
+        // 与空态底栏同样收窄并居中：整条铺满时图标按钮被拉得过宽，
+        // 这正是"按钮太大"的成因
         barSlot.addView(mainBar, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT))
+            (Display.dpInt(ctx, FloatWindows.windowSizeDp(ctx).first)
+                * EMPTY_BAR_W_SCALE).toInt(),
+            LinearLayout.LayoutParams.WRAP_CONTENT, 0f).apply {
+            gravity = Gravity.CENTER_HORIZONTAL
+        })
 
         // ---- 录制控制条（录制中显示，替换主条）----
         val recBar = LinearLayout(ctx).apply {

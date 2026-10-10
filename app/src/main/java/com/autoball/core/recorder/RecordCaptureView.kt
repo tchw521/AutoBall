@@ -190,6 +190,39 @@ class RecordCaptureView(
     }
 
     /**
+     * **补发期间临时让出触摸路径**。
+     *
+     * 这是"录制期间点别的应用没反应"的根因所在。
+     *
+     * 采集层是**全屏**窗口，位于输入管道的最上层。补发（无障碍 dispatchGesture
+     * 或 Shizuku `input tap`）注入的手势同样要走这条管道，而 Android 12（API 31）起
+     * 系统会把"被不可信浮层遮挡的触摸"判为 untrusted 并丢弃，Logcat 里表现为
+     * `Untrusted touch due to occlusion by <pkg>`。
+     * 也就是说：**采集层自己挡住了自己补发出去的那一下**，目标应用因此毫无反应。
+     *
+     * 补发期间把窗口 alpha 归零，采集层被系统判为"不遮挡"，注入的手势能真正
+     * 到达目标应用；补发结束立刻恢复，继续接管用户手势。
+     *
+     * 只用短暂窗口，且只在补发的那一瞬间——用户几乎感知不到。
+     */
+    fun setPassthroughTemp(on: Boolean) {
+        val p = windowParams ?: return
+        val m = windowManager ?: return
+        // 用 **alpha 归零** 而不是 FLAG_NOT_TOUCHABLE：
+        // alpha=0 的窗口被系统判为"不遮挡"（obscuring opacity 为 0），
+        // 采集层因此不在输入路径上；同时它**仍然能收到触摸**，
+        // 补发期间用户紧接着的下一个手势不会被丢掉。
+        // 若改用 NOT_TOUCHABLE，窗口会短暂失去触摸，快速连点就会漏录动作。
+        val na = if (on) 0f else 1f
+        if (p.alpha == na) return
+        p.alpha = na
+        runCatching { m.updateViewLayout(this, p) }
+    }
+
+    /** 当前采集层是否处于临时穿透状态 */
+    fun isPassthroughTemp(): Boolean = (windowParams?.alpha ?: 1f) <= 0.001f
+
+    /**
      * 坐标提示：在触摸点旁短暂显示该点坐标。
      *
      * 录制时用户点下去，需要一个即时反馈确认"这一点被记下来了、记在哪"。
@@ -322,6 +355,15 @@ object RecordOverlay {
         val v = view ?: return
         if (!v.active) return
         v.post { runCatching { v.showHint(rawX, rawY, text) } }
+    }
+
+    /**
+     * 补发期间临时让出触摸路径，见 [RecordCaptureView.setPassthroughTemp]。
+     *
+     * 必须由补发方显式调用：只有它知道手势什么时候真正注入完成。
+     */
+    fun setPassthroughTemp(on: Boolean) {
+        view?.setPassthroughTemp(on)
     }
 
     fun setActive(active: Boolean) {

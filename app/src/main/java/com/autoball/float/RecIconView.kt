@@ -18,7 +18,7 @@ import com.autoball.core.util.Display
  */
 class RecIconView(context: Context) : View(context) {
 
-    enum class Kind { REC, ADD }
+    enum class Kind { REC, ADD, RUN, STOP, PAUSE }
 
     var kind: Kind = Kind.REC
         set(value) { field = value; invalidate() }
@@ -73,6 +73,28 @@ class RecIconView(context: Context) : View(context) {
                 val ir = r * 0.44f
                 canvas.drawLine(cx - ir, cy, cx + ir, cy, bar)
                 canvas.drawLine(cx, cy - ir, cx, cy + ir, bar)
+            }
+            Kind.RUN -> {
+                // 播放：实心三角。三角比"▶"字形更可控——各 ROM 的字形差异
+                // 会让同一个字符在不同手机上长得不一样。
+                val ir = r * 0.52f
+                val p = android.graphics.Path().apply {
+                    moveTo(cx - ir * 0.62f, cy - ir)
+                    lineTo(cx + ir, cy)
+                    lineTo(cx - ir * 0.62f, cy + ir)
+                    close()
+                }
+                canvas.drawPath(p, dot)
+            }
+            Kind.STOP -> {
+                val ir = r * 0.46f
+                canvas.drawRect(cx - ir, cy - ir, cx + ir, cy + ir, dot)
+            }
+            Kind.PAUSE -> {
+                val ir = r * 0.46f
+                val bw = r * 0.20f
+                canvas.drawRect(cx - ir, cy - ir, cx - ir + bw, cy + ir, dot)
+                canvas.drawRect(cx + ir - bw, cy - ir, cx + ir, cy + ir, dot)
             }
         }
     }

@@ -43,10 +43,11 @@ object GestureCompiler {
 
         return when {
             stroke.durationMs >= GESTURE_MAX_MS ->
-                Action().apply { type = ActionType.SWIPE; copyPoints(this, stroke) }
+                Action().apply { type = ActionType.SWIPE; optionLabel = "滑动"; copyPoints(this, stroke) }
             moveDp <= TAP_MAX_MOVE_DP && stroke.durationMs <= TAP_MAX_MS -> {
                 Action().apply {
                     type = ActionType.CLICK
+                    optionLabel = "点击"
                     x = last.x; y = last.y
                     durationMs = stroke.durationMs.coerceAtLeast(10)
                     waitMs = 300
@@ -55,6 +56,7 @@ object GestureCompiler {
             moveDp <= TAP_MAX_MOVE_DP && stroke.durationMs >= LONG_PRESS_MIN_MS -> {
                 Action().apply {
                     type = ActionType.CLICK
+                    optionLabel = "长按"
                     x = last.x; y = last.y
                     durationMs = stroke.durationMs
                     comment = "长按"
@@ -64,6 +66,7 @@ object GestureCompiler {
             stroke.samples.size <= 2 -> {
                 Action().apply {
                     type = ActionType.SWIPE
+                    optionLabel = "滑动"
                     x = first.x; y = first.y; x2 = last.x; y2 = last.y
                     durationMs = stroke.durationMs
                     waitMs = 300
@@ -72,6 +75,7 @@ object GestureCompiler {
             else -> {
                 Action().apply {
                     type = ActionType.GESTURE_SINGLE
+                    optionLabel = "单指手势"
                     durationMs = stroke.durationMs
                     path.addAll(compress(stroke.samples))
                     waitMs = 300
@@ -84,6 +88,7 @@ object GestureCompiler {
     fun compileMulti(strokeList: List<Stroke>, density: Float): Action {
         return Action().apply {
             type = ActionType.GESTURE_MULTI
+            optionLabel = "多指手势"
             durationMs = strokeList.maxOf { it.durationMs }
             for (s in strokeList) {
                 val pts = compress(s.samples)

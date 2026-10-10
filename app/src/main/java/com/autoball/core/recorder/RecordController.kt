@@ -5,6 +5,7 @@ import com.autoball.AB
 import com.autoball.core.backend.ExecContext
 import com.autoball.core.model.*
 import com.autoball.core.util.Display
+import kotlin.concurrent.thread
 
 /**
  * 录制控制器。
@@ -111,15 +112,7 @@ class RecordController(private val context: Context) {
 
         // 立即补发，保证录制过程中目标应用真实响应
         val last = stroke.samples.last()
-        suppressor.markDispatch(last.x, last.y, now, action.durationMs)
-        val r = AB.router.execute(action, ctx)
-        if (!r.ok) {
-            suppressor.clearDispatch()
-            // 必须记录：补发失败意味着"这一步只被记下来、没真正作用到目标应用"，
-            // 用户看到的现象是"点了没反应"，不写日志根本无从排查是哪个后端拒了
-            AB.log.warn("record",
-                "补发失败（${r.message ?: r.cause ?: "未知"}），该动作仅记录未生效")
-        }
+        replay(action, last.x, last.y, now, action.durationMs)
 
         // 坐标提示：告知用户这一点被记下来了、记在哪个百分比位置。
         // 用**像素**点定位（提示要贴在手指位置），文案用百分比（与脚本存储一致）。
@@ -130,6 +123,38 @@ class RecordController(private val context: Context) {
         // 必须在补发之后转——补发要用真实像素。
         append(toPercent(action))
         return true
+    }
+
+    /**
+     * **补发**：把刚录到的这一步真正作用到目标应用。
+     *
+     * 必须在**后台线程**执行，两个原因缺一不可：
+     *
+     * 1. 整条链路（dispatchTouchEvent → flush → 本函数）都在主线程。
+     *    若在主线程等 dispatchGesture 的结果回调，post 出去的 Runnable 永远
+     *    执行不到——主线程正被 latch 阻塞——必然超时返回 false。这正是早前
+     *    "录制期间点其他软件毫无反应"的成因。
+     * 2. 补发期间要把采集层的遮挡临时撤掉（见 [RecordOverlay.setPassthroughTemp]），
+     *    注入结束后再恢复。恢复必须等注入真正完成，也就必须能阻塞等待，
+     *    只有后台线程才不会把 UI 卡住。
+     */
+    private fun replay(action: Action, x: Float, y: Float, now: Long, durationMs: Long) {
+        suppressor.markDispatch(x, y, now, durationMs)
+        thread(name = "ab-record-replay") {
+            RecordOverlay.setPassthroughTemp(true)
+            val r = try {
+                AB.router.execute(action, ctx)
+            } finally {
+                RecordOverlay.setPassthroughTemp(false)
+            }
+            if (!r.ok) {
+                suppressor.clearDispatch()
+                // 必须记录：补发失败意味着"这一步只被记下来、没真正作用到目标应用"，
+                // 用户看到的现象是"点了没反应"，不写日志根本无从排查是哪个后端拒了
+                AB.log.warn("record",
+                    "补发失败（${r.message ?: r.cause ?: "未知"}），该动作仅记录未生效")
+            }
+        }
     }
 
     /**
@@ -153,10 +178,7 @@ class RecordController(private val context: Context) {
         val action = GestureCompiler.compileMulti(strokes, density)
         action.id = com.autoball.core.model.Action.newId()
 
-        suppressor.markDispatch(ref.x, ref.y, now,
-            strokes.maxOf { it.durationMs })
-        val r = AB.router.execute(action, ctx)
-        if (!r.ok) suppressor.clearDispatch()
+        replay(action, ref.x, ref.y, now, strokes.maxOf { it.durationMs })
 
         RecordOverlay.hintAt(ref.x, ref.y, pctText(action))
 
