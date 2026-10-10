@@ -92,7 +92,7 @@ object ConditionDialog {
      *
      * @param asFloat 由外层弹窗形态决定，不靠 ctx 类型推断
      */
-    private fun open(ctx: Context, title: String, body: android.view.View,
+    private fun openDialog(ctx: Context, title: String, body: android.view.View,
                      asFloat: Boolean, widthDp: Float, maxH: Float,
                      neg: Pair<String, (() -> Unit)?>? = null,
                      pos: Pair<String, (() -> Boolean)?>? = null,
@@ -434,7 +434,7 @@ object ConditionDialog {
             }
             fill()
 
-            open(ctx, "编辑条件", inner, asFloat,
+            openDialog(ctx, "编辑条件", inner, asFloat,
                 widthDp = Theme.DIALOG_W + 10f, maxH = 0.8f,
                 neg = "删除本条" to {
                     set.items.remove(c)
@@ -463,7 +463,7 @@ object ConditionDialog {
 
         rebuild()
 
-        open(ctx, "运行条件", box, asFloat,
+        openDialog(ctx, "运行条件", box, asFloat,
             widthDp = Theme.DIALOG_W + 10f, maxH = 0.82f,
             neg = "清除" to { a.condition = null; onChanged() },
             pos = "确定" to { commit(); true })
@@ -575,7 +575,7 @@ object ConditionDialog {
         box.addView(Kit.note(ctx,
             "上限填 0 表示一直重试到条件成立或脚本被停止——请谨慎，"
             + "条件永远不成立时脚本不会自动结束。"))
-        open(ctx, "重复检查直到成功", box, asFloat,
+        openDialog(ctx, "重复检查直到成功", box, asFloat,
             widthDp = Theme.DIALOG_W + 10f, maxH = 0.7f,
             neg = "取消" to null,
             pos = "确定" to {
@@ -615,7 +615,7 @@ object ConditionDialog {
         }
         fill()
 
-        open(ctx, "位置周围条件", box, asFloat,
+        openDialog(ctx, "位置周围条件", box, asFloat,
             widthDp = Theme.DIALOG_W + 10f, maxH = 0.8f,
             neg = "清空" to { c.probes.clear(); onChanged(); fill() },
             pos = "确定" to { onChanged(); true })

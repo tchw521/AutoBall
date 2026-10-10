@@ -293,7 +293,7 @@ object ActionEditor {
             page = 1
             showTypeDialog(ctx, a, floatMode = true) { showFormPage() }
         }
-        val (box, sb, rb) = buildForm(ctx, a, { showTypePage() }, floatMode = true)
+        val (box, sb, rb) = buildForm(ctx, a, floatMode = true) { showTypePage() }
         formView = box
         submit = sb
         rebuild = rb
@@ -407,8 +407,8 @@ object ActionEditor {
      * Activity 在后台，对话框根本不显示。表现为「点了没反应」且不报错。
      */
     private fun buildForm(ctx: android.content.Context, a: Action,
-                          onPickType: (() -> Unit)? = null,
-                          floatMode: Boolean = false)
+                          floatMode: Boolean = false,
+                          onPickType: (() -> Unit)? = null)
             : Triple<View, () -> Unit, () -> Unit> {
         val box = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
         var dialog: Dialog? = null
