@@ -1,0 +1,71 @@
+package com.autoball.core.util
+
+import com.autoball.core.model.Action
+import com.autoball.core.model.DisplaySignature
+import com.autoball.core.model.Pt
+
+object CoordMapper {
+
+    class Scale(
+        val sx: Float,
+        val sy: Float,
+        val active: Boolean,
+        val reason: String? = null
+    ) {
+        companion object {
+            val NONE = Scale(1f, 1f, false)
+        }
+    }
+
+    fun compute(sig: DisplaySignature?, curW: Int, curH: Int, curRot: Int): Scale {
+        if (sig == null || sig.width <= 0 || sig.height <= 0) return Scale.NONE
+        if (curW <= 0 || curH <= 0) return Scale.NONE
+        if (sig.width == curW && sig.height == curH && sig.rotation == curRot) return Scale.NONE
+
+        // 转屏且宽高互换时，不做静默映射
+        val rotated = (sig.width == curH && sig.height == curW)
+        if (rotated && sig.rotation != curRot) {
+            return Scale(1f, 1f, false, "录制时与当前的屏幕方向不同，请重新校准坐标")
+        }
+
+        return Scale(curW.toFloat() / sig.width, curH.toFloat() / sig.height, true)
+    }
+
+    fun pxToPct(px: Float, screenSize: Int): Float {
+        if (screenSize <= 0) return px
+        return (px / screenSize.toFloat()) * 100f
+    }
+
+    fun pctToPx(pct: Float, screenSize: Int): Float {
+        if (screenSize <= 0) return pct
+        return (pct / 100f) * screenSize
+    }
+
+    fun applyTo(a: Action, s: Scale, currentW: Int, currentH: Int): Action {
+        val b = a.copy()
+
+        // 规范：Action 内部统一保存百分比，执行前再转成当前屏幕真实像素。
+        if (currentW > 0 && currentH > 0) {
+            b.x = pctToPx(a.x, currentW)
+            b.y = pctToPx(a.y, currentH)
+            b.x2 = pctToPx(a.x2, currentW)
+            b.y2 = pctToPx(a.y2, currentH)
+
+            if (b.path.isNotEmpty()) {
+                b.path = ArrayList(b.path.map {
+                    Pt(pctToPx(it.x, currentW), pctToPx(it.y, currentH))
+                })
+            }
+
+            if (b.strokes.isNotEmpty()) {
+                b.strokes = ArrayList(b.strokes.map { stroke ->
+                    ArrayList(stroke.map {
+                        Pt(pctToPx(it.x, currentW), pctToPx(it.y, currentH))
+                    })
+                })
+            }
+        }
+
+        return b
+    }
+}
