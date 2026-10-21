@@ -5,6 +5,9 @@ import com.autoball.AB
 import com.autoball.core.backend.ExecContext
 import com.autoball.core.model.*
 import com.autoball.core.util.Display
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import kotlin.concurrent.thread
 
 /**
@@ -56,7 +59,7 @@ class RecordController(private val context: Context) {
     }
 
     private fun defaultScriptName(): String =
-        "脚本_${java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.getDefault()).format(java.util.Date())}"
+        "脚本_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())}"
 
     private fun makeFlow(name: String): Flow = Flow().apply {
         id = Flow.newId()
@@ -137,33 +140,16 @@ class RecordController(private val context: Context) {
         val action = GestureCompiler.compile(stroke, density)
         action.id = Action.newId()
 
-        // 立即补发，保证录制过程中目标应用真实响应
         val last = stroke.samples.last()
         replay(action, last.x, last.y, now, action.durationMs)
 
-        // 坐标提示：告知用户这一点被记下来了、记在哪个百分比位置。
-        // 用**像素**点定位（提示要贴在手指位置），文案用百分比（与脚本存储一致）。
         RecordOverlay.hintAt(last.x, last.y, pctText(action))
-
-        // 采集层采到的是**像素**坐标，而 Action.x/y 的约定是**百分比**。
-        // 不转换的话，列表里会显示成 "点击(612.0%, 1344.0%)" 这种荒谬的值。
-        // 必须在补发之后转——补发要用真实像素。
         append(toPercent(action))
         return true
     }
 
     /**
      * **补发**：把刚录到的这一步真正作用到目标应用。
-     *
-     * 必须在**后台线程**执行，两个原因缺一不可：
-     *
-     * 1. 整条链路（dispatchTouchEvent → flush → 本函数）都在主线程。
-     *    若在主线程等 dispatchGesture 的结果回调，post 出去的 Runnable 永远
-     *    执行不到——主线程正被 latch 阻塞——必然超时返回 false。这正是早前
-     *    "录制期间点其他软件毫无反应"的成因。
-     * 2. 补发期间要把采集层的遮挡临时撤掉（见 [RecordOverlay.setPassthroughTemp]），
-     *    注入结束后再恢复。恢复必须等注入真正完成，也就必须能阻塞等待，
-     *    只有后台线程才不会把 UI 卡住。
      */
     private fun replay(action: Action, x: Float, y: Float, now: Long, durationMs: Long) {
         suppressor.markDispatch(x, y, now, durationMs)
@@ -176,20 +162,16 @@ class RecordController(private val context: Context) {
             }
             if (!r.ok) {
                 suppressor.clearDispatch()
-                // 必须记录：补发失败意味着"这一步只被记下来、没真正作用到目标应用"，
-                // 用户看到的现象是"点了没反应"，不写日志根本无从排查是哪个后端拒了
-                AB.log.warn("record",
-                    "补发失败（${r.message ?: r.cause ?: "未知"}），该动作仅记录未生效")
+                AB.log.warn(
+                    "record",
+                    "补发失败（${r.message ?: r.cause ?: "未知"}），该动作仅记录未生效"
+                )
             }
         }
     }
 
     /**
      * 采集层回调：一次**多指**手势（所有手指抬起）到达。
-     *
-     * 与 [onStroke] 的区别只在于编译方式（[GestureCompiler.compileMulti]），
-     * 回声抑制与补发逻辑一致。此前采集层没有多指分支，多指手势会被
-     * 当成单指处理、只记录第一根手指，录出来的动作与用户实际操作不符。
      */
     fun onStrokeMulti(strokes: List<GestureCompiler.Stroke>): Boolean {
         if (state != State.RECORDING) return false
@@ -203,12 +185,10 @@ class RecordController(private val context: Context) {
 
         val density = context.resources.displayMetrics.density
         val action = GestureCompiler.compileMulti(strokes, density)
-        action.id = com.autoball.core.model.Action.newId()
+        action.id = Action.newId()
 
         replay(action, ref.x, ref.y, now, strokes.maxOf { it.durationMs })
-
         RecordOverlay.hintAt(ref.x, ref.y, pctText(action))
-
         append(toPercent(action))
         return true
     }
@@ -228,7 +208,8 @@ class RecordController(private val context: Context) {
         a.x = a.x / w * 100f
         a.y = a.y / h * 100f
         if (a.type == ActionType.SWIPE || a.type == ActionType.GESTURE_SINGLE ||
-            a.type == ActionType.GESTURE_MULTI) {
+            a.type == ActionType.GESTURE_MULTI
+        ) {
             a.x2 = a.x2 / w * 100f
             a.y2 = a.y2 / h * 100f
         }
@@ -252,9 +233,6 @@ class RecordController(private val context: Context) {
 
     /**
      * 用户主动停止：结束录制并返回动作流，**不触发 onInterrupted**。
-     *
-     * 与 [interrupt] 的区别：那是异常中断，需要弹窗告知原因；
-     * 而用户点「停止」的预期是**回到工作台继续编辑**，弹个对话框反而打断。
      */
     fun finish(name: String? = null): Flow {
         val f = flow.apply {
