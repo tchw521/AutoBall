@@ -19,6 +19,14 @@ class RecordController(private val context: Context) {
 
     enum class State { IDLE, RECORDING, PAUSED, INTERRUPTED }
 
+    data class Stats(
+        val state: State,
+        val actionCount: Int,
+        val estimatedMs: Long,
+        val elapsedMs: Long,
+        val lastActionAt: Long
+    )
+
     interface Callback {
         fun onStateChanged(state: State)
         fun onActionAdded(action: Action, count: Int)
@@ -35,22 +43,37 @@ class RecordController(private val context: Context) {
     private val suppressor = EchoSuppressor()
     private val ctx = ExecContext("record") { false }
     private var pausedAt = 0L
+    private var startedAt = 0L
+    private var lastActionAt = 0L
 
     fun currentFlow(): Flow = flow
 
+    fun stats(): Stats {
+        val elapsed = if (state == State.RECORDING || state == State.PAUSED) {
+            System.currentTimeMillis() - startedAt
+        } else 0L
+        return Stats(state, flow.actions.size, estimatedMs(), elapsed, lastActionAt)
+    }
+
+    private fun defaultScriptName(): String =
+        "脚本_${java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.getDefault()).format(java.util.Date())}"
+
     private fun makeFlow(name: String): Flow = Flow().apply {
         id = Flow.newId()
-        this.name = name
+        this.name = name.ifBlank { defaultScriptName() }
         val p = Display.screenSize(context)
         display = DisplaySignature(p.x, p.y, context.resources.displayMetrics.density, 0)
     }
 
     fun start(name: String) {
-        flow = makeFlow(name)
+        val scriptName = name.trim().ifBlank { defaultScriptName() }
+        flow = makeFlow(scriptName)
         suppressor.reset()
         pausedAt = 0L
+        startedAt = System.currentTimeMillis()
+        lastActionAt = startedAt
         state = State.RECORDING
-        AB.log.info("record", "开始录制「$name」")
+        AB.log.info("record", "开始录制「${flow.name}」")
         callback?.onStateChanged(state)
     }
 
@@ -214,6 +237,7 @@ class RecordController(private val context: Context) {
 
     private fun append(a: Action) {
         flow.actions.add(a)
+        lastActionAt = System.currentTimeMillis()
         callback?.onActionAdded(a, flow.actions.size)
     }
 
@@ -232,8 +256,14 @@ class RecordController(private val context: Context) {
      * 与 [interrupt] 的区别：那是异常中断，需要弹窗告知原因；
      * 而用户点「停止」的预期是**回到工作台继续编辑**，弹个对话框反而打断。
      */
-    fun finish(): Flow {
-        val f = flow
+    fun finish(name: String? = null): Flow {
+        val f = flow.apply {
+            if (!name.isNullOrBlank()) {
+                this.name = name.trim()
+            } else if (this.name.isBlank()) {
+                this.name = defaultScriptName()
+            }
+        }
         state = State.IDLE
         AB.log.info("record", "录制结束，共 ${f.actions.size} 个动作")
         callback?.onStateChanged(state)
@@ -241,8 +271,14 @@ class RecordController(private val context: Context) {
     }
 
     /** 保存：返回动作流并复位 */
-    fun save(): Flow {
-        val f = flow
+    fun save(name: String? = null): Flow {
+        val f = flow.apply {
+            if (!name.isNullOrBlank()) {
+                this.name = name.trim()
+            } else if (this.name.isBlank()) {
+                this.name = defaultScriptName()
+            }
+        }
         state = State.IDLE
         callback?.onStateChanged(state)
         AB.log.info("record", "录制保存，共 ${f.actions.size} 个动作")
@@ -250,8 +286,10 @@ class RecordController(private val context: Context) {
     }
 
     /** 放弃 */
-    fun discard() {
-        flow = makeFlow(flow.name.ifBlank { "未命名脚本" })
+    fun discard(name: String? = null) {
+        flow = makeFlow((name ?: flow.name).takeIf { !it.isNullOrBlank() } ?: defaultScriptName())
+        startedAt = 0L
+        lastActionAt = 0L
         state = State.IDLE
         callback?.onStateChanged(state)
     }
