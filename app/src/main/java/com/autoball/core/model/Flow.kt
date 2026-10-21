@@ -122,13 +122,17 @@ class Flow {
     /**
      * 取某个时机的监听动作。
      *
-     * 大小写容错是必要的：早期版本按枚举名（大写 `LT`）存过一批数据，
-     * 而运行时按小写取。不做容错的话，老脚本里已经配好的钩子会"看起来在、
-     * 实际永远不触发"，用户根本无从判断是配置丢了还是功能坏了。
+     * 兼容早期存储的大小写不一致：UI 可能写 `LT`，运行时会取 `lt`；
+     * 旧脚本也可能带有大写键名。统一做大小写无关匹配，避免“看起来已设置、
+     * 实际不触发”的静默缺陷。
      */
     fun hookList(stage: String): List<Action> {
-        hooks[stage]?.let { return it }
-        hooks[stage.uppercase()]?.let { return it }
+        val key = stage.trim()
+        if (key.isEmpty()) return emptyList()
+        val lower = key.lowercase()
+        hooks[lower]?.let { return it }
+        hooks[key]?.let { return it }
+        hooks.entries.firstOrNull { it.key.equals(key, ignoreCase = true) }?.value?.let { return it }
         return emptyList()
     }
 

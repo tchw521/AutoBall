@@ -63,7 +63,7 @@ enum class ActionHookStage(
     ;
 
     companion object {
-        fun byKey(k: String): ActionHookStage? = values().firstOrNull { it.key == k }
+        fun byKey(k: String): ActionHookStage? = values().firstOrNull { it.key.equals(k, ignoreCase = true) }
 
         /** 该动作上实际挂了几个钩子 */
         fun countOf(a: Action): Int = values().count { a.listeners[it.key] != null }
