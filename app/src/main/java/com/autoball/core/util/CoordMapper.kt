@@ -12,6 +12,18 @@ import com.autoball.core.model.DisplaySignature
  */
 object CoordMapper {
 
+    /** 像素 -> 百分比（相对当前屏幕宽/高） */
+    fun pxToPct(px: Float, screenPx: Int): Float {
+        if (screenPx <= 0) return px
+        return (px / screenPx.toFloat()) * 100f
+    }
+
+    /** 百分比 -> 像素 */
+    fun pctToPx(pct: Float, screenPx: Int): Float {
+        if (screenPx <= 0) return pct
+        return (pct / 100f) * screenPx
+    }
+
     class Scale(
         val sx: Float,
         val sy: Float,
