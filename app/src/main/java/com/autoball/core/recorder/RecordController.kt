@@ -38,14 +38,17 @@ class RecordController(private val context: Context) {
 
     fun currentFlow(): Flow = flow
 
+    private fun makeFlow(name: String): Flow = Flow().apply {
+        id = Flow.newId()
+        this.name = name
+        val p = Display.screenSize(context)
+        display = DisplaySignature(p.x, p.y, context.resources.displayMetrics.density, 0)
+    }
+
     fun start(name: String) {
-        flow = Flow().apply {
-            id = Flow.newId()
-            this.name = name
-            val p = Display.screenSize(context)
-            display = DisplaySignature(p.x, p.y, context.resources.displayMetrics.density, 0)
-        }
+        flow = makeFlow(name)
         suppressor.reset()
+        pausedAt = 0L
         state = State.RECORDING
         AB.log.info("record", "开始录制「$name」")
         callback?.onStateChanged(state)
@@ -67,8 +70,9 @@ class RecordController(private val context: Context) {
     /** 撤销上一步 */
     fun undo(): Boolean {
         if (flow.actions.isEmpty()) return false
+        val last = flow.actions.last()
         flow.actions.removeAt(flow.actions.size - 1)
-        callback?.onActionAdded(flow.actions.lastOrNull() ?: Action(), flow.actions.size)
+        callback?.onActionAdded(last, flow.actions.size)
         return true
     }
 
@@ -247,7 +251,7 @@ class RecordController(private val context: Context) {
 
     /** 放弃 */
     fun discard() {
-        flow.actions.clear()
+        flow = makeFlow(flow.name.ifBlank { "未命名脚本" })
         state = State.IDLE
         callback?.onStateChanged(state)
     }
