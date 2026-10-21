@@ -65,6 +65,11 @@ object ListenerDialog {
         }
     }
 
+    private fun removeStageKeys(flow: Flow, st: Stage) {
+        val keys = flow.hooks.keys.filter { it.equals(st.key, ignoreCase = true) }.toList()
+        keys.forEach { flow.hooks.remove(it) }
+    }
+
     /**
      * 打开动作编辑器。
      *
@@ -99,7 +104,7 @@ object ListenerDialog {
     private fun onStageClick(ctx: android.content.Context, flow: Flow, st: Stage,
                              onChanged: () -> Unit, asFloat: Boolean,
                              rebuild: () -> Unit) {
-        if (flow.hooks[st.key].isNullOrEmpty()) {
+        if (flow.hookList(st.key).isEmpty()) {
             openEditor(ctx, flow, null, asFloat) { a ->
                 flow.hooks.getOrPut(st.key) { ArrayList() }.add(a)
                 onChanged()
@@ -122,7 +127,7 @@ object ListenerDialog {
             box.addView(Ui.note(ctx,
                 "在指定时机自动执行附加动作。每个时机可挂多个，按顺序执行。"))
             for (st in Stage.values()) {
-                val list = flow.hooks[st.key] ?: emptyList<Action>()
+                val list = flow.hookList(st.key)
                 box.addView(stageRow(ctx, st, list) {
                     onStageClick(ctx, flow, st, onChanged, true) { rebuild() }
                 })
@@ -146,7 +151,7 @@ object ListenerDialog {
                 "在指定时机自动执行附加动作。每个时机可挂多个，按顺序执行。"))
 
             for (st in Stage.values()) {
-                val list = flow.hooks[st.key] ?: emptyList<Action>()
+                val list = flow.hookList(st.key)
                 box.addView(stageRow(ctx, st, list) {
                     // 打开该时机的动作列表编辑
                     // Activity 形态；若 Activity 已不可用于弹窗（如被切到后台），
@@ -192,7 +197,7 @@ object ListenerDialog {
     /** 单个时机的动作列表：添加 / 替换 / 删除 */
     private fun stageDetail(ctx: android.content.Context, flow: Flow, st: Stage,
                             onChanged: () -> Unit, asFloat: Boolean) {
-        val list = flow.hooks.getOrPut(st.key) { ArrayList() }
+        val list = flow.hookList(st.key).toMutableList()
         val box = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
 
         fun rebuild() {
@@ -231,11 +236,12 @@ object ListenerDialog {
                     })
                     row.addView(Kit.miniBtn(ctx, "✕") {
                         list.removeAt(i)
-                        // 必须用 st.key（小写）而不是 st.name（大写枚举名）：
-                        // map 是以小写 key 存的，用大写 remove 删不掉，
-                        // 于是留下一个空 list 条目——界面显示「未设置」，
-                        // 但 hookSummary() 仍把它算作已配置的一项。
-                        if (list.isEmpty()) flow.hooks.remove(st.key)
+                        removeStageKeys(flow, st)
+                        if (list.isEmpty()) {
+                            flow.hooks[st.key] = ArrayList()
+                        } else {
+                            flow.hooks[st.key] = ArrayList(list)
+                        }
                         onChanged()
                         rebuild()
                     })
@@ -258,6 +264,8 @@ object ListenerDialog {
                 setOnClickListener {
                     openEditor(ctx, flow, null, asFloat) { a ->
                         list.add(a)
+                        removeStageKeys(flow, st)
+                        flow.hooks[st.key] = ArrayList(list)
                         onChanged()
                         rebuild()
                     }

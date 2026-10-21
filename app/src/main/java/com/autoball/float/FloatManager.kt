@@ -97,6 +97,15 @@ object FloatManager {
 
     // ---------- 悬浮窗 ----------
 
+    private fun panelSkinIndex(default: Int = FloatPanelView.Skin.DEFAULT.ordinal): Int {
+        return runCatching { AB.store.getInt("panel_skin", default) }
+            .getOrElse {
+                runCatching { AB.store.getString("panel_skin") }
+                    .getOrNull()
+                    ?.toIntOrNull() ?: default
+            }
+    }
+
     fun showPanel(context: Context) {
         lastCtx = context.applicationContext
         if (!Display.canDrawOverlay(context)) return
@@ -106,12 +115,9 @@ object FloatManager {
             val manager = ctx.getSystemService(Context.WINDOW_SERVICE) as WindowManager
             wm = manager
             val view = FloatPanelView(ctx, panelListener)
-            // **此前这里读的是字符串，而设置页存的是整数下标**。
-            // getString 遇到整数会抛 ClassCastException，兜底逻辑是 drop(key)
-            // ——于是每读一次就把用户选的皮肤清掉，悬浮窗永远用默认皮肤：
-            // 选了没效果，且下次进设置页又回到默认，看不出发生过什么。
-            // 现改为按下标取，顺序与设置页 SKINS、迁移表 SKIN_NAMES 一致。
-            val skinIdx = AB.store.getInt("panel_skin", FloatPanelView.Skin.DEFAULT.ordinal)
+            // 兼容老配置：此前曾按字符串存 `panel_skin`，现在改为整数下标；
+            // 读取时优先按 int 解析，旧值仍兼容字符串转整型。
+            val skinIdx = panelSkinIndex()
             val skin = FloatPanelView.Skin.values().getOrElse(skinIdx) { FloatPanelView.Skin.DEFAULT }
             // 自定义布局启用时按用户配置的列数排布（R-118）
             val cols = AB.store.getInt("panel_cols", 1).coerceIn(1, 4)
