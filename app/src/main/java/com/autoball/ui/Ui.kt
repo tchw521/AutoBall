@@ -60,8 +60,6 @@ object Ui {
              onPick: (Int) -> Unit) = UiOverlays.menu(ctx, anchorView, items, onPick)
     fun actionGrid(ctx: Context, items: List<Pair<String, String>>,
                    onPick: (Int) -> Unit) = UiOverlays.actionGrid(ctx, items, onPick)
-    fun versionBar(ctx: Context, version: String, desc: String,
-                   onClick: () -> Unit) : LinearLayout = UiOverlays.versionBar(ctx, version, desc, onClick)
     fun toast(ctx: Context, msg: String) = UiOverlays.toast(ctx, msg)
     fun tip(anchor: View, title: String, text: String) = UiOverlays.tip(anchor, title, text)
     fun button(ctx: Context, text: String, primary: Boolean) : TextView = UiBits.button(ctx, text, primary)

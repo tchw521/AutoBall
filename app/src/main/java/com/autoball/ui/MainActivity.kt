@@ -105,10 +105,8 @@ class MainActivity : Activity(), PageHost, com.autoball.NotifyHost {
         navWrap.addView(nav)
         root.addView(navWrap)
 
-        // 底部版本条（v3 .verbar）：点一下看更新日志
-        root.addView(Ui.versionBar(this, "v1.21.0", "查看更新日志") {
-            ChangeLog.show(this)
-        })
+        // 底部版本条已移除：它常驻占一行屏底空间，而更新日志在
+        // 「我的 → 关于 → 更新日志」与「设置 → 版本」里都有入口，删掉不丢功能。
 
         setContentView(root, ViewGroup.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))

@@ -129,6 +129,24 @@ object Display {
         }
     }
 
+    /**
+     * 当前应用的版本名（如 `1.54.0`）。
+     *
+     * **不要硬编码版本号**：此前「我的 → 版本」写死 v1.21.0、设置页写死
+     * v1.10.0、主界面版本条写死 v1.21.0——三处各写各的，且全都停在旧版本。
+     * 这类"显示与实际不一致"最直接的后果是：用户反馈时报出不存在的版本号，
+     * 排查时对着一个对不上的版本翻日志，白白浪费一轮。
+     *
+     * 取不到（极端情况）时返回空串，由调用方决定显示，不猜一个假值。
+     */
+    @SuppressLint("NewApi")
+    fun appVersion(ctx: Context): String = try {
+        @Suppress("DEPRECATION")
+        ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName ?: ""
+    } catch (e: Exception) {
+        ""
+    }
+
     @SuppressLint("NewApi")
     fun openOverlaySettings(ctx: Context) {
         try {

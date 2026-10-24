@@ -141,7 +141,8 @@ class SetPage(context: Context, private val host: PageHost) : FrameLayout(contex
             "≡", Theme.warn()) { host.openSubPage("log") })
         g4.addView(Kit.valueRow(context, "悬浮设置", "悬浮球 / 悬浮窗 / 手势绑定",
             "◉", Theme.pri()) { host.openSubPage("float") })
-        g4.addView(Kit.valueRow(context, "版本", "v1.10.0 · QuickJS / Rhino 双构建",
+        g4.addView(Kit.valueRow(context, "版本",
+            "v${Display.appVersion(context)} · QuickJS / Rhino 双构建",
             "ⓘ", Theme.pri2()) {
             val act = context as? android.app.Activity ?: return@valueRow
             ChangeLog.show(act)

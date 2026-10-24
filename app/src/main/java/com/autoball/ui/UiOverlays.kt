@@ -295,37 +295,8 @@ object UiOverlays {
         return grid
     }
 
-    // =====================================================================
-    // 底部版本条（v3 .verbar：26dp 高，毛玻璃，点击看更新日志）
-    // =====================================================================
-
-    fun versionBar(ctx: Context, version: String, desc: String,
-                   onClick: () -> Unit): LinearLayout =
-        LinearLayout(ctx).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER
-            setPadding(Display.dpInt(ctx, 10f), 0, Display.dpInt(ctx, 10f), 0)
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, Display.dpInt(ctx, 26f))
-            // 原为极淡暖红 #6B140A0A（写死、不跟主题）。版本条是一块区域而非分隔线，
-            // 用 surface2() 比 line() 更贴切；配 textSec/textTer，两种主题下都可读。
-            setBackgroundColor(Theme.surface2())
-            setOnClickListener { onClick() }
-            addView(TextView(ctx).apply {
-                text = version
-                textSize = 10f
-                setTypeface(null, Typeface.BOLD)
-                setTextColor(Theme.textSec())
-            })
-            addView(TextView(ctx).apply {
-                text = desc
-                textSize = 10f
-                setTextColor(Theme.textTer())
-                setSingleLine(true)
-                ellipsize = android.text.TextUtils.TruncateAt.END
-                setPadding(Display.dpInt(ctx, 7f), 0, 0, 0)
-            })
-        }
+    // （底部版本条已移除：常驻占一行屏底空间，更新日志在「我的 → 关于」与
+    //   「设置 → 版本」都有入口。组件删除后不再有无人调用的死代码。）
 
     // =====================================================================
     // Toast（v3：永远最上，胶囊底 + 主色描边）
